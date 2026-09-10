@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -35,7 +35,7 @@ class Charge(Base):
     source_type: Mapped[str] = mapped_column(String(50))
     source_id: Mapped[UUID | None] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="ACTIVE", index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Invoice(Base):
@@ -53,7 +53,7 @@ class Invoice(Base):
     patient_amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
     total_amount: Mapped[float] = mapped_column(Numeric(14, 2))
     status: Mapped[str] = mapped_column(String(30), default="OPEN", index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class InvoiceItem(Base):
@@ -84,5 +84,5 @@ class Payment(Base):
     provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
     external_reference: Mapped[str | None] = mapped_column(String(150), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="CREATED", index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
