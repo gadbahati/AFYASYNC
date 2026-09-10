@@ -30,7 +30,7 @@ def record_audit(
         result=result,
         ip_address=ip_address,
         device_id=device_id,
-        metadata=metadata or {},
+        metadata_json=metadata or {},
     )
     db.add(entry)
     if commit:
