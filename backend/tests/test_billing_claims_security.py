@@ -91,24 +91,55 @@ def test_successful_payment_records_audit() -> None:
 
 def test_claim_submission_never_marks_invoice_paid() -> None:
     facility_id = uuid4()
-    invoice = SimpleNamespace(id=uuid4(), facility_id=facility_id)
+    payer_id = uuid4()
+    invoice = SimpleNamespace(id=uuid4(), facility_id=facility_id, status="CLAIM_PENDING")
+    payer = SimpleNamespace(id=payer_id, status="ACTIVE", code="TEST_PAYER")
     claim = SimpleNamespace(
         id=uuid4(),
         claim_id="CLM-TEST",
         invoice_id=invoice.id,
         patient_id=uuid4(),
+        payer_id=payer_id,
         status="READY",
         submitted_at=None,
     )
+    integration = SimpleNamespace(id=uuid4(), status="ACTIVE")
     db = MagicMock()
-    db.get.side_effect = [claim, invoice]
+    db.get.side_effect = [claim, invoice, payer]
+    db.scalar.return_value = integration
 
     with patch("app.claims.service.record_audit"):
         result = submit_claim(db, claim.id, facility_id, actor_user_id=uuid4())
 
     assert result.status == "SUBMITTED"
     assert result.submitted_at is not None
+    assert invoice.status == "CLAIM_PENDING"
     db.add.assert_called_once()
+
+
+def test_claim_submission_requires_authorised_payer_integration() -> None:
+    facility_id = uuid4()
+    payer_id = uuid4()
+    invoice = SimpleNamespace(id=uuid4(), facility_id=facility_id)
+    payer = SimpleNamespace(id=payer_id, status="ACTIVE", code="NO_INTEGRATION")
+    claim = SimpleNamespace(
+        id=uuid4(),
+        claim_id="CLM-NO-INTEGRATION",
+        invoice_id=invoice.id,
+        patient_id=uuid4(),
+        payer_id=payer_id,
+        status="READY",
+        submitted_at=None,
+    )
+    db = MagicMock()
+    db.get.side_effect = [claim, invoice, payer]
+    db.scalar.return_value = None
+
+    with pytest.raises(ClaimsError, match="PAYER_INTEGRATION_NOT_CONFIGURED"):
+        submit_claim(db, claim.id, facility_id)
+
+    assert claim.status == "READY"
+    db.commit.assert_not_called()
 
 
 def test_claim_response_is_facility_scoped() -> None:
