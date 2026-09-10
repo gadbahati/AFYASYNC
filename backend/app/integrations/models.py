@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,7 +24,16 @@ class Integration(Base):
 
 class IntegrationTransaction(Base):
     __tablename__ = "integration_transactions"
-    __table_args__ = (UniqueConstraint("integration_id", "transaction_id", name="uq_integration_transaction"),)
+    __table_args__ = (
+        UniqueConstraint("integration_id", "transaction_id", name="uq_integration_transaction"),
+        Index(
+            "uq_integration_external_reference",
+            "integration_id",
+            "external_reference",
+            unique=True,
+            postgresql_where=text("external_reference IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     integration_id: Mapped[UUID] = mapped_column(ForeignKey("integrations.id", ondelete="RESTRICT"), index=True)
