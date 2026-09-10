@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.claims.service import ClaimsError, build_claim_submission_payload
 from app.integrations.adapters import IntegrationAdapter, UnconfiguredAdapter
 from app.integrations.models import Integration, IntegrationTransaction
 
@@ -14,15 +15,50 @@ def process_pending_transaction(db: Session, transaction_id, adapter: Integratio
         raise ValueError("INTEGRATION_NOT_FOUND")
     if integration.status != "ACTIVE":
         raise ValueError("INTEGRATION_NOT_ACTIVE")
+    if transaction.status not in {"PENDING", "RETRYING"}:
+        return transaction
+
     adapter = adapter or UnconfiguredAdapter()
     transaction.status = "PROCESSING"
     db.flush()
-    result = adapter.send({"transaction_id": transaction.transaction_id, "entity_type": transaction.entity_type, "entity_id": str(transaction.entity_id) if transaction.entity_id else None}, transaction.transaction_id)
-    transaction.status = result.status
+
+    if transaction.entity_type == "CLAIM":
+        if transaction.entity_id is None:
+            transaction.status = "FAILED"
+            transaction.response_code = "CLAIM_REFERENCE_REQUIRED"
+            transaction.response_data = {}
+            db.commit()
+            db.refresh(transaction)
+            return transaction
+        try:
+            payload = build_claim_submission_payload(db, transaction.entity_id, integration.facility_id)
+        except ClaimsError as exc:
+            transaction.status = "FAILED"
+            transaction.response_code = str(exc)
+            transaction.response_data = {}
+            db.commit()
+            db.refresh(transaction)
+            return transaction
+    else:
+        payload = {
+            "transaction_id": transaction.transaction_id,
+            "entity_type": transaction.entity_type,
+            "entity_id": str(transaction.entity_id) if transaction.entity_id else None,
+        }
+
+    result = adapter.send(payload, transaction.transaction_id)
+    if result.status not in {"SUCCEEDED", "FAILED", "RETRYING", "PENDING", "PROCESSING"}:
+        transaction.status = "FAILED"
+        transaction.response_code = "INVALID_ADAPTER_STATUS"
+        transaction.response_data = {}
+    else:
+        transaction.status = result.status
+        transaction.response_code = result.response_code
+        transaction.external_reference = result.external_reference
+        transaction.response_data = result.response_data or {}
     transaction.attempt_count += 1
-    transaction.response_code = result.response_code
-    transaction.external_reference = result.external_reference
-    transaction.response_data = result.response_data or {}
+    from datetime import datetime, timezone
+    transaction.last_attempt_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(transaction)
     return transaction
