@@ -64,6 +64,9 @@ class InvoiceItem(Base):
     quantity: Mapped[float] = mapped_column(Numeric(12, 2))
     unit_price: Mapped[float] = mapped_column(Numeric(14, 2))
     amount: Mapped[float] = mapped_column(Numeric(14, 2))
+    payer_amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    patient_amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    benefit_rule_id: Mapped[UUID | None] = mapped_column(ForeignKey("payer_benefit_rules.id", ondelete="RESTRICT"), nullable=True)
 
 
 class Payment(Base):
