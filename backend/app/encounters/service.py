@@ -23,15 +23,19 @@ def _require_active_context(db: Session, patient_id: UUID, facility_id: UUID, de
 
 def _next_encounter_id(db: Session) -> str:
     number = db.scalar(text("SELECT nextval('afasync_encounter_seq')"))
+    if number is None:
+        raise RuntimeError("ENCOUNTER_SEQUENCE_UNAVAILABLE")
     return f"ENC-{datetime.now(timezone.utc):%Y%m%d}-{int(number):05d}"
 
 
-def create_encounter(db: Session, data: dict, created_by: UUID) -> Encounter:
+def create_encounter(db: Session, data: dict, created_by: UUID, commit: bool = True) -> Encounter:
     _require_active_context(db, data["patient_id"], data["facility_id"], data["department_id"])
     encounter = Encounter(encounter_id=_next_encounter_id(db), created_by=created_by, **data)
     db.add(encounter)
-    db.commit()
-    db.refresh(encounter)
+    db.flush()
+    if commit:
+        db.commit()
+        db.refresh(encounter)
     return encounter
 
 
