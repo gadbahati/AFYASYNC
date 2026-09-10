@@ -118,14 +118,64 @@ def record_payment(db: Session, facility_id: UUID, payload: dict, *, actor_user_
     paid = sum((Decimal(str(p.amount)) for p in db.scalars(select(Payment).where(Payment.invoice_id == invoice.id, Payment.status == "CONFIRMED"))), Decimal("0"))
     if paid + amount > Decimal(str(invoice.patient_amount)):
         raise BillingError("PAYMENT_EXCEEDS_BALANCE")
-    payment = Payment(transaction_id=transaction_id, invoice_id=invoice.id, patient_id=invoice.patient_id, facility_id=facility_id, amount=amount, payment_method=payload["payment_method"], provider=payload.get("provider"), external_reference=payload.get("external_reference"), status="CONFIRMED", confirmed_at=datetime.now(timezone.utc))
+
+    provider = payload.get("provider")
+    payment_method = str(payload["payment_method"]).upper()
+    requires_provider = payment_method != "CASH"
+    integration = None
+    if requires_provider:
+        if not isinstance(provider, str) or not provider.strip():
+            raise BillingError("PAYMENT_PROVIDER_REQUIRED")
+        integration = db.scalar(
+            select(Integration)
+            .where(
+                Integration.facility_id == facility_id,
+                Integration.status == "ACTIVE",
+                Integration.integration_type.in_(["PAYMENTS", "PAYMENT"]),
+                Integration.provider == provider,
+            )
+            .order_by(Integration.created_at.desc())
+            .limit(1)
+        )
+        if integration is None:
+            raise BillingError("PAYMENT_INTEGRATION_NOT_CONFIGURED")
+
+    payment = Payment(
+        transaction_id=transaction_id,
+        invoice_id=invoice.id,
+        patient_id=invoice.patient_id,
+        facility_id=facility_id,
+        amount=amount,
+        payment_method=payment_method,
+        provider=provider,
+        external_reference=payload.get("external_reference"),
+        status="CREATED" if requires_provider else "CONFIRMED",
+        confirmed_at=None if requires_provider else datetime.now(timezone.utc),
+    )
     db.add(payment)
     db.flush()
-    new_paid = paid + amount
-    invoice.status = "PAID" if new_paid == Decimal(str(invoice.patient_amount)) else "PARTIALLY_PAID"
+
+    if requires_provider:
+        db.add(
+            IntegrationTransaction(
+                integration_id=integration.id,
+                transaction_id=payment.transaction_id,
+                entity_type="PAYMENT",
+                entity_id=payment.id,
+                direction="OUTBOUND",
+                request_reference=payment.transaction_id,
+                status="PENDING",
+                attempt_count=0,
+                response_data={},
+            )
+        )
+    else:
+        new_paid = paid + amount
+        invoice.status = "PAID" if new_paid == Decimal(str(invoice.patient_amount)) else "PARTIALLY_PAID"
+
     db.commit()
     db.refresh(payment)
-    record_audit(db, action="RECORD_PAYMENT", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "amount": str(amount), "invoice_id": str(invoice.id)})
+    record_audit(db, action="CREATE_PAYMENT" if requires_provider else "RECORD_PAYMENT", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "amount": str(amount), "invoice_id": str(invoice.id), "status": payment.status, "provider": provider})
     return payment
 
 
