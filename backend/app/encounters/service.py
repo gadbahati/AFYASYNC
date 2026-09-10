@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.encounters.models import Encounter
@@ -22,11 +22,8 @@ def _require_active_context(db: Session, patient_id: UUID, facility_id: UUID, de
 
 
 def _next_encounter_id(db: Session) -> str:
-    # Temporary development generator. A PostgreSQL sequence will replace this
-    # before concurrent production traffic is enabled.
-    count = db.scalar(select(Encounter.id).order_by(Encounter.created_at.desc()).limit(1))
-    number = 1 if count is None else (db.query(Encounter).count() + 1)
-    return f"ENC-{datetime.now(timezone.utc):%Y%m%d}-{number:05d}"
+    number = db.scalar(text("SELECT nextval('afasync_encounter_seq')"))
+    return f"ENC-{datetime.now(timezone.utc):%Y%m%d}-{int(number):05d}"
 
 
 def create_encounter(db: Session, data: dict, created_by: UUID) -> Encounter:
