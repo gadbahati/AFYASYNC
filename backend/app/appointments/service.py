@@ -1,11 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.appointments.models import Appointment, Queue, QueueEntry
-from app.encounters.models import Encounter
 from app.facilities.models import Department, Facility
 from app.patients.models import Person
 from app.rbac.models import Staff
@@ -50,7 +49,7 @@ def list_appointments(db: Session, facility_id: UUID, appointment_date: datetime
     stmt = select(Appointment).where(Appointment.facility_id == facility_id)
     if appointment_date:
         start = appointment_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start.replace(day=start.day) + __import__("datetime").timedelta(days=1)
+        end = start + timedelta(days=1)
         stmt = stmt.where(Appointment.appointment_at >= start, Appointment.appointment_at < end)
     return list(db.scalars(stmt.order_by(Appointment.appointment_at)))
 
@@ -72,15 +71,21 @@ def add_to_queue(db: Session, data: dict) -> QueueEntry:
 
     if data.get("appointment_id"):
         appointment = db.get(Appointment, data["appointment_id"])
-        if appointment is None or appointment.facility_id != queue.facility_id or appointment.patient_id != data["patient_id"]:
+        if (
+            appointment is None
+            or appointment.facility_id != queue.facility_id
+            or appointment.patient_id != data["patient_id"]
+        ):
             raise ValueError("INVALID_APPOINTMENT")
 
     duplicate = db.scalar(
-        select(QueueEntry.id).where(
+        select(QueueEntry.id)
+        .where(
             QueueEntry.queue_id == queue.id,
             QueueEntry.patient_id == data["patient_id"],
             QueueEntry.status.in_(["WAITING", "CALLED", "IN_SERVICE"]),
-        ).limit(1)
+        )
+        .limit(1)
     )
     if duplicate:
         raise ValueError("PATIENT_ALREADY_QUEUED")
