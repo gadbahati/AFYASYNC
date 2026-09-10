@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.billing.models import Charge, Invoice, InvoiceItem, Payment, Service
 from app.encounters.models import Encounter
 
@@ -18,7 +19,7 @@ def _invoice_number(db: Session) -> str:
     return f"INV-{datetime.now(timezone.utc):%Y%m%d}-{int(sequence):05d}"
 
 
-def create_charge(db: Session, facility_id: UUID, payload: dict) -> Charge:
+def create_charge(db: Session, facility_id: UUID, payload: dict, *, actor_user_id: UUID | None = None) -> Charge:
     encounter = db.get(Encounter, payload["encounter_id"])
     if encounter is None:
         raise BillingError("ENCOUNTER_NOT_FOUND")
@@ -30,21 +31,27 @@ def create_charge(db: Session, facility_id: UUID, payload: dict) -> Charge:
     if service.facility_id != facility_id:
         raise BillingError("FACILITY_ACCESS_DENIED")
     quantity = Decimal(str(payload["quantity"]))
+    if quantity <= 0:
+        raise BillingError("INVALID_QUANTITY")
     unit_price = Decimal(str(service.price))
     total = quantity * unit_price
     charge = Charge(charge_id=f"CHG-{uuid4().hex[:20].upper()}", encounter_id=encounter.id, patient_id=encounter.patient_id, facility_id=facility_id, service_id=service.id, quantity=quantity, unit_price=unit_price, total_amount=total, source_type=payload["source_type"], source_id=payload.get("source_id"))
     db.add(charge)
     db.commit()
     db.refresh(charge)
+    record_audit(db, action="CREATE_CHARGE", resource_type="CHARGE", resource_id=str(charge.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"charge_id": charge.charge_id, "amount": str(total)})
     return charge
 
 
-def create_invoice(db: Session, facility_id: UUID, encounter_id: UUID) -> Invoice:
+def create_invoice(db: Session, facility_id: UUID, encounter_id: UUID, *, actor_user_id: UUID | None = None) -> Invoice:
     encounter = db.get(Encounter, encounter_id)
     if encounter is None:
         raise BillingError("ENCOUNTER_NOT_FOUND")
     if encounter.facility_id != facility_id:
         raise BillingError("FACILITY_ACCESS_DENIED")
+    existing = db.scalar(select(Invoice).where(Invoice.encounter_id == encounter.id, Invoice.facility_id == facility_id, Invoice.status != "VOID").limit(1))
+    if existing:
+        raise BillingError("INVOICE_ALREADY_EXISTS")
     charges = list(db.scalars(select(Charge).where(Charge.encounter_id == encounter.id, Charge.facility_id == facility_id, Charge.status == "ACTIVE")))
     if not charges:
         raise BillingError("NO_CHARGES")
@@ -56,10 +63,11 @@ def create_invoice(db: Session, facility_id: UUID, encounter_id: UUID) -> Invoic
         db.add(InvoiceItem(invoice_id=invoice.id, charge_id=charge.id, description=f"Service {charge.service_id}", quantity=charge.quantity, unit_price=charge.unit_price, amount=charge.total_amount))
     db.commit()
     db.refresh(invoice)
+    record_audit(db, action="CREATE_INVOICE", resource_type="INVOICE", resource_id=str(invoice.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=invoice.patient_id, metadata={"invoice_id": invoice.invoice_id, "amount": str(invoice.total_amount)})
     return invoice
 
 
-def record_payment(db: Session, facility_id: UUID, payload: dict) -> Payment:
+def record_payment(db: Session, facility_id: UUID, payload: dict, *, actor_user_id: UUID | None = None) -> Payment:
     invoice = db.get(Invoice, payload["invoice_id"])
     if invoice is None:
         raise BillingError("INVOICE_NOT_FOUND")
@@ -70,7 +78,6 @@ def record_payment(db: Session, facility_id: UUID, payload: dict) -> Payment:
     amount = Decimal(str(payload["amount"]))
     if amount <= 0:
         raise BillingError("INVALID_PAYMENT_AMOUNT")
-
     idempotency_key = payload.get("idempotency_key")
     transaction_id = f"AFY-TXN-{idempotency_key}" if idempotency_key else f"AFY-TXN-{uuid4().hex.upper()}"
     existing = db.scalar(select(Payment).where(Payment.transaction_id == transaction_id).limit(1))
@@ -78,7 +85,6 @@ def record_payment(db: Session, facility_id: UUID, payload: dict) -> Payment:
         if existing.invoice_id != invoice.id or Decimal(str(existing.amount)) != amount:
             raise BillingError("IDEMPOTENCY_KEY_REUSED")
         return existing
-
     paid = sum((Decimal(str(p.amount)) for p in db.scalars(select(Payment).where(Payment.invoice_id == invoice.id, Payment.status == "CONFIRMED"))), Decimal("0"))
     if paid + amount > Decimal(str(invoice.patient_amount)):
         raise BillingError("PAYMENT_EXCEEDS_BALANCE")
@@ -89,4 +95,5 @@ def record_payment(db: Session, facility_id: UUID, payload: dict) -> Payment:
     invoice.status = "PAID" if new_paid == Decimal(str(invoice.patient_amount)) else "PARTIALLY_PAID"
     db.commit()
     db.refresh(payment)
+    record_audit(db, action="RECORD_PAYMENT", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "amount": str(amount), "invoice_id": str(invoice.id)})
     return payment
