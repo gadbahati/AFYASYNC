@@ -5,9 +5,12 @@ from sqlalchemy import engine_from_config, pool
 
 from app.config import settings
 from app.database import Base
+from app.coverage import models as coverage_models
+from app.facilities import models as facility_models
 from app.patients import models as patient_models
+from app.rbac import models as rbac_models
 
-_ = patient_models
+_ = patient_models, coverage_models, facility_models, rbac_models
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
