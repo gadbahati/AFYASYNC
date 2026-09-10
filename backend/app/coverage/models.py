@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, func
+from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +22,7 @@ class Payer(Base):
 
     plans: Mapped[list["PayerPlan"]] = relationship(back_populates="payer")
     coverages: Mapped[list["Coverage"]] = relationship(back_populates="payer")
+    benefit_rules: Mapped[list["PayerBenefitRule"]] = relationship(back_populates="payer")
 
 
 class PayerPlan(Base):
@@ -36,6 +37,7 @@ class PayerPlan(Base):
 
     payer: Mapped[Payer] = relationship(back_populates="plans")
     coverages: Mapped[list["Coverage"]] = relationship(back_populates="payer_plan")
+    benefit_rules: Mapped[list["PayerBenefitRule"]] = relationship(back_populates="payer_plan")
 
 
 class Coverage(Base):
@@ -55,3 +57,23 @@ class Coverage(Base):
 
     payer: Mapped[Payer] = relationship(back_populates="coverages")
     payer_plan: Mapped[PayerPlan | None] = relationship(back_populates="coverages")
+
+
+class PayerBenefitRule(Base):
+    __tablename__ = "payer_benefit_rules"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    payer_id: Mapped[UUID] = mapped_column(ForeignKey("payers.id", ondelete="RESTRICT"), nullable=False, index=True)
+    payer_plan_id: Mapped[UUID | None] = mapped_column(ForeignKey("payer_plans.id", ondelete="RESTRICT"), index=True)
+    service_code: Mapped[str | None] = mapped_column(String(80), index=True)
+    service_type: Mapped[str | None] = mapped_column(String(60), index=True)
+    payer_percent: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=100)
+    fixed_patient_copay: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    max_covered_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    effective_from: Mapped[date | None] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="ACTIVE", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    payer: Mapped[Payer] = relationship(back_populates="benefit_rules")
+    payer_plan: Mapped[PayerPlan | None] = relationship(back_populates="benefit_rules")
