@@ -110,17 +110,24 @@ def validate_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user
 
 
 def _find_payer_submission_integration(db: Session, facility_id: UUID, payer: Payer) -> Integration | None:
-    return db.scalar(
-        select(Integration)
-        .where(
-            Integration.facility_id == facility_id,
-            Integration.status == "ACTIVE",
-            Integration.integration_type.in_(["PAYER_CLAIMS", "CLAIMS"]),
-            Integration.provider == payer.code,
-        )
-        .order_by(Integration.created_at.desc())
-        .limit(1)
-    )
+    return db.scalar(select(Integration).where(Integration.facility_id == facility_id, Integration.status == "ACTIVE", Integration.integration_type.in_(["PAYER_CLAIMS", "CLAIMS"]), Integration.provider == payer.code).order_by(Integration.created_at.desc()).limit(1))
+
+
+def build_claim_submission_payload(db: Session, claim_id: UUID, facility_id: UUID) -> dict:
+    claim = db.get(Claim, claim_id)
+    if claim is None:
+        raise ClaimsError("CLAIM_NOT_FOUND")
+    invoice = db.get(Invoice, claim.invoice_id)
+    if invoice is None or invoice.facility_id != facility_id:
+        raise ClaimsError("FACILITY_ACCESS_DENIED")
+    payer = db.get(Payer, claim.payer_id)
+    if payer is None:
+        raise ClaimsError("PAYER_NOT_FOUND")
+    encounter = db.get(Encounter, claim.encounter_id)
+    if encounter is None or encounter.facility_id != facility_id or encounter.patient_id != claim.patient_id:
+        raise ClaimsError("ENCOUNTER_MISMATCH")
+    items = list(db.scalars(select(ClaimItem).where(ClaimItem.claim_id == claim.id)))
+    return {"claim_id": claim.claim_id, "invoice_id": str(invoice.id), "encounter_id": str(encounter.id), "patient_id": str(claim.patient_id), "payer_id": str(payer.id), "payer_code": payer.code, "claim_amount": str(claim.claim_amount), "items": [{"service_code": item.service_code, "quantity": str(item.quantity), "amount": str(item.amount), "charge_id": str(item.charge_id)} for item in items]}
 
 
 def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
@@ -141,16 +148,7 @@ def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_i
     if integration is None:
         raise ClaimsError("PAYER_INTEGRATION_NOT_CONFIGURED")
     try:
-        queue_transaction(
-            db,
-            facility_id,
-            integration.id,
-            claim.claim_id,
-            "CLAIM",
-            claim.id,
-            "OUTBOUND",
-            claim.claim_id,
-        )
+        queue_transaction(db, facility_id, integration.id, claim.claim_id, "CLAIM", claim.id, "OUTBOUND", claim.claim_id)
     except IntegrationError as exc:
         db.rollback()
         raise ClaimsError(str(exc)) from exc
@@ -174,13 +172,7 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
     if invoice is None or invoice.facility_id != facility_id:
         raise ClaimsError("FACILITY_ACCESS_DENIED")
     current = claim.status
-    valid_previous = {
-        "ACCEPTED": {"SUBMITTED", "UNDER_REVIEW"},
-        "UNDER_REVIEW": {"SUBMITTED", "UNDER_REVIEW"},
-        "REJECTED": {"SUBMITTED", "UNDER_REVIEW", "REJECTED"},
-        "PARTIALLY_PAID": {"ACCEPTED", "UNDER_REVIEW", "PARTIALLY_PAID"},
-        "PAID": {"ACCEPTED", "PARTIALLY_PAID", "PAID"},
-    }
+    valid_previous = {"ACCEPTED": {"SUBMITTED", "UNDER_REVIEW"}, "UNDER_REVIEW": {"SUBMITTED", "UNDER_REVIEW"}, "REJECTED": {"SUBMITTED", "UNDER_REVIEW", "REJECTED"}, "PARTIALLY_PAID": {"ACCEPTED", "UNDER_REVIEW", "PARTIALLY_PAID"}, "PAID": {"ACCEPTED", "PARTIALLY_PAID", "PAID"}}
     if current not in valid_previous.get(status, set()):
         raise ClaimsError("CLAIM_RESPONSE_NOT_ALLOWED")
     if approved_amount is not None and (approved_amount < 0 or approved_amount > claim.claim_amount):
