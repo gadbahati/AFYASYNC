@@ -1,3 +1,4 @@
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -40,3 +41,11 @@ class TransactionOut(BaseModel):
     response_data: dict
 
     model_config = {"from_attributes": True}
+
+
+class PayerCallbackCreate(BaseModel):
+    status: str = Field(min_length=2, max_length=30)
+    response_code: str | None = Field(default=None, max_length=80)
+    response_message: str | None = Field(default=None, max_length=500)
+    external_reference: str = Field(min_length=1, max_length=150)
+    approved_amount: Decimal | None = Field(default=None, ge=0)
