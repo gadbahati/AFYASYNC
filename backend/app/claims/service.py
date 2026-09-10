@@ -20,20 +20,18 @@ def _claim_number() -> str:
     return f"CLM-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}"
 
 
-def _verified_current_coverage(db: Session, patient_id: UUID) -> Coverage | None:
+def _verified_current_coverage(db: Session, patient_id: UUID, payer_id: UUID | None = None) -> Coverage | None:
     today = date.today()
-    return db.scalar(
-        select(Coverage)
-        .where(
-            Coverage.person_id == patient_id,
-            Coverage.status == "ACTIVE",
-            Coverage.verification_status == "VERIFIED",
-            (Coverage.start_date.is_(None) | (Coverage.start_date <= today)),
-            (Coverage.end_date.is_(None) | (Coverage.end_date >= today)),
-        )
-        .order_by(Coverage.created_at.desc())
-        .limit(1)
-    )
+    filters = [
+        Coverage.person_id == patient_id,
+        Coverage.status == "ACTIVE",
+        Coverage.verification_status == "VERIFIED",
+        (Coverage.start_date.is_(None) | (Coverage.start_date <= today)),
+        (Coverage.end_date.is_(None) | (Coverage.end_date >= today)),
+    ]
+    if payer_id is not None:
+        filters.append(Coverage.payer_id == payer_id)
+    return db.scalar(select(Coverage).where(*filters).order_by(Coverage.created_at.desc()).limit(1))
 
 
 def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
@@ -44,44 +42,44 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
         raise ClaimsError("FACILITY_ACCESS_DENIED")
     if invoice.status == "VOID":
         raise ClaimsError("INVOICE_VOID")
+    if invoice.payer_id is None or invoice.coverage_id is None:
+        raise ClaimsError("PAYER_COVERAGE_REQUIRED")
     encounter = db.get(Encounter, invoice.encounter_id)
     if encounter is None or encounter.facility_id != facility_id or encounter.patient_id != invoice.patient_id:
         raise ClaimsError("ENCOUNTER_MISMATCH")
     existing = db.scalar(select(Claim).where(Claim.invoice_id == invoice.id).limit(1))
     if existing:
         raise ClaimsError("CLAIM_ALREADY_EXISTS")
-    coverage = _verified_current_coverage(db, invoice.patient_id)
-    if coverage is None:
+    coverage = db.get(Coverage, invoice.coverage_id)
+    if coverage is None or coverage.person_id != invoice.patient_id or coverage.payer_id != invoice.payer_id or coverage.status != "ACTIVE" or coverage.verification_status != "VERIFIED" or (coverage.start_date and coverage.start_date > date.today()) or (coverage.end_date and coverage.end_date < date.today()):
         raise ClaimsError("VERIFIED_COVERAGE_REQUIRED")
-    payer = db.get(Payer, coverage.payer_id)
+    payer = db.get(Payer, invoice.payer_id)
     if payer is None or payer.status != "ACTIVE":
         raise ClaimsError("PAYER_NOT_ACTIVE")
     items = list(db.scalars(select(InvoiceItem).where(InvoiceItem.invoice_id == invoice.id)))
     if not items:
         raise ClaimsError("CLAIM_ITEMS_REQUIRED")
-    claim_amount = Decimal(str(invoice.payer_amount))
-    if claim_amount <= 0:
-        raise ClaimsError("CLAIM_AMOUNT_INVALID")
-
-    claimable_total = Decimal("0")
-    claim = Claim(claim_id=_claim_number(), invoice_id=invoice.id, encounter_id=encounter.id, patient_id=invoice.patient_id, payer_id=payer.id, claim_amount=claim_amount)
+    claim = Claim(claim_id=_claim_number(), invoice_id=invoice.id, encounter_id=encounter.id, patient_id=invoice.patient_id, payer_id=payer.id, claim_amount=Decimal("0"))
     db.add(claim)
     db.flush()
+    claim_amount = Decimal("0")
     for item in items:
+        payer_amount = Decimal(str(item.payer_amount)).quantize(Decimal("0.01"))
+        if payer_amount <= 0:
+            continue
         charge = db.get(Charge, item.charge_id)
         if charge is None or charge.facility_id != facility_id or charge.encounter_id != encounter.id or charge.patient_id != invoice.patient_id:
             raise ClaimsError("CHARGE_NOT_FOUND")
         service = db.get(Service, charge.service_id)
         if service is None or service.facility_id != facility_id:
             raise ClaimsError("SERVICE_NOT_FOUND")
-        item_payer_amount = Decimal(str(item.payer_amount)).quantize(Decimal("0.01"))
-        if item_payer_amount <= 0:
-            continue
-        claimable_total += item_payer_amount
-        db.add(ClaimItem(claim_id=claim.id, charge_id=charge.id, service_code=service.code, quantity=charge.quantity, amount=item_payer_amount))
-
-    if claimable_total != claim_amount:
-        raise ClaimsError("CLAIM_AMOUNT_MISMATCH")
+        db.add(ClaimItem(claim_id=claim.id, charge_id=charge.id, service_code=service.code, quantity=charge.quantity, amount=payer_amount))
+        claim_amount += payer_amount
+    if claim_amount <= 0:
+        raise ClaimsError("CLAIM_AMOUNT_INVALID")
+    if claim_amount != Decimal(str(invoice.payer_amount)).quantize(Decimal("0.01")):
+        raise ClaimsError("CLAIM_INVOICE_TOTAL_MISMATCH")
+    claim.claim_amount = claim_amount
     invoice.status = "CLAIM_PENDING"
     db.commit()
     db.refresh(claim)
@@ -101,18 +99,12 @@ def validate_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user
         errors.append("CLAIM_NOT_VALIDATABLE")
     if claim.claim_amount <= 0:
         errors.append("CLAIM_AMOUNT_INVALID")
-    if not list(db.scalars(select(ClaimItem).where(ClaimItem.claim_id == claim.id))):
+    items = list(db.scalars(select(ClaimItem).where(ClaimItem.claim_id == claim.id)))
+    if not items:
         errors.append("CLAIM_ITEMS_REQUIRED")
-    coverage = db.scalar(
-        select(Coverage).where(
-            Coverage.person_id == claim.patient_id,
-            Coverage.payer_id == claim.payer_id,
-            Coverage.status == "ACTIVE",
-            Coverage.verification_status == "VERIFIED",
-            (Coverage.start_date.is_(None) | (Coverage.start_date <= date.today())),
-            (Coverage.end_date.is_(None) | (Coverage.end_date >= date.today())),
-        ).limit(1)
-    )
+    elif sum((Decimal(str(item.amount)) for item in items), Decimal("0")) != Decimal(str(claim.claim_amount)):
+        errors.append("CLAIM_ITEM_TOTAL_MISMATCH")
+    coverage = _verified_current_coverage(db, claim.patient_id, claim.payer_id)
     if coverage is None:
         errors.append("VERIFIED_COVERAGE_REQUIRED")
     claim.status = "DRAFT" if errors else "READY"
@@ -153,10 +145,10 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
         raise ClaimsError("FACILITY_ACCESS_DENIED")
     if status in {"ACCEPTED", "UNDER_REVIEW", "REJECTED"} and claim.status not in {"SUBMITTED", "UNDER_REVIEW", "REJECTED"}:
         raise ClaimsError("CLAIM_RESPONSE_NOT_ALLOWED")
-    if approved_amount is not None and approved_amount < 0:
+    if approved_amount is not None and (approved_amount < 0 or approved_amount > claim.claim_amount):
         raise ClaimsError("INVALID_APPROVED_AMOUNT")
-    if approved_amount is not None and approved_amount > claim.claim_amount:
-        raise ClaimsError("APPROVED_AMOUNT_EXCEEDS_CLAIM")
+    if status in {"PAID", "PARTIALLY_PAID"} and approved_amount is None:
+        raise ClaimsError("APPROVED_AMOUNT_REQUIRED")
     if approved_amount is not None:
         claim.approved_amount = approved_amount
     claim.status = status
@@ -182,11 +174,13 @@ def reconcile_claim(db: Session, claim_id: UUID, facility_id: UUID, staff_id: UU
     if received_amount < 0:
         raise ClaimsError("INVALID_RECEIVED_AMOUNT")
     expected = claim.approved_amount if claim.approved_amount > 0 else claim.claim_amount
+    if received_amount > expected:
+        raise ClaimsError("RECEIVED_AMOUNT_EXCEEDS_EXPECTED")
     difference = received_amount - expected
-    status = "MATCHED" if difference == 0 else "PARTIAL" if difference < 0 else "OVERPAID"
+    status = "MATCHED" if difference == 0 else "PARTIAL"
     reconciliation = Reconciliation(claim_id=claim.id, expected_amount=expected, received_amount=received_amount, difference=difference, status=status, reconciled_by=staff_id, reconciled_at=datetime.now(timezone.utc))
     claim.paid_amount = received_amount
-    claim.status = "PAID" if received_amount >= expected else "PARTIALLY_PAID"
+    claim.status = "PAID" if received_amount == expected else "PARTIALLY_PAID"
     db.add(reconciliation)
     db.commit()
     db.refresh(reconciliation)
