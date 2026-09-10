@@ -10,7 +10,7 @@ from app.billing.models import Charge, Invoice, InvoiceItem, Service
 from app.claims.models import Claim, ClaimItem, ClaimResponse, Reconciliation
 from app.coverage.models import Coverage, Payer
 from app.encounters.models import Encounter
-from app.integrations.models import Integration
+from app.integrations.models import Integration, IntegrationTransaction
 from app.integrations.service import IntegrationError, queue_transaction
 
 
@@ -193,6 +193,55 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
     db.refresh(claim)
     record_audit(db, action="RECORD_PAYER_RESPONSE", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"status": status, "external_reference": external_reference})
     return claim
+
+
+def process_payer_callback(db: Session, facility_id: UUID, integration_id: UUID, claim_id: UUID, status: str, response_code: str | None, response_message: str | None, external_reference: str, approved_amount: Decimal | None, *, actor_user_id: UUID | None = None) -> Claim:
+    """Apply an authorised payer callback to the matching outbound claim transaction.
+
+    The integration transport result is kept separate from the payer business decision.
+    A callback is accepted only for an active, facility-scoped payer-claims integration
+    and the exact outbound transaction created for this claim.
+    """
+    if not external_reference:
+        raise ClaimsError("PAYER_EXTERNAL_REFERENCE_REQUIRED")
+    integration = db.get(Integration, integration_id)
+    if integration is None or integration.facility_id != facility_id:
+        raise ClaimsError("INTEGRATION_NOT_FOUND")
+    if integration.status != "ACTIVE":
+        raise ClaimsError("INTEGRATION_NOT_ACTIVE")
+    if integration.integration_type not in {"PAYER_CLAIMS", "CLAIMS"}:
+        raise ClaimsError("INVALID_PAYER_INTEGRATION")
+
+    claim = db.get(Claim, claim_id)
+    if claim is None:
+        raise ClaimsError("CLAIM_NOT_FOUND")
+    if claim.payer_id is None:
+        raise ClaimsError("PAYER_NOT_ACTIVE")
+    payer = db.get(Payer, claim.payer_id)
+    if payer is None or payer.status != "ACTIVE" or integration.provider != payer.code:
+        raise ClaimsError("PAYER_INTEGRATION_MISMATCH")
+
+    transaction = db.scalar(select(IntegrationTransaction).where(IntegrationTransaction.integration_id == integration.id, IntegrationTransaction.entity_type == "CLAIM", IntegrationTransaction.entity_id == claim.id, IntegrationTransaction.direction == "OUTBOUND", IntegrationTransaction.request_reference == claim.claim_id).order_by(IntegrationTransaction.created_at.desc()).limit(1))
+    if transaction is None:
+        raise ClaimsError("INTEGRATION_TRANSACTION_NOT_FOUND")
+
+    duplicate = db.scalar(select(ClaimResponse.id).where(ClaimResponse.claim_id == claim.id, ClaimResponse.external_reference == external_reference).limit(1))
+    if duplicate is not None:
+        raise ClaimsError("DUPLICATE_PAYER_RESPONSE")
+
+    transaction.status = "SUCCEEDED"
+    transaction.external_reference = external_reference
+    transaction.response_code = response_code
+    transaction.response_data = {"status": status, "response_message": response_message, "approved_amount": str(approved_amount) if approved_amount is not None else None}
+    db.flush()
+
+    try:
+        result = record_payer_response(db, claim_id, facility_id, status, response_code, response_message, external_reference, approved_amount, actor_user_id=actor_user_id)
+    except Exception:
+        db.rollback()
+        raise
+    record_audit(db, action="PROCESS_PAYER_CALLBACK", resource_type="INTEGRATION_TRANSACTION", resource_id=str(transaction.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=result.patient_id, metadata={"claim_id": result.claim_id, "integration_id": str(integration.id), "external_reference": external_reference, "payer_status": status})
+    return result
 
 
 def reconcile_claim(db: Session, claim_id: UUID, facility_id: UUID, staff_id: UUID, received_amount: Decimal, *, actor_user_id: UUID | None = None) -> Reconciliation:
