@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 
@@ -10,3 +12,12 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class FacilityOption(BaseModel):
+    facility_id: UUID
+    facility_name: str
+
+
+class FacilitySelectionRequest(BaseModel):
+    facility_id: UUID
