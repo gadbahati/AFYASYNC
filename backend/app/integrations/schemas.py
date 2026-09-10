@@ -12,11 +12,11 @@ class IntegrationCreate(BaseModel):
 
 class IntegrationOut(BaseModel):
     id: UUID
+    facility_id: UUID
     name: str
     integration_type: str
     provider: str
     status: str
-    configuration: dict
 
     model_config = {"from_attributes": True}
 
