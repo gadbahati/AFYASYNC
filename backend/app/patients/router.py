@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import require_permission
 from app.database import get_db
 from app.patients.schemas import PatientCreate, PatientResponse, PatientSearchResult
 from app.patients.service import create_patient, search_patients
+from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/patients", tags=["Patients"])
 
@@ -38,6 +40,7 @@ def register_patient(payload: PatientCreate, db: Session = Depends(get_db)) -> P
 def search_patient_records(
     q: str = Query(min_length=2, max_length=100),
     limit: int = Query(default=20, ge=1, le=50),
+    _: User = Depends(require_permission("patients.search")),
     db: Session = Depends(get_db),
 ) -> list[PatientSearchResult]:
     results = search_patients(db, q, limit)
