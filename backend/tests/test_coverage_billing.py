@@ -56,7 +56,7 @@ def test_invoice_without_coverage_assigns_full_patient_responsibility() -> None:
     facility_id = uuid4()
     encounter = SimpleNamespace(id=uuid4(), facility_id=facility_id, patient_id=uuid4())
     charge = SimpleNamespace(id=uuid4(), total_amount=Decimal("150.00"), quantity=1, unit_price=Decimal("150.00"), service_id=uuid4(), created_at=None)
-    service = SimpleNamespace(id=charge.service_id, code="CONSULT", name="Consultation", service_type="CONSULTATION", price=Decimal("150.00"))
+    service = SimpleNamespace(id=charge.service_id, facility_id=facility_id, code="CONSULT", name="Consultation", service_type="CONSULTATION", price=Decimal("150.00"))
     db = MagicMock()
     db.get.side_effect = [encounter, service]
     db.scalar.side_effect = [None, False]
