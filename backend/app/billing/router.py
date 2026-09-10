@@ -16,12 +16,12 @@ router = APIRouter(prefix="/api/v1/billing", tags=["Billing"])
 
 
 def _error(exc: BillingError) -> HTTPException:
-    mapping = {"ENCOUNTER_NOT_FOUND": 404, "SERVICE_NOT_FOUND": 404, "INVOICE_NOT_FOUND": 404, "NO_CHARGES": 409, "INVOICE_ALREADY_PAID": 409, "PAYMENT_EXCEEDS_BALANCE": 409, "INVALID_PAYMENT_AMOUNT": 400, "FACILITY_ACCESS_DENIED": 403, "IDEMPOTENCY_KEY_REUSED": 409}
+    mapping = {"ENCOUNTER_NOT_FOUND": 404, "SERVICE_NOT_FOUND": 404, "INVOICE_NOT_FOUND": 404, "NO_CHARGES": 409, "INVOICE_ALREADY_EXISTS": 409, "INVOICE_ALREADY_PAID": 409, "PAYMENT_EXCEEDS_BALANCE": 409, "INVALID_PAYMENT_AMOUNT": 400, "INVALID_QUANTITY": 400, "FACILITY_ACCESS_DENIED": 403, "IDEMPOTENCY_KEY_REUSED": 409}
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
 
 @router.post("/services", response_model=ServiceResponse, status_code=201)
-def add_service(payload: ServiceCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(BILLING_SERVICE_WRITE))):
+def add_service(payload: ServiceCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_SERVICE_WRITE))):
     existing = db.scalar(select(Service).where(Service.facility_id == facility_id, Service.code == payload.code))
     if existing:
         raise HTTPException(status_code=409, detail="SERVICE_CODE_EXISTS")
@@ -33,28 +33,28 @@ def add_service(payload: ServiceCreate, db: Session = Depends(get_db), facility_
 
 
 @router.post("/charges", response_model=ChargeResponse, status_code=201)
-def add_charge(payload: ChargeCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(BILLING_CHARGE_WRITE))):
+def add_charge(payload: ChargeCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_CHARGE_WRITE))):
     try:
-        return create_charge(db, facility_id, payload.model_dump())
+        return create_charge(db, facility_id, payload.model_dump(), actor_user_id=user.id)
     except BillingError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/encounters/{encounter_id}/invoice", response_model=InvoiceResponse, status_code=201)
-def make_invoice(encounter_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(BILLING_INVOICE_WRITE))):
+def make_invoice(encounter_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_INVOICE_WRITE))):
     try:
-        return create_invoice(db, facility_id, encounter_id)
+        return create_invoice(db, facility_id, encounter_id, actor_user_id=user.id)
     except BillingError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/payments", response_model=PaymentResponse, status_code=201)
-def pay(payload: PaymentCreate, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(BILLING_PAYMENT_WRITE))):
+def pay(payload: PaymentCreate, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_PAYMENT_WRITE))):
     if idempotency_key is not None and not 1 <= len(idempotency_key) <= 100:
         raise HTTPException(status_code=400, detail="INVALID_IDEMPOTENCY_KEY")
     data = payload.model_dump()
     data["idempotency_key"] = idempotency_key
     try:
-        return record_payment(db, facility_id, data)
+        return record_payment(db, facility_id, data, actor_user_id=user.id)
     except BillingError as exc:
         raise _error(exc) from exc
