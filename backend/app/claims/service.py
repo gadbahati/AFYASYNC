@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -20,19 +20,37 @@ def _claim_number() -> str:
     return f"CLM-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}"
 
 
+def _verified_current_coverage(db: Session, patient_id: UUID) -> Coverage | None:
+    today = date.today()
+    return db.scalar(
+        select(Coverage)
+        .where(
+            Coverage.person_id == patient_id,
+            Coverage.status == "ACTIVE",
+            Coverage.verification_status == "VERIFIED",
+            (Coverage.start_date.is_(None) | (Coverage.start_date <= today)),
+            (Coverage.end_date.is_(None) | (Coverage.end_date >= today)),
+        )
+        .order_by(Coverage.created_at.desc())
+        .limit(1)
+    )
+
+
 def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
     invoice = db.get(Invoice, invoice_id)
     if invoice is None:
         raise ClaimsError("INVOICE_NOT_FOUND")
     if invoice.facility_id != facility_id:
         raise ClaimsError("FACILITY_ACCESS_DENIED")
+    if invoice.status == "VOID":
+        raise ClaimsError("INVOICE_VOID")
     encounter = db.get(Encounter, invoice.encounter_id)
     if encounter is None or encounter.facility_id != facility_id or encounter.patient_id != invoice.patient_id:
         raise ClaimsError("ENCOUNTER_MISMATCH")
     existing = db.scalar(select(Claim).where(Claim.invoice_id == invoice.id).limit(1))
     if existing:
         raise ClaimsError("CLAIM_ALREADY_EXISTS")
-    coverage = db.scalar(select(Coverage).where(Coverage.person_id == invoice.patient_id, Coverage.status == "ACTIVE", Coverage.verification_status == "VERIFIED").order_by(Coverage.created_at.desc()).limit(1))
+    coverage = _verified_current_coverage(db, invoice.patient_id)
     if coverage is None:
         raise ClaimsError("VERIFIED_COVERAGE_REQUIRED")
     payer = db.get(Payer, coverage.payer_id)
@@ -41,12 +59,17 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
     items = list(db.scalars(select(InvoiceItem).where(InvoiceItem.invoice_id == invoice.id)))
     if not items:
         raise ClaimsError("CLAIM_ITEMS_REQUIRED")
-    claim = Claim(claim_id=_claim_number(), invoice_id=invoice.id, encounter_id=encounter.id, patient_id=invoice.patient_id, payer_id=payer.id, claim_amount=invoice.payer_amount or invoice.total_amount)
+    claim_amount = Decimal(str(invoice.payer_amount))
+    if claim_amount <= 0:
+        claim_amount = Decimal(str(invoice.total_amount))
+    if claim_amount <= 0:
+        raise ClaimsError("CLAIM_AMOUNT_INVALID")
+    claim = Claim(claim_id=_claim_number(), invoice_id=invoice.id, encounter_id=encounter.id, patient_id=invoice.patient_id, payer_id=payer.id, claim_amount=claim_amount)
     db.add(claim)
     db.flush()
     for item in items:
         charge = db.get(Charge, item.charge_id)
-        if charge is None or charge.facility_id != facility_id or charge.encounter_id != encounter.id:
+        if charge is None or charge.facility_id != facility_id or charge.encounter_id != encounter.id or charge.patient_id != invoice.patient_id:
             raise ClaimsError("CHARGE_NOT_FOUND")
         service = db.get(Service, charge.service_id)
         if service is None or service.facility_id != facility_id:
@@ -55,7 +78,7 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
     invoice.status = "CLAIM_PENDING"
     db.commit()
     db.refresh(claim)
-    record_audit(db, action="CREATE_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "amount": str(claim.claim_amount)})
+    record_audit(db, action="CREATE_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "amount": str(claim.claim_amount), "payer_id": str(payer.id)})
     return claim
 
 
@@ -73,7 +96,16 @@ def validate_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user
         errors.append("CLAIM_AMOUNT_INVALID")
     if not list(db.scalars(select(ClaimItem).where(ClaimItem.claim_id == claim.id))):
         errors.append("CLAIM_ITEMS_REQUIRED")
-    coverage = db.scalar(select(Coverage).where(Coverage.person_id == claim.patient_id, Coverage.payer_id == claim.payer_id, Coverage.status == "ACTIVE", Coverage.verification_status == "VERIFIED").limit(1))
+    coverage = db.scalar(
+        select(Coverage).where(
+            Coverage.person_id == claim.patient_id,
+            Coverage.payer_id == claim.payer_id,
+            Coverage.status == "ACTIVE",
+            Coverage.verification_status == "VERIFIED",
+            (Coverage.start_date.is_(None) | (Coverage.start_date <= date.today())),
+            (Coverage.end_date.is_(None) | (Coverage.end_date >= date.today())),
+        ).limit(1)
+    )
     if coverage is None:
         errors.append("VERIFIED_COVERAGE_REQUIRED")
     claim.status = "DRAFT" if errors else "READY"
@@ -116,6 +148,8 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
         raise ClaimsError("CLAIM_RESPONSE_NOT_ALLOWED")
     if approved_amount is not None and approved_amount < 0:
         raise ClaimsError("INVALID_APPROVED_AMOUNT")
+    if approved_amount is not None and approved_amount > claim.claim_amount:
+        raise ClaimsError("APPROVED_AMOUNT_EXCEEDS_CLAIM")
     if approved_amount is not None:
         claim.approved_amount = approved_amount
     claim.status = status
