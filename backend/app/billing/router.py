@@ -22,6 +22,7 @@ def _error(exc: BillingError) -> HTTPException:
         "PAYMENT_EXCEEDS_BALANCE": 409, "INVALID_PAYMENT_AMOUNT": 400, "INVALID_QUANTITY": 400,
         "FACILITY_ACCESS_DENIED": 403, "IDEMPOTENCY_KEY_REUSED": 409,
         "COVERAGE_NOT_VERIFIED": 409, "COVERAGE_RULE_NOT_CONFIGURED": 409,
+        "PAYMENT_PROVIDER_REQUIRED": 400, "PAYMENT_INTEGRATION_NOT_CONFIGURED": 409,
     }
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
