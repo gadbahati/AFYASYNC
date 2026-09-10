@@ -10,6 +10,8 @@ from app.billing.models import Charge, Invoice, InvoiceItem, Service
 from app.claims.models import Claim, ClaimItem, ClaimResponse, Reconciliation
 from app.coverage.models import Coverage, Payer
 from app.encounters.models import Encounter
+from app.integrations.models import Integration
+from app.integrations.service import IntegrationError, queue_transaction
 
 
 class ClaimsError(ValueError):
@@ -107,6 +109,20 @@ def validate_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user
     return errors
 
 
+def _find_payer_submission_integration(db: Session, facility_id: UUID, payer: Payer) -> Integration | None:
+    return db.scalar(
+        select(Integration)
+        .where(
+            Integration.facility_id == facility_id,
+            Integration.status == "ACTIVE",
+            Integration.integration_type.in_(["PAYER_CLAIMS", "CLAIMS"]),
+            Integration.provider == payer.code,
+        )
+        .order_by(Integration.created_at.desc())
+        .limit(1)
+    )
+
+
 def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
     claim = db.get(Claim, claim_id)
     if claim is None:
@@ -118,12 +134,32 @@ def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_i
         return claim
     if claim.status != "READY":
         raise ClaimsError("CLAIM_NOT_READY")
+    payer = db.get(Payer, claim.payer_id)
+    if payer is None or payer.status != "ACTIVE":
+        raise ClaimsError("PAYER_NOT_ACTIVE")
+    integration = _find_payer_submission_integration(db, facility_id, payer)
+    if integration is None:
+        raise ClaimsError("PAYER_INTEGRATION_NOT_CONFIGURED")
+    try:
+        queue_transaction(
+            db,
+            facility_id,
+            integration.id,
+            claim.claim_id,
+            "CLAIM",
+            claim.id,
+            "OUTBOUND",
+            claim.claim_id,
+        )
+    except IntegrationError as exc:
+        db.rollback()
+        raise ClaimsError(str(exc)) from exc
     claim.status = "SUBMITTED"
     claim.submitted_at = datetime.now(timezone.utc)
     db.add(ClaimResponse(claim_id=claim.id, status="SUBMITTED", response_message="Queued for authorised payer submission"))
     db.commit()
     db.refresh(claim)
-    record_audit(db, action="SUBMIT_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id})
+    record_audit(db, action="SUBMIT_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "integration_id": str(integration.id)})
     return claim
 
 
