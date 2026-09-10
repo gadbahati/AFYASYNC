@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.encounters.models import Encounter
 from app.pharmacy.models import InventoryBatch, InventoryItem, MedicationAction, Prescription, PrescriptionItem, StockMovement
 
@@ -21,7 +22,12 @@ def _open_encounter(db: Session, encounter_id: UUID) -> Encounter:
     return encounter
 
 
-def dispense_prescription(db: Session, prescription_id: UUID, staff_id: UUID) -> list[StockMovement]:
+def _audit(db: Session, *, action: str, resource_type: str, resource_id: UUID, actor_user_id: UUID | None, facility_id: UUID, patient_id: UUID | None = None, metadata: dict | None = None) -> None:
+    if actor_user_id:
+        record_audit(db, action=action, resource_type=resource_type, resource_id=str(resource_id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=patient_id, metadata=metadata)
+
+
+def dispense_prescription(db: Session, prescription_id: UUID, staff_id: UUID, *, actor_user_id: UUID | None = None) -> list[StockMovement]:
     prescription = db.get(Prescription, prescription_id)
     if prescription is None:
         raise PharmacyError("PRESCRIPTION_NOT_FOUND")
@@ -88,6 +94,7 @@ def dispense_prescription(db: Session, prescription_id: UUID, staff_id: UUID) ->
 
         prescription.status = "DISPENSED"
         db.commit()
+        _audit(db, action="PHARMACY_PRESCRIPTION_DISPENSED", resource_type="PRESCRIPTION", resource_id=prescription.id, actor_user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"movement_count": len(movements)})
         return movements
     except Exception:
         db.rollback()
