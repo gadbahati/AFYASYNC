@@ -1,12 +1,14 @@
 from fastapi import FastAPI
 
 from app.config import settings
+from app.coverage import models as coverage_models
+from app.coverage.router import router as coverage_router
 from app.database import Base, engine
 from app.patients import models as patient_models
 from app.patients.router import router as patients_router
 
 # Import models before metadata creation so SQLAlchemy knows all tables.
-_ = patient_models
+_ = patient_models, coverage_models
 
 app = FastAPI(
     title=settings.app_name,
@@ -26,6 +28,7 @@ def initialize_database() -> None:
 
 
 app.include_router(patients_router)
+app.include_router(coverage_router)
 
 
 @app.get("/health", tags=["System"])
