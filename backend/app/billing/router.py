@@ -16,7 +16,21 @@ router = APIRouter(prefix="/api/v1/billing", tags=["Billing"])
 
 
 def _error(exc: BillingError) -> HTTPException:
-    mapping = {"ENCOUNTER_NOT_FOUND": 404, "SERVICE_NOT_FOUND": 404, "INVOICE_NOT_FOUND": 404, "NO_CHARGES": 409, "INVOICE_ALREADY_EXISTS": 409, "INVOICE_ALREADY_PAID": 409, "PAYMENT_EXCEEDS_BALANCE": 409, "INVALID_PAYMENT_AMOUNT": 400, "INVALID_QUANTITY": 400, "FACILITY_ACCESS_DENIED": 403, "IDEMPOTENCY_KEY_REUSED": 409}
+    mapping = {
+        "ENCOUNTER_NOT_FOUND": 404,
+        "SERVICE_NOT_FOUND": 404,
+        "INVOICE_NOT_FOUND": 404,
+        "NO_CHARGES": 409,
+        "INVOICE_ALREADY_EXISTS": 409,
+        "INVOICE_ALREADY_PAID": 409,
+        "PAYMENT_EXCEEDS_BALANCE": 409,
+        "INVALID_PAYMENT_AMOUNT": 400,
+        "INVALID_QUANTITY": 400,
+        "FACILITY_ACCESS_DENIED": 403,
+        "IDEMPOTENCY_KEY_REUSED": 409,
+        "COVERAGE_NOT_VERIFIED": 409,
+        "COVERAGE_RULE_NOT_CONFIGURED": 409,
+    }
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
 
