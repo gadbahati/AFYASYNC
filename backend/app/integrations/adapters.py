@@ -57,42 +57,23 @@ class HttpJsonAdapter:
         if self.credential_env:
             credential = os.getenv(self.credential_env)
             if not credential:
-                return AdapterResult(
-                    status="RETRYING",
-                    response_code="ADAPTER_CREDENTIAL_NOT_CONFIGURED",
-                    response_data={},
-                )
+                return AdapterResult(status="RETRYING", response_code="ADAPTER_CREDENTIAL_NOT_CONFIGURED", response_data={})
             headers["Authorization"] = f"Bearer {credential}"
-
-        request = Request(
-            self.endpoint,
-            data=json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
+        request = Request(self.endpoint, data=json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8"), headers=headers, method="POST")
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 raw = response.read().decode("utf-8")
                 data = json.loads(raw) if raw else {}
                 if not isinstance(data, dict):
                     data = {"body": data}
-                return AdapterResult(
-                    status="SUCCEEDED",
-                    response_code=str(response.status),
-                    external_reference=data.get("external_reference"),
-                    response_data=data,
-                )
+                return AdapterResult(status="SUCCEEDED", response_code=str(response.status), external_reference=data.get("external_reference"), response_data=data)
         except HTTPError as exc:
             raw = exc.read().decode("utf-8", errors="replace")
             try:
                 data = json.loads(raw) if raw else {}
             except json.JSONDecodeError:
                 data = {"body": raw[:2000]}
-            return AdapterResult(
-                status="RETRYING" if exc.code >= 500 else "FAILED",
-                response_code=str(exc.code),
-                response_data=data if isinstance(data, dict) else {"body": data},
-            )
+            return AdapterResult(status="RETRYING" if exc.code >= 500 else "FAILED", response_code=str(exc.code), response_data=data if isinstance(data, dict) else {"body": data})
         except (URLError, TimeoutError, OSError):
             return AdapterResult(status="RETRYING", response_code="TRANSPORT_ERROR", response_data={})
 
