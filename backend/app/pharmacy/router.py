@@ -11,7 +11,7 @@ from app.database import get_db
 from app.encounters.models import Encounter
 from app.pharmacy.models import InventoryBatch, InventoryItem, Medication, Prescription, PrescriptionItem, StockMovement
 from app.pharmacy.permissions import PHARMACY_CREATE_MEDICATION, PHARMACY_CREATE_PRESCRIPTION, PHARMACY_DISPENSE, PHARMACY_RECEIVE_INVENTORY
-from app.pharmacy.schemas import DispenseResponse, InventoryReceive, InventoryResponse, MedicationCreate, MedicationResponse, PrescriptionCreate, PrescriptionResponse
+from app.pharmacy.schemas import DispenseRequest, DispenseResponse, InventoryReceive, InventoryResponse, MedicationCreate, MedicationResponse, PrescriptionCreate, PrescriptionResponse
 from app.pharmacy.service import PharmacyError, dispense_prescription
 from app.rbac.models import Staff, User
 
@@ -36,7 +36,13 @@ def _staff(db: Session, user: User, facility_id: UUID) -> Staff:
 
 
 def _error(exc: PharmacyError) -> HTTPException:
-    mapping = {"ENCOUNTER_NOT_FOUND": 404, "PRESCRIPTION_NOT_FOUND": 404, "MEDICATION_NOT_STOCKED": 409, "INSUFFICIENT_STOCK": 409, "INSUFFICIENT_BATCH_STOCK": 409, "ENCOUNTER_CLOSED": 409, "PRESCRIPTION_ALREADY_DISPENSED": 409, "PRESCRIPTION_NOT_DISPENSABLE": 409, "PRESCRIPTION_EMPTY": 409}
+    mapping = {
+        "ENCOUNTER_NOT_FOUND": 404, "PRESCRIPTION_NOT_FOUND": 404, "MEDICATION_NOT_STOCKED": 409,
+        "INSUFFICIENT_STOCK": 409, "INSUFFICIENT_BATCH_STOCK": 409, "ENCOUNTER_CLOSED": 409,
+        "PRESCRIPTION_ALREADY_DISPENSED": 409, "PRESCRIPTION_NOT_DISPENSABLE": 409, "PRESCRIPTION_EMPTY": 409,
+        "DUPLICATE_BILLING_ITEM": 400, "BILLING_ITEMS_MUST_MATCH_PRESCRIPTION": 400,
+        "BILLING_SERVICE_NOT_FOUND": 404, "BILLING_FACILITY_ACCESS_DENIED": 403,
+    }
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
 
@@ -74,9 +80,6 @@ def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_d
         if medication is None or medication.status != "ACTIVE":
             db.rollback()
             raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
-        if item.quantity <= 0:
-            db.rollback()
-            raise HTTPException(status_code=400, detail="INVALID_MEDICATION_QUANTITY")
         db.add(PrescriptionItem(prescription_id=prescription.id, **item.model_dump()))
     db.commit()
     db.refresh(prescription)
@@ -90,8 +93,6 @@ def receive_inventory(payload: InventoryReceive, db: Session = Depends(get_db), 
     staff = _staff(db, user, facility_id)
     if payload.facility_id != facility_id:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
-    if payload.quantity <= 0:
-        raise HTTPException(status_code=400, detail="INVALID_INVENTORY_QUANTITY")
     medication = db.get(Medication, payload.medication_id)
     if medication is None or medication.status != "ACTIVE":
         raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
@@ -122,7 +123,7 @@ def receive_inventory(payload: InventoryReceive, db: Session = Depends(get_db), 
 
 
 @router.post("/prescriptions/{prescription_id}/dispense", response_model=DispenseResponse)
-def dispense(prescription_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_DISPENSE)), token: dict = Depends(get_token_payload)) -> DispenseResponse:
+def dispense(prescription_id: UUID, payload: DispenseRequest, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_DISPENSE)), token: dict = Depends(get_token_payload)) -> DispenseResponse:
     facility_id = _facility(token)
     staff = _staff(db, user, facility_id)
     prescription = db.get(Prescription, prescription_id)
@@ -134,8 +135,11 @@ def dispense(prescription_id: UUID, db: Session = Depends(get_db), user: User = 
     if encounter.facility_id != facility_id:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        movements = dispense_prescription(db, prescription_id, staff.id, actor_user_id=user.id)
+        movements, charges_created = dispense_prescription(
+            db, prescription_id, staff.id, actor_user_id=user.id,
+            billing_items=[item.model_dump() for item in payload.billing_items],
+        )
     except PharmacyError as exc:
         raise _error(exc) from exc
     prescription = db.get(Prescription, prescription_id)
-    return DispenseResponse(prescription_id=prescription.id, status=prescription.status, movements_created=len(movements))
+    return DispenseResponse(prescription_id=prescription.id, status=prescription.status, movements_created=len(movements), charges_created=charges_created)
