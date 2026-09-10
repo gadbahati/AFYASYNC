@@ -23,40 +23,41 @@ def _error(exc: ClaimsError) -> HTTPException:
         "CLAIM_NOT_READY": 409, "CLAIM_NOT_VALIDATABLE": 409, "CLAIM_NOT_RECONCILABLE": 409,
         "VERIFIED_COVERAGE_REQUIRED": 409, "PAYER_NOT_ACTIVE": 409, "CLAIM_ITEMS_REQUIRED": 409,
         "CLAIM_RESPONSE_NOT_ALLOWED": 409, "INVALID_CLAIM_RESPONSE_STATUS": 400,
+        "INVALID_APPROVED_AMOUNT": 400, "INVALID_RECEIVED_AMOUNT": 400,
     }
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
 
 @router.post("", response_model=ClaimResponseOut, status_code=201)
-def create(payload: ClaimCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(CLAIMS_CREATE))):
+def create(payload: ClaimCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_CREATE))):
     try:
-        return create_claim(db, facility_id, payload.invoice_id)
+        return create_claim(db, facility_id, payload.invoice_id, actor_user_id=user.id)
     except ClaimsError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/{claim_id}/validate", response_model=ClaimValidationOut)
-def validate(claim_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(CLAIMS_VALIDATE))):
+def validate(claim_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_VALIDATE))):
     try:
-        errors = validate_claim(db, claim_id, facility_id)
+        errors = validate_claim(db, claim_id, facility_id, actor_user_id=user.id)
         return ClaimValidationOut(claim_id=claim_id, valid=not errors, errors=errors)
     except ClaimsError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/{claim_id}/submit", response_model=ClaimSubmitOut)
-def submit(claim_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(CLAIMS_SUBMIT))):
+def submit(claim_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_SUBMIT))):
     try:
-        claim = submit_claim(db, claim_id, facility_id)
+        claim = submit_claim(db, claim_id, facility_id, actor_user_id=user.id)
         return ClaimSubmitOut(claim_id=claim.id, status=claim.status, message="Claim queued for authorised payer submission")
     except ClaimsError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/{claim_id}/response", response_model=ClaimResponseOut)
-def payer_response(claim_id: UUID, payload: PayerResponseCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(CLAIMS_VALIDATE))):
+def payer_response(claim_id: UUID, payload: PayerResponseCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_VALIDATE))):
     try:
-        return record_payer_response(db, claim_id, facility_id, payload.status, payload.response_code, payload.response_message, payload.external_reference, payload.approved_amount)
+        return record_payer_response(db, claim_id, facility_id, payload.status, payload.response_code, payload.response_message, payload.external_reference, payload.approved_amount, actor_user_id=user.id)
     except ClaimsError as exc:
         raise _error(exc) from exc
 
@@ -67,7 +68,7 @@ def reconcile(claim_id: UUID, payload: ReconcileCreate, db: Session = Depends(ge
     if staff is None:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        reconciliation = reconcile_claim(db, claim_id, facility_id, staff.id, payload.received_amount)
+        reconciliation = reconcile_claim(db, claim_id, facility_id, staff.id, payload.received_amount, actor_user_id=user.id)
         return ReconcileResponse(claim_id=reconciliation.claim_id, expected_amount=reconciliation.expected_amount, received_amount=reconciliation.received_amount, difference=reconciliation.difference, status=reconciliation.status)
     except ClaimsError as exc:
         raise _error(exc) from exc
