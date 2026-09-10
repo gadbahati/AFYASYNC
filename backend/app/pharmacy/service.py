@@ -9,6 +9,7 @@ from app.audit.service import record_audit
 from app.billing.models import Service
 from app.billing.service import BillingError, create_charge
 from app.encounters.models import Encounter
+from app.notifications.events import notify_patient_event
 from app.pharmacy.models import InventoryBatch, InventoryItem, MedicationAction, Prescription, PrescriptionItem, StockMovement
 
 
@@ -134,6 +135,16 @@ def dispense_prescription(
         prescription.status = "DISPENSED"
         db.flush()
         _audit(db, action="PHARMACY_PRESCRIPTION_DISPENSED", resource_type="PRESCRIPTION", resource_id=prescription.id, actor_user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"movement_count": len(movements), "charge_count": charges_created})
+        notify_patient_event(
+            db,
+            patient_id=encounter.patient_id,
+            facility_id=encounter.facility_id,
+            event_type="PRESCRIPTION_READY",
+            action_url=f"/patient/encounters/{encounter.id}/prescriptions",
+            actor_user_id=actor_user_id,
+            commit=False,
+            metadata={"prescription_id": str(prescription.id)},
+        )
         db.commit()
         return movements, charges_created
     except Exception:
