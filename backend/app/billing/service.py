@@ -30,6 +30,8 @@ def create_charge(db: Session, facility_id: UUID, payload: dict) -> Charge:
     if service.facility_id != facility_id:
         raise BillingError("FACILITY_ACCESS_DENIED")
     quantity = Decimal(str(payload["quantity"]))
+    if quantity <= 0:
+        raise BillingError("INVALID_QUANTITY")
     unit_price = Decimal(str(service.price))
     total = quantity * unit_price
     charge = Charge(charge_id=f"CHG-{uuid4().hex[:20].upper()}", encounter_id=encounter.id, patient_id=encounter.patient_id, facility_id=facility_id, service_id=service.id, quantity=quantity, unit_price=unit_price, total_amount=total, source_type=payload["source_type"], source_id=payload.get("source_id"))
@@ -45,6 +47,9 @@ def create_invoice(db: Session, facility_id: UUID, encounter_id: UUID) -> Invoic
         raise BillingError("ENCOUNTER_NOT_FOUND")
     if encounter.facility_id != facility_id:
         raise BillingError("FACILITY_ACCESS_DENIED")
+    existing = db.scalar(select(Invoice).where(Invoice.encounter_id == encounter.id, Invoice.facility_id == facility_id, Invoice.status.not_in(["VOID", "CANCELLED"])).limit(1))
+    if existing is not None:
+        raise BillingError("INVOICE_ALREADY_EXISTS")
     charges = list(db.scalars(select(Charge).where(Charge.encounter_id == encounter.id, Charge.facility_id == facility_id, Charge.status == "ACTIVE")))
     if not charges:
         raise BillingError("NO_CHARGES")
@@ -80,7 +85,8 @@ def record_payment(db: Session, facility_id: UUID, payload: dict) -> Payment:
         return existing
 
     paid = sum((Decimal(str(p.amount)) for p in db.scalars(select(Payment).where(Payment.invoice_id == invoice.id, Payment.status == "CONFIRMED"))), Decimal("0"))
-    if paid + amount > Decimal(str(invoice.patient_amount)):
+    balance = Decimal(str(invoice.patient_amount)) - paid
+    if amount > balance:
         raise BillingError("PAYMENT_EXCEEDS_BALANCE")
     payment = Payment(transaction_id=transaction_id, invoice_id=invoice.id, patient_id=invoice.patient_id, facility_id=facility_id, amount=amount, payment_method=payload["payment_method"], provider=payload.get("provider"), external_reference=payload.get("external_reference"), status="CONFIRMED", confirmed_at=datetime.now(timezone.utc))
     db.add(payment)
