@@ -11,16 +11,16 @@ class IntegrationError(ValueError):
     pass
 
 
-def create_integration(db: Session, name: str, integration_type: str, provider: str, configuration: dict) -> Integration:
-    integration = Integration(name=name, integration_type=integration_type, provider=provider, configuration=configuration, status="ACTIVE")
+def create_integration(db: Session, facility_id: UUID, name: str, integration_type: str, provider: str, configuration: dict) -> Integration:
+    integration = Integration(facility_id=facility_id, name=name, integration_type=integration_type, provider=provider, configuration=configuration, status="ACTIVE")
     db.add(integration)
     db.commit()
     db.refresh(integration)
     return integration
 
 
-def queue_transaction(db: Session, integration_id: UUID, transaction_id: str, entity_type: str, entity_id: UUID | None, direction: str, request_reference: str | None) -> IntegrationTransaction:
-    integration = db.get(Integration, integration_id)
+def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, transaction_id: str, entity_type: str, entity_id: UUID | None, direction: str, request_reference: str | None) -> IntegrationTransaction:
+    integration = db.scalar(select(Integration).where(Integration.id == integration_id, Integration.facility_id == facility_id))
     if integration is None:
         raise IntegrationError("INTEGRATION_NOT_FOUND")
     if integration.status != "ACTIVE":
