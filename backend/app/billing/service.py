@@ -9,6 +9,7 @@ from app.audit.service import record_audit
 from app.billing.models import Charge, Invoice, InvoiceItem, Payment, Service
 from app.coverage.service import calculate_charge_responsibility, get_verified_current_coverage, has_current_unverified_coverage
 from app.encounters.models import Encounter
+from app.integrations.models import Integration, IntegrationTransaction
 
 
 class BillingError(ValueError):
@@ -125,4 +126,92 @@ def record_payment(db: Session, facility_id: UUID, payload: dict, *, actor_user_
     db.commit()
     db.refresh(payment)
     record_audit(db, action="RECORD_PAYMENT", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "amount": str(amount), "invoice_id": str(invoice.id)})
+    return payment
+
+
+def process_payment_callback(
+    db: Session,
+    facility_id: UUID,
+    integration_id: UUID,
+    payment_id: UUID,
+    status: str,
+    external_reference: str,
+    response_code: str | None = None,
+    response_message: str | None = None,
+) -> Payment:
+    integration = db.get(Integration, integration_id)
+    if integration is None or integration.facility_id != facility_id:
+        raise BillingError("INTEGRATION_NOT_FOUND")
+    if integration.status != "ACTIVE":
+        raise BillingError("INTEGRATION_NOT_ACTIVE")
+    if integration.integration_type not in {"PAYMENTS", "PAYMENT"}:
+        raise BillingError("INVALID_PAYMENT_INTEGRATION")
+
+    payment = db.get(Payment, payment_id)
+    if payment is None:
+        raise BillingError("PAYMENT_NOT_FOUND")
+    if payment.facility_id != facility_id:
+        raise BillingError("FACILITY_ACCESS_DENIED")
+    if payment.provider and payment.provider != integration.provider:
+        raise BillingError("PAYMENT_PROVIDER_MISMATCH")
+
+    transaction = db.scalar(
+        select(IntegrationTransaction).where(
+            IntegrationTransaction.integration_id == integration_id,
+            IntegrationTransaction.entity_type == "PAYMENT",
+            IntegrationTransaction.entity_id == payment.id,
+            IntegrationTransaction.direction == "OUTBOUND",
+        ).order_by(IntegrationTransaction.created_at.desc()).limit(1)
+    )
+    if transaction is None:
+        raise BillingError("PAYMENT_TRANSACTION_NOT_FOUND")
+
+    existing_external = db.scalar(
+        select(Payment).where(
+            Payment.facility_id == facility_id,
+            Payment.external_reference == external_reference,
+            Payment.id != payment.id,
+        ).limit(1)
+    )
+    if existing_external is not None:
+        raise BillingError("DUPLICATE_PAYMENT_EXTERNAL_REFERENCE")
+
+    normalized = status.upper()
+    if normalized not in {"CONFIRMED", "FAILED"}:
+        raise BillingError("INVALID_PAYMENT_CALLBACK_STATUS")
+
+    if payment.status == "CONFIRMED":
+        if normalized == "CONFIRMED" and payment.external_reference == external_reference:
+            return payment
+        raise BillingError("PAYMENT_ALREADY_FINAL")
+    if payment.status == "FAILED" and normalized == "FAILED" and payment.external_reference == external_reference:
+        return payment
+    if payment.status not in {"CREATED", "PROCESSING", "FAILED"}:
+        raise BillingError("PAYMENT_INVALID_STATE")
+
+    invoice = db.get(Invoice, payment.invoice_id)
+    if invoice is None or invoice.facility_id != facility_id:
+        raise BillingError("INVOICE_NOT_FOUND")
+
+    payment.external_reference = external_reference
+    if normalized == "FAILED":
+        payment.status = "FAILED"
+        transaction.status = "SUCCEEDED"
+        transaction.response_code = response_code
+        transaction.response_data = {"status": normalized, "message": response_message} if response_message else {"status": normalized}
+        db.commit()
+        return payment
+
+    paid = sum((Decimal(str(p.amount)) for p in db.scalars(select(Payment).where(Payment.invoice_id == invoice.id, Payment.status == "CONFIRMED", Payment.id != payment.id))), Decimal("0"))
+    if paid + Decimal(str(payment.amount)) > Decimal(str(invoice.patient_amount)):
+        raise BillingError("PAYMENT_EXCEEDS_BALANCE")
+    payment.status = "CONFIRMED"
+    payment.confirmed_at = datetime.now(timezone.utc)
+    invoice.status = "PAID" if paid + Decimal(str(payment.amount)) == Decimal(str(invoice.patient_amount)) else "PARTIALLY_PAID"
+    transaction.status = "SUCCEEDED"
+    transaction.external_reference = external_reference
+    transaction.response_code = response_code
+    transaction.response_data = {"status": normalized, "message": response_message} if response_message else {"status": normalized}
+    db.commit()
+    record_audit(db, action="CONFIRM_PAYMENT_CALLBACK", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=None, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "external_reference": external_reference, "response_code": response_code})
     return payment
