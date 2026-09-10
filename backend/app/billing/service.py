@@ -19,7 +19,7 @@ def _invoice_number(db: Session) -> str:
     return f"INV-{datetime.now(timezone.utc):%Y%m%d}-{int(sequence):05d}"
 
 
-def create_charge(db: Session, facility_id: UUID, payload: dict, *, actor_user_id: UUID | None = None) -> Charge:
+def create_charge(db: Session, facility_id: UUID, payload: dict, *, actor_user_id: UUID | None = None, commit: bool = True) -> Charge:
     encounter = db.get(Encounter, payload["encounter_id"])
     if encounter is None:
         raise BillingError("ENCOUNTER_NOT_FOUND")
@@ -37,9 +37,11 @@ def create_charge(db: Session, facility_id: UUID, payload: dict, *, actor_user_i
     total = quantity * unit_price
     charge = Charge(charge_id=f"CHG-{uuid4().hex[:20].upper()}", encounter_id=encounter.id, patient_id=encounter.patient_id, facility_id=facility_id, service_id=service.id, quantity=quantity, unit_price=unit_price, total_amount=total, source_type=payload["source_type"], source_id=payload.get("source_id"))
     db.add(charge)
-    db.commit()
-    db.refresh(charge)
-    record_audit(db, action="CREATE_CHARGE", resource_type="CHARGE", resource_id=str(charge.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"charge_id": charge.charge_id, "amount": str(total)})
+    db.flush()
+    if commit:
+        db.commit()
+        db.refresh(charge)
+    record_audit(db, action="CREATE_CHARGE", resource_type="CHARGE", resource_id=str(charge.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"charge_id": charge.charge_id, "amount": str(total)}, commit=commit)
     return charge
 
 
