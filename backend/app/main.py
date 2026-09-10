@@ -1,6 +1,12 @@
 from fastapi import FastAPI
 
 from app.config import settings
+from app.database import Base, engine
+from app.patients import models as patient_models
+from app.patients.router import router as patients_router
+
+# Import models before metadata creation so SQLAlchemy knows all tables.
+_ = patient_models
 
 app = FastAPI(
     title=settings.app_name,
@@ -9,11 +15,24 @@ app = FastAPI(
 )
 
 
+@app.on_event("startup")
+def initialize_database() -> None:
+    """Create development tables when the API starts.
+
+    Alembic migrations will become the source of truth before production.
+    """
+    if settings.environment != "production":
+        Base.metadata.create_all(bind=engine)
+
+
+app.include_router(patients_router)
+
+
 @app.get("/health", tags=["System"])
 def health_check() -> dict[str, object]:
     return {
         "success": True,
-        "data": {"status": "ok", "environment": settings.environment},
+        "data": {"service": "afasync-api", "status": "healthy"},
         "message": "AfyaSync API is running",
     }
 
