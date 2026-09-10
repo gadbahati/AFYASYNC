@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.appointments.models import Appointment, Queue, QueueEntry
+from app.encounters.service import create_encounter
 from app.facilities.models import Department, Facility
 from app.patients.models import Person
 from app.rbac.models import Staff
@@ -63,7 +64,7 @@ def create_queue(db: Session, data: dict) -> Queue:
     return queue
 
 
-def add_to_queue(db: Session, data: dict) -> QueueEntry:
+def add_to_queue(db: Session, data: dict, created_by: UUID | None = None) -> QueueEntry:
     _require_patient(db, data["patient_id"])
     queue = db.get(Queue, data["queue_id"])
     if queue is None or queue.status != "ACTIVE":
@@ -90,8 +91,25 @@ def add_to_queue(db: Session, data: dict) -> QueueEntry:
     if duplicate:
         raise ValueError("PATIENT_ALREADY_QUEUED")
 
-    entry = QueueEntry(**data)
+    entry_data = dict(data)
+    entry_data.pop("encounter_id", None)
+    entry = QueueEntry(**entry_data)
     db.add(entry)
+    db.flush()
+
+    encounter = create_encounter(
+        db,
+        {
+            "patient_id": data["patient_id"],
+            "facility_id": queue.facility_id,
+            "department_id": queue.department_id,
+            "encounter_type": "OUTPATIENT",
+            "reason": "Queue check-in",
+        },
+        created_by or queue.id,
+        commit=False,
+    )
+    entry.encounter_id = encounter.id
     db.commit()
     db.refresh(entry)
     return entry
