@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.appointments.models import Queue, QueueEntry
 from app.appointments.schemas import AppointmentCreate, AppointmentResponse, QueueCreate, QueueEntryCreate, QueueEntryResponse, QueueResponse
 from app.appointments.service import add_to_queue, create_appointment, create_queue, list_appointments, update_queue_status
-from app.auth.dependencies import get_current_user, get_token_payload
+from app.auth.dependencies import get_token_payload, require_permission
 from app.database import get_db
 from app.rbac.models import User
 
@@ -32,7 +32,7 @@ def _facility(payload: dict) -> UUID:
 
 
 @router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
-def create(payload: AppointmentCreate, _: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+def create(payload: AppointmentCreate, _: User = Depends(require_permission("appointments.write")), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     facility_id = _facility(token)
     if payload.facility_id != facility_id:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
@@ -43,12 +43,12 @@ def create(payload: AppointmentCreate, _: User = Depends(get_current_user), toke
 
 
 @router.get("", response_model=list[AppointmentResponse])
-def list_for_facility(appointment_date: datetime | None = Query(default=None), _: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+def list_for_facility(appointment_date: datetime | None = Query(default=None), _: User = Depends(require_permission("appointments.write")), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     return list_appointments(db, _facility(token), appointment_date)
 
 
 @router.post("/queues", response_model=QueueResponse, status_code=status.HTTP_201_CREATED)
-def create_queue_endpoint(payload: QueueCreate, _: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+def create_queue_endpoint(payload: QueueCreate, _: User = Depends(require_permission("appointments.write")), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     if payload.facility_id != _facility(token):
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
@@ -58,7 +58,7 @@ def create_queue_endpoint(payload: QueueCreate, _: User = Depends(get_current_us
 
 
 @router.post("/queues/entries", response_model=QueueEntryResponse, status_code=status.HTTP_201_CREATED)
-def add_queue_entry(payload: QueueEntryCreate, user: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+def add_queue_entry(payload: QueueEntryCreate, user: User = Depends(require_permission("queue.checkin")), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     entry_queue = db.scalar(select(Queue).where(Queue.id == payload.queue_id))
     if entry_queue is None or entry_queue.facility_id != _facility(token):
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
@@ -69,7 +69,7 @@ def add_queue_entry(payload: QueueEntryCreate, user: User = Depends(get_current_
 
 
 @router.patch("/queues/entries/{entry_id}/{new_status}", response_model=QueueEntryResponse)
-def change_queue_status(entry_id: UUID, new_status: str, _: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+def change_queue_status(entry_id: UUID, new_status: str, _: User = Depends(require_permission("queue.manage")), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     entry = db.get(QueueEntry, entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="QUEUE_ENTRY_NOT_FOUND")
