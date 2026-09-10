@@ -1,0 +1,1 @@
+"""AfyaSync notification subsystem."""
