@@ -22,13 +22,7 @@ def _claim_number() -> str:
 
 def _verified_current_coverage(db: Session, patient_id: UUID, payer_id: UUID | None = None) -> Coverage | None:
     today = date.today()
-    filters = [
-        Coverage.person_id == patient_id,
-        Coverage.status == "ACTIVE",
-        Coverage.verification_status == "VERIFIED",
-        (Coverage.start_date.is_(None) | (Coverage.start_date <= today)),
-        (Coverage.end_date.is_(None) | (Coverage.end_date >= today)),
-    ]
+    filters = [Coverage.person_id == patient_id, Coverage.status == "ACTIVE", Coverage.verification_status == "VERIFIED", (Coverage.start_date.is_(None) | (Coverage.start_date <= today)), (Coverage.end_date.is_(None) | (Coverage.end_date >= today))]
     if payer_id is not None:
         filters.append(Coverage.payer_id == payer_id)
     return db.scalar(select(Coverage).where(*filters).order_by(Coverage.created_at.desc()).limit(1))
@@ -143,12 +137,26 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
     invoice = db.get(Invoice, claim.invoice_id)
     if invoice is None or invoice.facility_id != facility_id:
         raise ClaimsError("FACILITY_ACCESS_DENIED")
-    if status in {"ACCEPTED", "UNDER_REVIEW", "REJECTED"} and claim.status not in {"SUBMITTED", "UNDER_REVIEW", "REJECTED"}:
+    current = claim.status
+    valid_previous = {
+        "ACCEPTED": {"SUBMITTED", "UNDER_REVIEW"},
+        "UNDER_REVIEW": {"SUBMITTED", "UNDER_REVIEW"},
+        "REJECTED": {"SUBMITTED", "UNDER_REVIEW", "REJECTED"},
+        "PARTIALLY_PAID": {"ACCEPTED", "UNDER_REVIEW", "PARTIALLY_PAID"},
+        "PAID": {"ACCEPTED", "PARTIALLY_PAID", "PAID"},
+    }
+    if current not in valid_previous.get(status, set()):
         raise ClaimsError("CLAIM_RESPONSE_NOT_ALLOWED")
     if approved_amount is not None and (approved_amount < 0 or approved_amount > claim.claim_amount):
         raise ClaimsError("INVALID_APPROVED_AMOUNT")
-    if status in {"PAID", "PARTIALLY_PAID"} and approved_amount is None:
+    if status in {"ACCEPTED", "PARTIALLY_PAID", "PAID"} and approved_amount is None:
         raise ClaimsError("APPROVED_AMOUNT_REQUIRED")
+    if status == "PAID" and approved_amount == 0:
+        raise ClaimsError("INVALID_APPROVED_AMOUNT")
+    if external_reference:
+        duplicate = db.scalar(select(ClaimResponse.id).where(ClaimResponse.claim_id == claim.id, ClaimResponse.external_reference == external_reference).limit(1))
+        if duplicate is not None:
+            raise ClaimsError("DUPLICATE_PAYER_RESPONSE")
     if approved_amount is not None:
         claim.approved_amount = approved_amount
     claim.status = status
@@ -166,7 +174,7 @@ def reconcile_claim(db: Session, claim_id: UUID, facility_id: UUID, staff_id: UU
     invoice = db.get(Invoice, claim.invoice_id)
     if invoice is None or invoice.facility_id != facility_id:
         raise ClaimsError("FACILITY_ACCESS_DENIED")
-    if claim.status not in {"ACCEPTED", "UNDER_REVIEW", "PARTIALLY_PAID", "PAID"}:
+    if claim.status not in {"ACCEPTED", "PARTIALLY_PAID", "PAID"}:
         raise ClaimsError("CLAIM_NOT_RECONCILABLE")
     existing = db.scalar(select(Reconciliation).where(Reconciliation.claim_id == claim.id))
     if existing:
