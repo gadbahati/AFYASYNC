@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.clinical.models import Consultation, Diagnosis, Vital
 from app.encounters.models import Encounter
 from app.rbac.models import Staff
@@ -33,7 +34,7 @@ def _calculate_bmi(weight_kg: float | None, height_cm: float | None) -> float | 
     return round(weight_kg / (height_m * height_m), 2)
 
 
-def record_vitals(db: Session, encounter_id: UUID, staff_id: UUID, data: dict) -> Vital:
+def record_vitals(db: Session, encounter_id: UUID, staff_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> Vital:
     encounter = _open_encounter(db, encounter_id)
     _staff_at_facility(db, staff_id, encounter.facility_id)
     vital = Vital(
@@ -45,30 +46,38 @@ def record_vitals(db: Session, encounter_id: UUID, staff_id: UUID, data: dict) -
     db.add(vital)
     db.commit()
     db.refresh(vital)
+    if actor_user_id:
+        record_audit(db, action="CLINICAL_VITALS_RECORDED", resource_type="VITAL", resource_id=str(vital.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id)
     return vital
 
 
-def create_or_update_consultation(db: Session, encounter_id: UUID, doctor_id: UUID, data: dict) -> Consultation:
+def create_or_update_consultation(db: Session, encounter_id: UUID, doctor_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> Consultation:
     encounter = _open_encounter(db, encounter_id)
     _staff_at_facility(db, doctor_id, encounter.facility_id)
     consultation = db.scalar(select(Consultation).where(Consultation.encounter_id == encounter_id))
+    action = "CLINICAL_CONSULTATION_CREATED"
     if consultation is None:
         consultation = Consultation(encounter_id=encounter_id, doctor_id=doctor_id, **data)
         db.add(consultation)
     else:
+        action = "CLINICAL_CONSULTATION_UPDATED"
         consultation.doctor_id = doctor_id
         for key, value in data.items():
             setattr(consultation, key, value)
     db.commit()
     db.refresh(consultation)
+    if actor_user_id:
+        record_audit(db, action=action, resource_type="CONSULTATION", resource_id=str(consultation.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id)
     return consultation
 
 
-def add_diagnosis(db: Session, encounter_id: UUID, staff_id: UUID, data: dict) -> Diagnosis:
+def add_diagnosis(db: Session, encounter_id: UUID, staff_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> Diagnosis:
     encounter = _open_encounter(db, encounter_id)
     _staff_at_facility(db, staff_id, encounter.facility_id)
     diagnosis = Diagnosis(encounter_id=encounter_id, recorded_by=staff_id, **data)
     db.add(diagnosis)
     db.commit()
     db.refresh(diagnosis)
+    if actor_user_id:
+        record_audit(db, action="CLINICAL_DIAGNOSIS_RECORDED", resource_type="DIAGNOSIS", resource_id=str(diagnosis.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id)
     return diagnosis
