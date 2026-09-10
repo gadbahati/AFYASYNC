@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.auth import router as auth_router
 from app.config import settings
 from app.coverage import models as coverage_models
 from app.coverage.router import router as coverage_router
@@ -8,9 +9,10 @@ from app.facilities import models as facility_models
 from app.facilities.router import router as facilities_router
 from app.patients import models as patient_models
 from app.patients.router import router as patients_router
+from app.rbac import models as rbac_models
 
 # Import models before metadata creation so SQLAlchemy knows all tables.
-_ = patient_models, coverage_models, facility_models
+_ = patient_models, coverage_models, facility_models, rbac_models
 
 app = FastAPI(
     title=settings.app_name,
@@ -29,6 +31,7 @@ def initialize_database() -> None:
         Base.metadata.create_all(bind=engine)
 
 
+app.include_router(auth_router.router)
 app.include_router(patients_router)
 app.include_router(coverage_router)
 app.include_router(facilities_router)
