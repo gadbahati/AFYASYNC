@@ -1,3 +1,7 @@
+import hashlib
+import hmac
+import json
+import time
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -6,7 +10,8 @@ from uuid import uuid4
 import pytest
 
 from app.claims.service import ClaimsError, process_payer_callback
-from app.integrations.worker import process_pending_transaction
+from app.integrations.service import IntegrationError, verify_callback_signature
+from app.integrations.worker import MAX_INTEGRATION_ATTEMPTS, process_pending_transaction
 
 
 def test_payer_callback_updates_integration_transaction_and_claim() -> None:
@@ -81,3 +86,40 @@ def test_worker_builds_claim_payload_before_adapter_send() -> None:
     assert result.status == "RETRYING"
     assert result.attempt_count == 1
     assert result.response_code == "ADAPTER_UNAVAILABLE"
+
+
+def test_callback_signature_accepts_valid_signed_payload() -> None:
+    secret = "test-callback-secret"
+    payload = {"status": "ACCEPTED", "external_reference": "PAYER-1", "approved_amount": "10.00"}
+    timestamp = str(int(time.time()))
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    digest = hmac.new(secret.encode(), f"{timestamp}.{body}".encode(), hashlib.sha256).hexdigest()
+    integration = SimpleNamespace(configuration={"callback_secret": secret})
+
+    verify_callback_signature(integration, timestamp, f"sha256={digest}", payload)
+
+
+def test_callback_signature_rejects_invalid_signature() -> None:
+    integration = SimpleNamespace(configuration={"callback_secret": "test-callback-secret"})
+    with pytest.raises(IntegrationError, match="INVALID_CALLBACK_SIGNATURE"):
+        verify_callback_signature(integration, str(int(time.time())), "sha256=bad", {"status": "ACCEPTED"})
+
+
+def test_callback_signature_rejects_expired_timestamp() -> None:
+    integration = SimpleNamespace(configuration={"callback_secret": "test-callback-secret"})
+    with pytest.raises(IntegrationError, match="CALLBACK_TIMESTAMP_EXPIRED"):
+        verify_callback_signature(integration, str(int(time.time()) - 301), "sha256=bad", {"status": "ACCEPTED"})
+
+
+def test_worker_fails_after_max_integration_attempts() -> None:
+    transaction = SimpleNamespace(id=uuid4(), integration_id=uuid4(), status="RETRYING", attempt_count=MAX_INTEGRATION_ATTEMPTS, response_code=None, response_data={})
+    integration = SimpleNamespace(id=transaction.integration_id, status="ACTIVE")
+    db = MagicMock()
+    db.get.side_effect = [transaction, integration]
+
+    result = process_pending_transaction(db, transaction.id)
+
+    assert result.status == "FAILED"
+    assert result.response_code == "MAX_ATTEMPTS_EXCEEDED"
+    assert result.response_data["max_attempts"] == MAX_INTEGRATION_ATTEMPTS
+    db.commit.assert_called_once()
