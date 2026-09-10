@@ -33,6 +33,14 @@ class ClaimSubmitOut(BaseModel):
     message: str
 
 
+class PayerResponseCreate(BaseModel):
+    status: str
+    response_code: str | None = None
+    response_message: str | None = None
+    external_reference: str | None = None
+    approved_amount: Decimal | None = Field(default=None, ge=0)
+
+
 class ReconcileCreate(BaseModel):
     received_amount: Decimal = Field(ge=0)
 
