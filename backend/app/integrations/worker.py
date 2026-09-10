@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.claims.service import ClaimsError, build_claim_submission_payload
-from app.integrations.adapters import IntegrationAdapter, UnconfiguredAdapter
+from app.integrations.adapters import IntegrationAdapter, build_adapter
 from app.integrations.models import Integration, IntegrationTransaction
 
 MAX_INTEGRATION_ATTEMPTS = 5
@@ -29,7 +29,18 @@ def process_pending_transaction(db: Session, transaction_id, adapter: Integratio
         db.refresh(transaction)
         return transaction
 
-    adapter = adapter or UnconfiguredAdapter()
+    try:
+        adapter = adapter or build_adapter(integration.configuration)
+    except ValueError as exc:
+        transaction.status = "FAILED"
+        transaction.response_code = str(exc)
+        transaction.response_data = {}
+        transaction.attempt_count += 1
+        transaction.last_attempt_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(transaction)
+        return transaction
+
     transaction.status = "PROCESSING"
     db.flush()
 
