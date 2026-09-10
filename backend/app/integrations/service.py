@@ -1,3 +1,7 @@
+import hashlib
+import hmac
+import json
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -50,3 +54,30 @@ def mark_transaction_result(db: Session, transaction_id: UUID, status: str, resp
     db.commit()
     db.refresh(transaction)
     return transaction
+
+
+def verify_callback_signature(
+    integration: Integration,
+    timestamp: str,
+    signature: str,
+    payload: dict,
+    *,
+    tolerance_seconds: int = 300,
+) -> None:
+    """Verify an HMAC-SHA256 payer callback using the integration callback secret."""
+    secret = integration.configuration.get("callback_secret") if integration.configuration else None
+    if not isinstance(secret, str) or not secret:
+        raise IntegrationError("CALLBACK_SECRET_NOT_CONFIGURED")
+    try:
+        timestamp_int = int(timestamp)
+    except (TypeError, ValueError) as exc:
+        raise IntegrationError("INVALID_CALLBACK_TIMESTAMP") from exc
+    if abs(int(time.time()) - timestamp_int) > tolerance_seconds:
+        raise IntegrationError("CALLBACK_TIMESTAMP_EXPIRED")
+    if not signature.startswith("sha256="):
+        raise IntegrationError("INVALID_CALLBACK_SIGNATURE")
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    signed = f"{timestamp}.{body}".encode("utf-8")
+    expected = "sha256=" + hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        raise IntegrationError("INVALID_CALLBACK_SIGNATURE")
