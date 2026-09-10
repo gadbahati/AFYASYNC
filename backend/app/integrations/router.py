@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
+from app.billing.service import BillingError, process_payment_callback
 from app.claims.service import ClaimsError, process_payer_callback
 from app.database import get_db
 from app.integrations.models import Integration
-from app.integrations.schemas import IntegrationCreate, IntegrationOut, PayerCallbackCreate, TransactionCreate, TransactionOut
+from app.integrations.schemas import IntegrationCreate, IntegrationOut, PayerCallbackCreate, PaymentCallbackCreate, TransactionCreate, TransactionOut
 from app.integrations.service import IntegrationError, create_integration, queue_transaction, verify_callback_signature
 from app.rbac.models import User
 
@@ -17,12 +18,14 @@ INTEGRATIONS_WRITE = "integrations.write"
 INTEGRATIONS_QUEUE = "integrations.queue"
 
 
-def _error(exc: IntegrationError | ClaimsError) -> HTTPException:
+def _error(exc: IntegrationError | ClaimsError | BillingError) -> HTTPException:
     mapping = {
         "INTEGRATION_NOT_FOUND": 404,
         "TRANSACTION_NOT_FOUND": 404,
         "INTEGRATION_TRANSACTION_NOT_FOUND": 404,
         "CLAIM_NOT_FOUND": 404,
+        "PAYMENT_NOT_FOUND": 404,
+        "PAYMENT_TRANSACTION_NOT_FOUND": 404,
         "INTEGRATION_NOT_ACTIVE": 409,
         "INVALID_TRANSACTION_STATUS": 400,
         "INVALID_PAYER_INTEGRATION": 409,
@@ -35,6 +38,13 @@ def _error(exc: IntegrationError | ClaimsError) -> HTTPException:
         "APPROVED_AMOUNT_REQUIRED": 400,
         "APPROVED_AMOUNT_EXCEEDS_CLAIM": 400,
         "CLAIM_NOT_READY": 409,
+        "INVALID_PAYMENT_INTEGRATION": 409,
+        "PAYMENT_PROVIDER_MISMATCH": 409,
+        "DUPLICATE_PAYMENT_EXTERNAL_REFERENCE": 409,
+        "INVALID_PAYMENT_CALLBACK_STATUS": 400,
+        "PAYMENT_ALREADY_FINAL": 409,
+        "PAYMENT_INVALID_STATE": 409,
+        "PAYMENT_EXCEEDS_BALANCE": 409,
         "FACILITY_ACCESS_DENIED": 403,
         "CALLBACK_SECRET_NOT_CONFIGURED": 503,
         "INVALID_CALLBACK_TIMESTAMP": 401,
@@ -77,39 +87,32 @@ def payer_callback(
     x_afasync_timestamp: str = Header(..., alias="X-AfyaSync-Timestamp"),
     x_afasync_signature: str = Header(..., alias="X-AfyaSync-Signature"),
 ):
-    """Receive a payer callback authenticated by the integration's HMAC secret.
-
-    The facility is derived from the integration itself; no hospital user token is
-    accepted or required for this machine-to-machine endpoint.
-    """
     try:
         integration = db.get(Integration, integration_id)
         if integration is None:
             raise IntegrationError("INTEGRATION_NOT_FOUND")
-        verify_callback_signature(
-            integration,
-            x_afasync_timestamp,
-            x_afasync_signature,
-            payload.model_dump(mode="json"),
-        )
-        claim = process_payer_callback(
-            db,
-            integration.facility_id,
-            integration_id,
-            claim_id,
-            payload.status,
-            payload.response_code,
-            payload.response_message,
-            payload.external_reference,
-            payload.approved_amount,
-            actor_user_id=None,
-        )
-        return {
-            "claim_id": claim.id,
-            "claim_number": claim.claim_id,
-            "status": claim.status,
-            "approved_amount": claim.approved_amount,
-            "paid_amount": claim.paid_amount,
-        }
+        verify_callback_signature(integration, x_afasync_timestamp, x_afasync_signature, payload.model_dump(mode="json"))
+        claim = process_payer_callback(db, integration.facility_id, integration_id, claim_id, payload.status, payload.response_code, payload.response_message, payload.external_reference, payload.approved_amount, actor_user_id=None)
+        return {"claim_id": claim.id, "claim_number": claim.claim_id, "status": claim.status, "approved_amount": claim.approved_amount, "paid_amount": claim.paid_amount}
     except (IntegrationError, ClaimsError) as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/{integration_id}/payments/{payment_id}/callback", response_model=dict)
+def payment_callback(
+    integration_id: UUID,
+    payment_id: UUID,
+    payload: PaymentCallbackCreate,
+    db: Session = Depends(get_db),
+    x_afasync_timestamp: str = Header(..., alias="X-AfyaSync-Timestamp"),
+    x_afasync_signature: str = Header(..., alias="X-AfyaSync-Signature"),
+):
+    try:
+        integration = db.get(Integration, integration_id)
+        if integration is None:
+            raise IntegrationError("INTEGRATION_NOT_FOUND")
+        verify_callback_signature(integration, x_afasync_timestamp, x_afasync_signature, payload.model_dump(mode="json"))
+        payment = process_payment_callback(db, integration.facility_id, integration_id, payment_id, payload.status, payload.external_reference, payload.response_code, payload.response_message)
+        return {"payment_id": payment.id, "transaction_id": payment.transaction_id, "status": payment.status, "external_reference": payment.external_reference}
+    except (IntegrationError, BillingError) as exc:
         raise _error(exc) from exc
