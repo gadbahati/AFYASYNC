@@ -58,12 +58,12 @@ def create_queue_endpoint(payload: QueueCreate, _: User = Depends(get_current_us
 
 
 @router.post("/queues/entries", response_model=QueueEntryResponse, status_code=status.HTTP_201_CREATED)
-def add_queue_entry(payload: QueueEntryCreate, _: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+def add_queue_entry(payload: QueueEntryCreate, user: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     entry_queue = db.scalar(select(Queue).where(Queue.id == payload.queue_id))
     if entry_queue is None or entry_queue.facility_id != _facility(token):
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        return add_to_queue(db, payload.model_dump())
+        return add_to_queue(db, payload.model_dump(), user.id)
     except ValueError as exc:
         raise _error(exc) from exc
 
