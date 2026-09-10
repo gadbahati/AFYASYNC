@@ -2,6 +2,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.notifications.events import EVENT_TEMPLATES, notify_patient_event
 from app.notifications.service import NotificationError, create_notification
 
 
@@ -39,3 +40,22 @@ def test_notification_with_person_recipient_is_created_without_user_lookup():
     assert notification.notification_type == "LAB_RESULT"
     assert notification.priority == "NORMAL"
     assert db.added == [notification]
+
+
+def test_claim_status_notification_is_available_and_non_clinical():
+    title, message = EVENT_TEMPLATES["CLAIM_STATUS_CHANGED"]
+    assert title == "Claim status updated"
+    assert "claim" in message.lower()
+    assert "diagnosis" not in message.lower()
+    assert "result" not in message.lower()
+
+
+def test_claim_event_without_portal_account_is_safe():
+    db = DummyDB()
+    assert notify_patient_event(
+        db,
+        patient_id=uuid4(),
+        event_type="CLAIM_STATUS_CHANGED",
+        metadata={"status": "REJECTED"},
+        commit=False,
+    ) is None
