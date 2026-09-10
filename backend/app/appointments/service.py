@@ -64,7 +64,7 @@ def create_queue(db: Session, data: dict) -> Queue:
     return queue
 
 
-def add_to_queue(db: Session, data: dict, created_by: UUID | None = None) -> QueueEntry:
+def add_to_queue(db: Session, data: dict, created_by: UUID) -> QueueEntry:
     _require_patient(db, data["patient_id"])
     queue = db.get(Queue, data["queue_id"])
     if queue is None or queue.status != "ACTIVE":
@@ -91,9 +91,7 @@ def add_to_queue(db: Session, data: dict, created_by: UUID | None = None) -> Que
     if duplicate:
         raise ValueError("PATIENT_ALREADY_QUEUED")
 
-    entry_data = dict(data)
-    entry_data.pop("encounter_id", None)
-    entry = QueueEntry(**entry_data)
+    entry = QueueEntry(**data)
     db.add(entry)
     db.flush()
 
@@ -106,7 +104,7 @@ def add_to_queue(db: Session, data: dict, created_by: UUID | None = None) -> Que
             "encounter_type": "OUTPATIENT",
             "reason": "Queue check-in",
         },
-        created_by or queue.id,
+        created_by,
         commit=False,
     )
     entry.encounter_id = encounter.id
