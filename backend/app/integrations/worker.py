@@ -3,11 +3,35 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.billing.models import Invoice, Payment
 from app.claims.service import ClaimsError, build_claim_submission_payload
 from app.integrations.adapters import IntegrationAdapter, build_adapter
 from app.integrations.models import Integration, IntegrationTransaction
 
 MAX_INTEGRATION_ATTEMPTS = 5
+
+
+def _build_payment_submission_payload(db: Session, payment_id, facility_id):
+    payment = db.get(Payment, payment_id)
+    if payment is None:
+        raise ValueError("PAYMENT_NOT_FOUND")
+    if payment.facility_id != facility_id:
+        raise ValueError("FACILITY_ACCESS_DENIED")
+    invoice = db.get(Invoice, payment.invoice_id)
+    if invoice is None or invoice.facility_id != facility_id:
+        raise ValueError("INVOICE_NOT_FOUND")
+    return {
+        "transaction_id": payment.transaction_id,
+        "entity_type": "PAYMENT",
+        "payment_id": str(payment.id),
+        "invoice_id": str(invoice.id),
+        "invoice_number": invoice.invoice_id,
+        "patient_id": str(payment.patient_id),
+        "amount": str(payment.amount),
+        "payment_method": payment.payment_method,
+        "provider": payment.provider,
+        "external_reference": payment.external_reference,
+    }
 
 
 def process_pending_transaction(db: Session, transaction_id, adapter: IntegrationAdapter | None = None) -> IntegrationTransaction:
@@ -55,6 +79,23 @@ def process_pending_transaction(db: Session, transaction_id, adapter: Integratio
         try:
             payload = build_claim_submission_payload(db, transaction.entity_id, integration.facility_id)
         except ClaimsError as exc:
+            transaction.status = "FAILED"
+            transaction.response_code = str(exc)
+            transaction.response_data = {}
+            db.commit()
+            db.refresh(transaction)
+            return transaction
+    elif transaction.entity_type == "PAYMENT":
+        if transaction.entity_id is None:
+            transaction.status = "FAILED"
+            transaction.response_code = "PAYMENT_REFERENCE_REQUIRED"
+            transaction.response_data = {}
+            db.commit()
+            db.refresh(transaction)
+            return transaction
+        try:
+            payload = _build_payment_submission_payload(db, transaction.entity_id, integration.facility_id)
+        except ValueError as exc:
             transaction.status = "FAILED"
             transaction.response_code = str(exc)
             transaction.response_data = {}
