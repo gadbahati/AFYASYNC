@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.auth.dependencies import get_token_payload, require_permission
 from app.database import get_db
 from app.encounters.models import Encounter
@@ -35,13 +36,14 @@ def _staff(db: Session, user: User, facility_id: UUID) -> Staff:
 
 
 def _error(exc: PharmacyError) -> HTTPException:
-    mapping = {"ENCOUNTER_NOT_FOUND": 404, "PRESCRIPTION_NOT_FOUND": 404, "MEDICATION_NOT_STOCKED": 409, "INSUFFICIENT_STOCK": 409, "INSUFFICIENT_BATCH_STOCK": 409, "ENCOUNTER_CLOSED": 409, "PRESCRIPTION_ALREADY_DISPENSED": 409, "PRESCRIPTION_NOT_DISPENSABLE": 409}
+    mapping = {"ENCOUNTER_NOT_FOUND": 404, "PRESCRIPTION_NOT_FOUND": 404, "MEDICATION_NOT_STOCKED": 409, "INSUFFICIENT_STOCK": 409, "INSUFFICIENT_BATCH_STOCK": 409, "ENCOUNTER_CLOSED": 409, "PRESCRIPTION_ALREADY_DISPENSED": 409, "PRESCRIPTION_NOT_DISPENSABLE": 409, "PRESCRIPTION_EMPTY": 409}
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
 
 @router.post("/medications", response_model=MedicationResponse, status_code=201)
 def create_medication(payload: MedicationCreate, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_CREATE_MEDICATION)), token: dict = Depends(get_token_payload)) -> Medication:
-    _staff(db, user, _facility(token))
+    facility_id = _facility(token)
+    _staff(db, user, facility_id)
     existing = db.scalar(select(Medication).where(Medication.code == payload.code))
     if existing:
         raise HTTPException(status_code=409, detail="MEDICATION_CODE_EXISTS")
@@ -49,6 +51,7 @@ def create_medication(payload: MedicationCreate, db: Session = Depends(get_db), 
     db.add(medication)
     db.commit()
     db.refresh(medication)
+    record_audit(db, action="PHARMACY_MEDICATION_CREATED", resource_type="MEDICATION", resource_id=str(medication.id), result="SUCCESS", user_id=user.id, facility_id=facility_id)
     return medication
 
 
@@ -71,9 +74,13 @@ def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_d
         if medication is None or medication.status != "ACTIVE":
             db.rollback()
             raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
+        if item.quantity <= 0:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="INVALID_MEDICATION_QUANTITY")
         db.add(PrescriptionItem(prescription_id=prescription.id, **item.model_dump()))
     db.commit()
     db.refresh(prescription)
+    record_audit(db, action="PHARMACY_PRESCRIPTION_CREATED", resource_type="PRESCRIPTION", resource_id=str(prescription.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"item_count": len(payload.items)})
     return prescription
 
 
@@ -83,6 +90,8 @@ def receive_inventory(payload: InventoryReceive, db: Session = Depends(get_db), 
     staff = _staff(db, user, facility_id)
     if payload.facility_id != facility_id:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
+    if payload.quantity <= 0:
+        raise HTTPException(status_code=400, detail="INVALID_INVENTORY_QUANTITY")
     medication = db.get(Medication, payload.medication_id)
     if medication is None or medication.status != "ACTIVE":
         raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
@@ -108,6 +117,7 @@ def receive_inventory(payload: InventoryReceive, db: Session = Depends(get_db), 
     db.add(StockMovement(inventory_item_id=item.id, batch_id=batch.id, movement_type="RECEIVE", quantity=payload.quantity, reference_type="INVENTORY_RECEIPT", performed_by=staff.id))
     db.commit()
     db.refresh(item)
+    record_audit(db, action="PHARMACY_INVENTORY_RECEIVED", resource_type="INVENTORY_ITEM", resource_id=str(item.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, metadata={"batch_number": payload.batch_number, "quantity": payload.quantity})
     return item
 
 
@@ -124,7 +134,7 @@ def dispense(prescription_id: UUID, db: Session = Depends(get_db), user: User = 
     if encounter.facility_id != facility_id:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        movements = dispense_prescription(db, prescription_id, staff.id)
+        movements = dispense_prescription(db, prescription_id, staff.id, actor_user_id=user.id)
     except PharmacyError as exc:
         raise _error(exc) from exc
     prescription = db.get(Prescription, prescription_id)
