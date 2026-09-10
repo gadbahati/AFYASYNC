@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_facility_context, require_permission
 from app.claims.service import ClaimsError, process_payer_callback
 from app.database import get_db
+from app.integrations.models import Integration
 from app.integrations.schemas import IntegrationCreate, IntegrationOut, PayerCallbackCreate, TransactionCreate, TransactionOut
 from app.integrations.service import IntegrationError, create_integration, queue_transaction, verify_callback_signature
 from app.rbac.models import User
@@ -73,15 +74,17 @@ def payer_callback(
     claim_id: UUID,
     payload: PayerCallbackCreate,
     db: Session = Depends(get_db),
-    facility_id: UUID = Depends(get_facility_context),
     x_afasync_timestamp: str = Header(..., alias="X-AfyaSync-Timestamp"),
     x_afasync_signature: str = Header(..., alias="X-AfyaSync-Signature"),
 ):
-    try:
-        from app.integrations.models import Integration
+    """Receive a payer callback authenticated by the integration's HMAC secret.
 
+    The facility is derived from the integration itself; no hospital user token is
+    accepted or required for this machine-to-machine endpoint.
+    """
+    try:
         integration = db.get(Integration, integration_id)
-        if integration is None or integration.facility_id != facility_id:
+        if integration is None:
             raise IntegrationError("INTEGRATION_NOT_FOUND")
         verify_callback_signature(
             integration,
@@ -91,7 +94,7 @@ def payer_callback(
         )
         claim = process_payer_callback(
             db,
-            facility_id,
+            integration.facility_id,
             integration_id,
             claim_id,
             payload.status,
