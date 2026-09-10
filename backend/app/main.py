@@ -13,26 +13,20 @@ from app.encounters import models as encounter_models
 from app.encounters.router import router as encounters_router
 from app.facilities import models as facility_models
 from app.facilities.router import router as facilities_router
+from app.laboratory import models as laboratory_models
+from app.laboratory.router import router as laboratory_router
 from app.patients import models as patient_models
 from app.patients.router import router as patients_router
 from app.rbac import models as rbac_models
 
-# Import models before metadata creation so SQLAlchemy knows all tables.
-_ = patient_models, coverage_models, facility_models, rbac_models, appointment_models, encounter_models, clinical_models
+_ = (patient_models, coverage_models, facility_models, rbac_models, appointment_models,
+     encounter_models, clinical_models, laboratory_models)
 
-app = FastAPI(
-    title=settings.app_name,
-    version=settings.app_version,
-    description="AfyaSync healthcare platform API",
-)
+app = FastAPI(title=settings.app_name, version=settings.app_version, description="AfyaSync healthcare platform API")
 
 
 @app.on_event("startup")
 def initialize_database() -> None:
-    """Create development tables when the API starts.
-
-    Alembic migrations will become the source of truth before production.
-    """
     if settings.environment != "production":
         Base.metadata.create_all(bind=engine)
 
@@ -44,21 +38,14 @@ app.include_router(facilities_router)
 app.include_router(appointments_router)
 app.include_router(encounters_router)
 app.include_router(clinical_router)
+app.include_router(laboratory_router)
 
 
 @app.get("/health", tags=["System"])
 def health_check() -> dict[str, object]:
-    return {
-        "success": True,
-        "data": {"service": "afasync-api", "status": "healthy"},
-        "message": "AfyaSync API is running",
-    }
+    return {"success": True, "data": {"service": "afasync-api", "status": "healthy"}, "message": "AfyaSync API is running"}
 
 
 @app.get("/api/v1", tags=["System"])
 def api_root() -> dict[str, object]:
-    return {
-        "success": True,
-        "data": {"name": settings.app_name, "version": settings.app_version},
-        "message": "AfyaSync API v1",
-    }
+    return {"success": True, "data": {"name": settings.app_name, "version": settings.app_version}, "message": "AfyaSync API v1"}
