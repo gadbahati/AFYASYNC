@@ -1,4 +1,4 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from app.patients.models import AfyaIdentity, Person
@@ -6,14 +6,11 @@ from app.patients.schemas import PatientCreate
 
 
 def _next_afya_id(db: Session) -> str:
-    """Generate the next human-facing AfyaSync ID.
-
-    The database uniqueness constraint remains the final protection against
-    duplicate IDs. A sequence should replace this counter before production
-    deployment for high-concurrency registration workloads.
-    """
-    count = db.scalar(select(func.count()).select_from(AfyaIdentity)) or 0
-    return f"AF-{count + 1:08d}"
+    """Generate the next concurrency-safe human-facing AfyaSync ID."""
+    sequence = db.scalar(text("nextval('afasync_patient_id_seq')"))
+    if sequence is None:
+        raise RuntimeError("IDENTITY_SEQUENCE_UNAVAILABLE")
+    return f"AF-{int(sequence):08d}"
 
 
 def create_patient(db: Session, payload: PatientCreate) -> Person:
