@@ -108,13 +108,23 @@ def test_claim_submission_never_marks_invoice_paid() -> None:
     db.get.side_effect = [claim, invoice, payer]
     db.scalar.return_value = integration
 
-    with patch("app.claims.service.record_audit"):
+    with patch("app.claims.service.queue_transaction") as queue_transaction, patch("app.claims.service.record_audit"):
         result = submit_claim(db, claim.id, facility_id, actor_user_id=uuid4())
 
     assert result.status == "SUBMITTED"
     assert result.submitted_at is not None
     assert invoice.status == "CLAIM_PENDING"
-    db.add.assert_called_once()
+    queue_transaction.assert_called_once_with(
+        db,
+        facility_id,
+        integration.id,
+        claim.claim_id,
+        "CLAIM",
+        claim.id,
+        "OUTBOUND",
+        claim.claim_id,
+    )
+    assert db.add.call_count == 1
 
 
 def test_claim_submission_requires_authorised_payer_integration() -> None:
