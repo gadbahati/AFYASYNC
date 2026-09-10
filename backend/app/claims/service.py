@@ -12,6 +12,7 @@ from app.coverage.models import Coverage, Payer
 from app.encounters.models import Encounter
 from app.integrations.models import Integration, IntegrationTransaction
 from app.integrations.service import IntegrationError, queue_transaction
+from app.notifications.events import notify_patient_event
 
 
 class ClaimsError(ValueError):
@@ -157,6 +158,7 @@ def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_i
     db.add(ClaimResponse(claim_id=claim.id, status="SUBMITTED", response_message="Queued for authorised payer submission"))
     db.commit()
     db.refresh(claim)
+    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", metadata={"claim_id": claim.claim_id, "status": "SUBMITTED"}, actor_user_id=actor_user_id)
     record_audit(db, action="SUBMIT_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "integration_id": str(integration.id)})
     return claim
 
@@ -191,6 +193,7 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
     db.add(ClaimResponse(claim_id=claim.id, status=status, response_code=response_code, response_message=response_message, external_reference=external_reference))
     db.commit()
     db.refresh(claim)
+    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", priority="HIGH" if status in {"REJECTED", "PARTIALLY_PAID"} else "NORMAL", metadata={"claim_id": claim.claim_id, "status": status}, actor_user_id=actor_user_id)
     record_audit(db, action="RECORD_PAYER_RESPONSE", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"status": status, "external_reference": external_reference})
     return claim
 
@@ -269,5 +272,6 @@ def reconcile_claim(db: Session, claim_id: UUID, facility_id: UUID, staff_id: UU
     db.add(reconciliation)
     db.commit()
     db.refresh(reconciliation)
+    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", priority="HIGH" if claim.status == "PARTIALLY_PAID" else "NORMAL", metadata={"claim_id": claim.claim_id, "status": claim.status}, actor_user_id=actor_user_id)
     record_audit(db, action="RECONCILE_CLAIM", resource_type="RECONCILIATION", resource_id=str(reconciliation.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "expected": str(expected), "received": str(received_amount), "difference": str(difference), "status": status})
     return reconciliation
