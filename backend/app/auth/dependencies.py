@@ -10,10 +10,7 @@ from app.database import get_db
 from app.rbac.models import Permission, Role, RolePermission, Staff, StaffRole, User
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-) -> User:
+def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme), db: Session = Depends(get_db)) -> User:
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AUTH_REQUIRED")
     payload = decode_access_token(credentials.credentials)
@@ -27,26 +24,28 @@ def get_current_user(
     return user
 
 
-def get_token_payload(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)) -> dict:
+def get_token_payload(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> dict:
     if credentials is None:
         raise HTTPException(status_code=401, detail="AUTH_REQUIRED")
     return decode_access_token(credentials.credentials)
 
 
-def require_permission(permission_code: str):
-    def dependency(
-        user: User = Depends(get_current_user),
-        payload: dict = Depends(get_token_payload),
-        db: Session = Depends(get_db),
-    ) -> User:
-        facility_raw = payload.get("facility_id")
-        if not facility_raw:
-            raise HTTPException(status_code=403, detail="FACILITY_CONTEXT_REQUIRED")
-        try:
-            facility_id = UUID(facility_raw)
-        except (ValueError, TypeError) as exc:
-            raise HTTPException(status_code=403, detail="INVALID_FACILITY_CONTEXT") from exc
+def get_facility_context(payload: dict = Depends(get_token_payload), user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> UUID:
+    raw = payload.get("facility_id")
+    if not raw:
+        raise HTTPException(status_code=403, detail="FACILITY_CONTEXT_REQUIRED")
+    try:
+        facility_id = UUID(raw)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=403, detail="INVALID_FACILITY_CONTEXT") from exc
+    staff = db.scalar(select(Staff).where(Staff.person_id == user.person_id, Staff.facility_id == facility_id, Staff.status == "ACTIVE"))
+    if staff is None:
+        raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
+    return facility_id
 
+
+def require_permission(permission_code: str):
+    def dependency(user: User = Depends(get_current_user), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> User:
         stmt = (
             select(Permission.id)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
@@ -59,11 +58,9 @@ def require_permission(permission_code: str):
                 Staff.facility_id == facility_id,
                 StaffRole.facility_id == facility_id,
                 Staff.status == "ACTIVE",
-            )
-            .limit(1)
+            ).limit(1)
         )
         if db.scalar(stmt) is None:
             raise HTTPException(status_code=403, detail="PERMISSION_DENIED")
         return user
-
     return dependency
