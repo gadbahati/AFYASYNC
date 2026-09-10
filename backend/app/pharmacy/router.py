@@ -1,36 +1,47 @@
+from datetime import date
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user, require_permission
-from app.auth.models import User
+from app.auth.dependencies import get_token_payload, require_permission
 from app.database import get_db
 from app.encounters.models import Encounter
-from app.facilities.models import Staff
-from app.pharmacy.models import InventoryBatch, InventoryItem, Medication, Prescription, PrescriptionItem
+from app.pharmacy.models import InventoryBatch, InventoryItem, Medication, Prescription, PrescriptionItem, StockMovement
 from app.pharmacy.permissions import PHARMACY_CREATE_MEDICATION, PHARMACY_CREATE_PRESCRIPTION, PHARMACY_DISPENSE, PHARMACY_RECEIVE_INVENTORY
 from app.pharmacy.schemas import DispenseResponse, InventoryReceive, InventoryResponse, MedicationCreate, MedicationResponse, PrescriptionCreate, PrescriptionResponse
 from app.pharmacy.service import PharmacyError, dispense_prescription
+from app.rbac.models import Staff, User
 
 router = APIRouter(prefix="/api/v1/pharmacy", tags=["Pharmacy"])
 
 
+def _facility(token: dict) -> UUID:
+    raw = token.get("facility_id")
+    if not raw:
+        raise HTTPException(status_code=403, detail="FACILITY_CONTEXT_REQUIRED")
+    try:
+        return UUID(raw)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=403, detail="INVALID_FACILITY_CONTEXT") from exc
+
+
+def _staff(db: Session, user: User, facility_id: UUID) -> Staff:
+    staff = db.scalar(select(Staff).where(Staff.person_id == user.person_id, Staff.facility_id == facility_id, Staff.status == "ACTIVE").limit(1))
+    if staff is None:
+        raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
+    return staff
+
+
 def _error(exc: PharmacyError) -> HTTPException:
-    mapping = {
-        "ENCOUNTER_NOT_FOUND": 404,
-        "PRESCRIPTION_NOT_FOUND": 404,
-        "MEDICATION_NOT_STOCKED": 409,
-        "INSUFFICIENT_STOCK": 409,
-        "INSUFFICIENT_BATCH_STOCK": 409,
-        "ENCOUNTER_CLOSED": 409,
-    }
+    mapping = {"ENCOUNTER_NOT_FOUND": 404, "PRESCRIPTION_NOT_FOUND": 404, "MEDICATION_NOT_STOCKED": 409, "INSUFFICIENT_STOCK": 409, "INSUFFICIENT_BATCH_STOCK": 409, "ENCOUNTER_CLOSED": 409, "PRESCRIPTION_ALREADY_DISPENSED": 409, "PRESCRIPTION_NOT_DISPENSABLE": 409}
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
 
 @router.post("/medications", response_model=MedicationResponse, status_code=201)
-def create_medication(payload: MedicationCreate, db: Session = Depends(get_db), _: User = Depends(require_permission(PHARMACY_CREATE_MEDICATION))) -> Medication:
+def create_medication(payload: MedicationCreate, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_CREATE_MEDICATION)), token: dict = Depends(get_token_payload)) -> Medication:
+    _staff(db, user, _facility(token))
     existing = db.scalar(select(Medication).where(Medication.code == payload.code))
     if existing:
         raise HTTPException(status_code=409, detail="MEDICATION_CODE_EXISTS")
@@ -42,22 +53,17 @@ def create_medication(payload: MedicationCreate, db: Session = Depends(get_db), 
 
 
 @router.post("/prescriptions", response_model=PrescriptionResponse, status_code=201)
-def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_CREATE_PRESCRIPTION))) -> Prescription:
+def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_CREATE_PRESCRIPTION)), token: dict = Depends(get_token_payload)) -> Prescription:
+    facility_id = _facility(token)
+    staff = _staff(db, user, facility_id)
     encounter = db.get(Encounter, payload.encounter_id)
     if encounter is None:
         raise HTTPException(status_code=404, detail="ENCOUNTER_NOT_FOUND")
+    if encounter.facility_id != facility_id:
+        raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     if encounter.status != "OPEN":
         raise HTTPException(status_code=409, detail="ENCOUNTER_CLOSED")
-    staff = db.scalar(select(Staff).where(Staff.person_id == user.person_id, Staff.facility_id == encounter.facility_id, Staff.status == "ACTIVE"))
-    if staff is None:
-        raise HTTPException(status_code=403, detail="STAFF_NOT_AT_FACILITY")
-
-    prescription = Prescription(
-        prescription_id=f"RX-{uuid4().hex[:20].upper()}",
-        encounter_id=encounter.id,
-        patient_id=encounter.patient_id,
-        prescribed_by=staff.id,
-    )
+    prescription = Prescription(prescription_id=f"RX-{uuid4().hex[:20].upper()}", encounter_id=encounter.id, patient_id=encounter.patient_id, prescribed_by=staff.id)
     db.add(prescription)
     db.flush()
     for item in payload.items:
@@ -72,33 +78,51 @@ def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_d
 
 
 @router.post("/inventory/receive", response_model=InventoryResponse, status_code=201)
-def receive_inventory(payload: InventoryReceive, db: Session = Depends(get_db), _: User = Depends(require_permission(PHARMACY_RECEIVE_INVENTORY))) -> InventoryItem:
+def receive_inventory(payload: InventoryReceive, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_RECEIVE_INVENTORY)), token: dict = Depends(get_token_payload)) -> InventoryItem:
+    facility_id = _facility(token)
+    staff = _staff(db, user, facility_id)
+    if payload.facility_id != facility_id:
+        raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     medication = db.get(Medication, payload.medication_id)
     if medication is None or medication.status != "ACTIVE":
         raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
-    if payload.expiry_date < __import__("datetime").date.today():
+    if payload.expiry_date < date.today():
         raise HTTPException(status_code=400, detail="EXPIRED_BATCH")
-    item = db.scalar(select(InventoryItem).where(InventoryItem.facility_id == payload.facility_id, InventoryItem.medication_id == payload.medication_id).with_for_update())
+    item = db.scalar(select(InventoryItem).where(InventoryItem.facility_id == facility_id, InventoryItem.medication_id == payload.medication_id).with_for_update())
     if item is None:
-        item = InventoryItem(facility_id=payload.facility_id, medication_id=payload.medication_id, current_quantity=0, minimum_quantity=0)
+        item = InventoryItem(facility_id=facility_id, medication_id=payload.medication_id, current_quantity=0, minimum_quantity=0)
         db.add(item)
         db.flush()
-    batch = InventoryBatch(inventory_item_id=item.id, batch_number=payload.batch_number, expiry_date=payload.expiry_date, quantity=payload.quantity, purchase_price=payload.purchase_price, selling_price=payload.selling_price)
-    db.add(batch)
+    batch = db.scalar(select(InventoryBatch).where(InventoryBatch.inventory_item_id == item.id, InventoryBatch.batch_number == payload.batch_number).with_for_update())
+    if batch is None:
+        batch = InventoryBatch(inventory_item_id=item.id, batch_number=payload.batch_number, expiry_date=payload.expiry_date, quantity=payload.quantity, purchase_price=payload.purchase_price, selling_price=payload.selling_price)
+        db.add(batch)
+    else:
+        if batch.expiry_date != payload.expiry_date:
+            raise HTTPException(status_code=409, detail="BATCH_EXPIRY_MISMATCH")
+        batch.quantity += payload.quantity
+        batch.purchase_price = payload.purchase_price
+        batch.selling_price = payload.selling_price
     item.current_quantity += payload.quantity
+    db.flush()
+    db.add(StockMovement(inventory_item_id=item.id, batch_id=batch.id, movement_type="RECEIVE", quantity=payload.quantity, reference_type="INVENTORY_RECEIPT", performed_by=staff.id))
     db.commit()
     db.refresh(item)
     return item
 
 
 @router.post("/prescriptions/{prescription_id}/dispense", response_model=DispenseResponse)
-def dispense(prescription_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_DISPENSE))) -> DispenseResponse:
+def dispense(prescription_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_DISPENSE)), token: dict = Depends(get_token_payload)) -> DispenseResponse:
+    facility_id = _facility(token)
+    staff = _staff(db, user, facility_id)
     prescription = db.get(Prescription, prescription_id)
     if prescription is None:
         raise HTTPException(status_code=404, detail="PRESCRIPTION_NOT_FOUND")
-    staff = db.scalar(select(Staff).where(Staff.person_id == user.person_id, Staff.facility_id == db.get(Encounter, prescription.encounter_id).facility_id, Staff.status == "ACTIVE"))
-    if staff is None:
-        raise HTTPException(status_code=403, detail="STAFF_REQUIRED")
+    encounter = db.get(Encounter, prescription.encounter_id)
+    if encounter is None:
+        raise HTTPException(status_code=404, detail="ENCOUNTER_NOT_FOUND")
+    if encounter.facility_id != facility_id:
+        raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
         movements = dispense_prescription(db, prescription_id, staff.id)
     except PharmacyError as exc:
