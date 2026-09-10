@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.appointments.models import Appointment, Queue, QueueEntry
 from app.encounters.service import create_encounter
 from app.facilities.models import Department, Facility
+from app.notifications.events import notify_patient_event
 from app.patients.models import Person
 from app.rbac.models import Staff
 
@@ -35,7 +36,7 @@ def _require_provider(db: Session, provider_id: UUID | None, facility_id: UUID) 
         raise ValueError("PROVIDER_NOT_FOUND")
 
 
-def create_appointment(db: Session, data: dict) -> Appointment:
+def create_appointment(db: Session, data: dict, actor_user_id: UUID | None = None) -> Appointment:
     _require_patient(db, data["patient_id"])
     _require_facility_department(db, data["facility_id"], data["department_id"])
     _require_provider(db, data.get("provider_id"), data["facility_id"])
@@ -43,6 +44,15 @@ def create_appointment(db: Session, data: dict) -> Appointment:
     db.add(appointment)
     db.commit()
     db.refresh(appointment)
+    notify_patient_event(
+        db,
+        patient_id=appointment.patient_id,
+        facility_id=appointment.facility_id,
+        event_type="APPOINTMENT_CONFIRMED",
+        action_url=f"/appointments/{appointment.id}",
+        metadata={"appointment_id": str(appointment.id)},
+        actor_user_id=actor_user_id,
+    )
     return appointment
 
 
@@ -64,7 +74,7 @@ def create_queue(db: Session, data: dict) -> Queue:
     return queue
 
 
-def add_to_queue(db: Session, data: dict, created_by: UUID) -> QueueEntry:
+def add_to_queue(db: Session, data: dict, created_by: UUID, actor_user_id: UUID | None = None) -> QueueEntry:
     _require_patient(db, data["patient_id"])
     queue = db.get(Queue, data["queue_id"])
     if queue is None or queue.status != "ACTIVE":
@@ -108,12 +118,22 @@ def add_to_queue(db: Session, data: dict, created_by: UUID) -> QueueEntry:
         commit=False,
     )
     entry.encounter_id = encounter.id
+    notify_patient_event(
+        db,
+        patient_id=entry.patient_id,
+        facility_id=queue.facility_id,
+        event_type="QUEUE_CHECKIN",
+        action_url=f"/queue/{entry.id}",
+        metadata={"queue_entry_id": str(entry.id), "encounter_id": str(encounter.id)},
+        actor_user_id=actor_user_id,
+        commit=False,
+    )
     db.commit()
     db.refresh(entry)
     return entry
 
 
-def update_queue_status(db: Session, entry_id: UUID, new_status: str) -> QueueEntry:
+def update_queue_status(db: Session, entry_id: UUID, new_status: str, actor_user_id: UUID | None = None) -> QueueEntry:
     entry = db.get(QueueEntry, entry_id)
     if entry is None:
         raise ValueError("QUEUE_ENTRY_NOT_FOUND")
