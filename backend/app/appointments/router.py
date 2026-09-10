@@ -32,12 +32,12 @@ def _facility(payload: dict) -> UUID:
 
 
 @router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
-def create(payload: AppointmentCreate, _: User = Depends(require_permission("appointments.write")), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+def create(payload: AppointmentCreate, user: User = Depends(require_permission("appointments.write")), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     facility_id = _facility(token)
     if payload.facility_id != facility_id:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        return create_appointment(db, payload.model_dump())
+        return create_appointment(db, payload.model_dump(), actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
 
@@ -63,7 +63,7 @@ def add_queue_entry(payload: QueueEntryCreate, user: User = Depends(require_perm
     if entry_queue is None or entry_queue.facility_id != _facility(token):
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        return add_to_queue(db, payload.model_dump(), user.id)
+        return add_to_queue(db, payload.model_dump(), user.id, actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
 
