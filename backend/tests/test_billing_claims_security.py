@@ -2,11 +2,13 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
+import json
 
 import pytest
 
 from app.billing.service import BillingError, create_charge, record_payment
 from app.claims.service import ClaimsError, record_payer_response, submit_claim
+from app.integrations.adapters import AdapterResult, HttpJsonAdapter, UnconfiguredAdapter, build_adapter
 
 
 def test_charge_cannot_cross_facility_boundary() -> None:
@@ -173,3 +175,56 @@ def test_claim_response_is_facility_scoped() -> None:
         )
 
     db.commit.assert_not_called()
+
+
+def test_unconfigured_adapter_never_reports_success() -> None:
+    result = UnconfiguredAdapter().send({"claim_id": "CLM-1"}, "CLM-1")
+    assert result.status == "RETRYING"
+    assert result.response_code == "ADAPTER_NOT_CONFIGURED"
+
+
+def test_build_adapter_requires_https() -> None:
+    with pytest.raises(ValueError, match="HTTPS_ENDPOINT_REQUIRED"):
+        build_adapter({"adapter_type": "http_json", "endpoint": "http://payer.example.test/claims"})
+
+
+def test_http_adapter_requires_environment_credential_when_configured() -> None:
+    adapter = HttpJsonAdapter(endpoint="https://payer.example.test/claims", credential_env="AFYASYNC_TEST_TOKEN")
+    with patch.dict("os.environ", {}, clear=True):
+        result = adapter.send({"claim_id": "CLM-1"}, "CLM-1")
+    assert result.status == "RETRYING"
+    assert result.response_code == "ADAPTER_CREDENTIAL_NOT_CONFIGURED"
+
+
+def test_http_adapter_sends_json_and_idempotency_key() -> None:
+    class FakeResponse:
+        status = 202
+
+        def read(self):
+            return json.dumps({"external_reference": "EXT-1", "accepted": True}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    with patch.dict("os.environ", {"AFYASYNC_TEST_TOKEN": "secret"}, clear=True), patch(
+        "app.integrations.adapters.urlopen", return_value=FakeResponse()
+    ) as urlopen_mock:
+        result = HttpJsonAdapter(
+            endpoint="https://payer.example.test/claims",
+            credential_env="AFYASYNC_TEST_TOKEN",
+        ).send({"claim_id": "CLM-1"}, "CLM-1")
+
+    request = urlopen_mock.call_args.args[0]
+    assert request.full_url == "https://payer.example.test/claims"
+    assert request.get_header("Idempotency-key") == "CLM-1"
+    assert request.get_header("Authorization") == "Bearer secret"
+    assert json.loads(request.data.decode()) == {"claim_id": "CLM-1"}
+    assert result == AdapterResult(
+        status="SUCCEEDED",
+        response_code="202",
+        external_reference="EXT-1",
+        response_data={"external_reference": "EXT-1", "accepted": True},
+    )
