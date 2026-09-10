@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from app.appointments import models as appointment_models
 from app.appointments.router import router as appointments_router
 from app.auth import router as auth_router
+from app.billing import models as billing_models
+from app.billing.router import router as billing_router
 from app.clinical import models as clinical_models
 from app.clinical.router import router as clinical_router
 from app.config import settings
@@ -22,7 +24,7 @@ from app.pharmacy.router import router as pharmacy_router
 from app.rbac import models as rbac_models
 
 _ = (patient_models, coverage_models, facility_models, rbac_models, appointment_models,
-     encounter_models, clinical_models, laboratory_models, pharmacy_models)
+     encounter_models, clinical_models, laboratory_models, pharmacy_models, billing_models)
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, description="AfyaSync healthcare platform API")
 
@@ -42,6 +44,7 @@ app.include_router(encounters_router)
 app.include_router(clinical_router)
 app.include_router(laboratory_router)
 app.include_router(pharmacy_router)
+app.include_router(billing_router)
 
 
 @app.get("/health", tags=["System"])
