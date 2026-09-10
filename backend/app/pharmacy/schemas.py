@@ -62,7 +62,17 @@ class InventoryResponse(BaseModel):
     status: str
 
 
+class DispenseBillingItem(BaseModel):
+    prescription_item_id: UUID
+    service_id: UUID
+
+
+class DispenseRequest(BaseModel):
+    billing_items: list[DispenseBillingItem] = Field(min_length=1)
+
+
 class DispenseResponse(BaseModel):
     prescription_id: UUID
     status: str
     movements_created: int
+    charges_created: int
