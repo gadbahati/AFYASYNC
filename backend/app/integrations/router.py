@@ -1,13 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
 from app.claims.service import ClaimsError, process_payer_callback
 from app.database import get_db
 from app.integrations.schemas import IntegrationCreate, IntegrationOut, PayerCallbackCreate, TransactionCreate, TransactionOut
-from app.integrations.service import IntegrationError, create_integration, queue_transaction
+from app.integrations.service import IntegrationError, create_integration, queue_transaction, verify_callback_signature
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["Integrations"])
@@ -35,6 +35,10 @@ def _error(exc: IntegrationError | ClaimsError) -> HTTPException:
         "APPROVED_AMOUNT_EXCEEDS_CLAIM": 400,
         "CLAIM_NOT_READY": 409,
         "FACILITY_ACCESS_DENIED": 403,
+        "CALLBACK_SECRET_NOT_CONFIGURED": 503,
+        "INVALID_CALLBACK_TIMESTAMP": 401,
+        "CALLBACK_TIMESTAMP_EXPIRED": 401,
+        "INVALID_CALLBACK_SIGNATURE": 401,
     }
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
@@ -70,9 +74,21 @@ def payer_callback(
     payload: PayerCallbackCreate,
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
-    user: User = Depends(require_permission(INTEGRATIONS_QUEUE)),
+    x_afasync_timestamp: str = Header(..., alias="X-AfyaSync-Timestamp"),
+    x_afasync_signature: str = Header(..., alias="X-AfyaSync-Signature"),
 ):
     try:
+        from app.integrations.models import Integration
+
+        integration = db.get(Integration, integration_id)
+        if integration is None or integration.facility_id != facility_id:
+            raise IntegrationError("INTEGRATION_NOT_FOUND")
+        verify_callback_signature(
+            integration,
+            x_afasync_timestamp,
+            x_afasync_signature,
+            payload.model_dump(mode="json"),
+        )
         claim = process_payer_callback(
             db,
             facility_id,
@@ -83,7 +99,7 @@ def payer_callback(
             payload.response_message,
             payload.external_reference,
             payload.approved_amount,
-            actor_user_id=user.id,
+            actor_user_id=None,
         )
         return {
             "claim_id": claim.id,
