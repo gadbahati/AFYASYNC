@@ -61,9 +61,9 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
         raise ClaimsError("CLAIM_ITEMS_REQUIRED")
     claim_amount = Decimal(str(invoice.payer_amount))
     if claim_amount <= 0:
-        claim_amount = Decimal(str(invoice.total_amount))
-    if claim_amount <= 0:
         raise ClaimsError("CLAIM_AMOUNT_INVALID")
+
+    claimable_total = Decimal("0")
     claim = Claim(claim_id=_claim_number(), invoice_id=invoice.id, encounter_id=encounter.id, patient_id=invoice.patient_id, payer_id=payer.id, claim_amount=claim_amount)
     db.add(claim)
     db.flush()
@@ -74,7 +74,14 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
         service = db.get(Service, charge.service_id)
         if service is None or service.facility_id != facility_id:
             raise ClaimsError("SERVICE_NOT_FOUND")
-        db.add(ClaimItem(claim_id=claim.id, charge_id=charge.id, service_code=service.code, quantity=charge.quantity, amount=charge.total_amount))
+        item_payer_amount = Decimal(str(item.payer_amount)).quantize(Decimal("0.01"))
+        if item_payer_amount <= 0:
+            continue
+        claimable_total += item_payer_amount
+        db.add(ClaimItem(claim_id=claim.id, charge_id=charge.id, service_code=service.code, quantity=charge.quantity, amount=item_payer_amount))
+
+    if claimable_total != claim_amount:
+        raise ClaimsError("CLAIM_AMOUNT_MISMATCH")
     invoice.status = "CLAIM_PENDING"
     db.commit()
     db.refresh(claim)
