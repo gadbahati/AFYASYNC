@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.encounters.models import Encounter
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabSample, LabTest
+from app.notifications.events import notify_patient_event
 from app.rbac.models import Staff
 
 
@@ -132,6 +133,16 @@ def verify_result(db: Session, staff_id: UUID, result_id: UUID) -> LabResult:
     remaining = db.scalar(select(LabOrderItem).where(LabOrderItem.lab_order_id == order.id, LabOrderItem.status != "RESULT_VERIFIED").limit(1))
     if remaining is None:
         order.status = "COMPLETED"
+    notify_patient_event(
+        db,
+        patient_id=encounter.patient_id,
+        facility_id=encounter.facility_id,
+        event_type="LAB_RESULT_READY",
+        action_url=f"/patient/encounters/{encounter.id}/labs",
+        actor_user_id=None,
+        commit=False,
+        metadata={"lab_result_id": str(result.id), "lab_order_id": str(order.id)},
+    )
     db.commit()
     db.refresh(result)
     return result
