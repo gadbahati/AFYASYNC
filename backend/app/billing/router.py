@@ -1,11 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
-from app.billing.models import Invoice, Service
+from app.billing.models import Service
 from app.billing.permissions import BILLING_CHARGE_WRITE, BILLING_INVOICE_WRITE, BILLING_PAYMENT_WRITE, BILLING_SERVICE_WRITE
 from app.billing.schemas import ChargeCreate, ChargeResponse, InvoiceResponse, PaymentCreate, PaymentResponse, ServiceCreate, ServiceResponse
 from app.billing.service import BillingError, create_charge, create_invoice, record_payment
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/v1/billing", tags=["Billing"])
 
 
 def _error(exc: BillingError) -> HTTPException:
-    mapping = {"ENCOUNTER_NOT_FOUND": 404, "SERVICE_NOT_FOUND": 404, "INVOICE_NOT_FOUND": 404, "NO_CHARGES": 409, "INVOICE_ALREADY_PAID": 409, "PAYMENT_EXCEEDS_BALANCE": 409, "INVALID_PAYMENT_AMOUNT": 400, "FACILITY_ACCESS_DENIED": 403}
+    mapping = {"ENCOUNTER_NOT_FOUND": 404, "SERVICE_NOT_FOUND": 404, "INVOICE_NOT_FOUND": 404, "NO_CHARGES": 409, "INVOICE_ALREADY_PAID": 409, "PAYMENT_EXCEEDS_BALANCE": 409, "INVALID_PAYMENT_AMOUNT": 400, "FACILITY_ACCESS_DENIED": 403, "IDEMPOTENCY_KEY_REUSED": 409}
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
 
@@ -49,8 +49,12 @@ def make_invoice(encounter_id: UUID, db: Session = Depends(get_db), facility_id:
 
 
 @router.post("/payments", response_model=PaymentResponse, status_code=201)
-def pay(payload: PaymentCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(BILLING_PAYMENT_WRITE))):
+def pay(payload: PaymentCreate, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(BILLING_PAYMENT_WRITE))):
+    if idempotency_key is not None and not 1 <= len(idempotency_key) <= 100:
+        raise HTTPException(status_code=400, detail="INVALID_IDEMPOTENCY_KEY")
+    data = payload.model_dump()
+    data["idempotency_key"] = idempotency_key
     try:
-        return record_payment(db, facility_id, payload.model_dump())
+        return record_payment(db, facility_id, data)
     except BillingError as exc:
         raise _error(exc) from exc
