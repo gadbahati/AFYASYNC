@@ -35,9 +35,10 @@ def upgrade() -> None:
     op.create_index("ix_lab_orders_order_id", "lab_orders", ["order_id"])
     op.create_table("lab_order_items",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("lab_order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("lab_orders.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column("lab_order_id", postgresql.UUID(as_uuid=True), primary_key=False, nullable=False),
         sa.Column("test_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("lab_tests.id", ondelete="RESTRICT"), nullable=False),
-        sa.Column("instructions", sa.Text()), sa.Column("status", sa.String(30), nullable=False, server_default="ORDERED")))
+        sa.Column("instructions", sa.Text()), sa.Column("status", sa.String(30), nullable=False, server_default="ORDERED"),
+        sa.ForeignKeyConstraint(["lab_order_id"], ["lab_orders.id"], ondelete="RESTRICT"))
     op.create_index("ix_lab_order_items_lab_order_id", "lab_order_items", ["lab_order_id"])
     op.create_table("lab_samples",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -45,7 +46,7 @@ def upgrade() -> None:
         sa.Column("lab_order_item_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("lab_order_items.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("collected_by", postgresql.UUID(as_uuid=True), sa.ForeignKey("staff.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("collected_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("received_at", sa.DateTime(timezone=True)), sa.Column("status", sa.String(30), nullable=False, server_default="COLLECTED")))
+        sa.Column("received_at", sa.DateTime(timezone=True)), sa.Column("status", sa.String(30), nullable=False, server_default="COLLECTED"))
     op.create_index("ix_lab_samples_lab_order_item_id", "lab_samples", ["lab_order_item_id"])
     op.create_table("lab_results",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -62,4 +63,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("lab_results"); op.drop_table("lab_samples"); op.drop_table("lab_order_items"); op.drop_table("lab_orders"); op.drop_index("ix_lab_tests_code", table_name="lab_tests"); op.drop_table("lab_tests")
+    op.drop_table("lab_results")
+    op.drop_table("lab_samples")
+    op.drop_table("lab_order_items")
+    op.drop_table("lab_orders")
+    op.drop_index("ix_lab_tests_code", table_name="lab_tests")
+    op.drop_table("lab_tests")
