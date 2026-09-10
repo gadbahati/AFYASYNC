@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "development"
     database_url: str = "postgresql+psycopg://afasync:afasync@localhost:5432/afasync"
+    jwt_secret: str = "change-this-development-secret"
+    jwt_algorithm: str = "HS256"
+    access_token_minutes: int = 15
 
     model_config = SettingsConfigDict(
         env_file=".env",
