@@ -1,7 +1,8 @@
+from datetime import datetime, timezone
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.billing.models import Charge, Invoice, InvoiceItem, Payment, Service
@@ -13,10 +14,8 @@ class BillingError(ValueError):
 
 
 def _invoice_number(db: Session) -> str:
-    from datetime import datetime, timezone
-    count = db.scalar(select(Invoice.id).order_by(Invoice.created_at.desc()).limit(1))
-    number = 1 if count is None else db.query(Invoice).count() + 1
-    return f"INV-{datetime.now(timezone.utc):%Y%m%d}-{number:05d}"
+    sequence = db.scalar(text("nextval('afasync_invoice_seq')"))
+    return f"INV-{datetime.now(timezone.utc):%Y%m%d}-{int(sequence):05d}"
 
 
 def create_charge(db: Session, facility_id: UUID, payload: dict) -> Charge:
@@ -33,18 +32,7 @@ def create_charge(db: Session, facility_id: UUID, payload: dict) -> Charge:
     quantity = Decimal(str(payload["quantity"]))
     unit_price = Decimal(str(service.price))
     total = quantity * unit_price
-    charge = Charge(
-        charge_id=f"CHG-{__import__('uuid').uuid4().hex[:20].upper()}",
-        encounter_id=encounter.id,
-        patient_id=encounter.patient_id,
-        facility_id=facility_id,
-        service_id=service.id,
-        quantity=quantity,
-        unit_price=unit_price,
-        total_amount=total,
-        source_type=payload["source_type"],
-        source_id=payload.get("source_id"),
-    )
+    charge = Charge(charge_id=f"CHG-{uuid4().hex[:20].upper()}", encounter_id=encounter.id, patient_id=encounter.patient_id, facility_id=facility_id, service_id=service.id, quantity=quantity, unit_price=unit_price, total_amount=total, source_type=payload["source_type"], source_id=payload.get("source_id"))
     db.add(charge)
     db.commit()
     db.refresh(charge)
@@ -82,16 +70,23 @@ def record_payment(db: Session, facility_id: UUID, payload: dict) -> Payment:
     amount = Decimal(str(payload["amount"]))
     if amount <= 0:
         raise BillingError("INVALID_PAYMENT_AMOUNT")
+
+    idempotency_key = payload.get("idempotency_key")
+    transaction_id = f"AFY-TXN-{idempotency_key}" if idempotency_key else f"AFY-TXN-{uuid4().hex.upper()}"
+    existing = db.scalar(select(Payment).where(Payment.transaction_id == transaction_id).limit(1))
+    if existing is not None:
+        if existing.invoice_id != invoice.id or Decimal(str(existing.amount)) != amount:
+            raise BillingError("IDEMPOTENCY_KEY_REUSED")
+        return existing
+
     paid = sum((Decimal(str(p.amount)) for p in db.scalars(select(Payment).where(Payment.invoice_id == invoice.id, Payment.status == "CONFIRMED"))), Decimal("0"))
     if paid + amount > Decimal(str(invoice.patient_amount)):
         raise BillingError("PAYMENT_EXCEEDS_BALANCE")
-    payment = Payment(transaction_id=f"AFY-TXN-{__import__('uuid').uuid4().hex[:24].upper()}", invoice_id=invoice.id, patient_id=invoice.patient_id, facility_id=facility_id, amount=amount, payment_method=payload["payment_method"], provider=payload.get("provider"), external_reference=payload.get("external_reference"), status="CONFIRMED")
+    payment = Payment(transaction_id=transaction_id, invoice_id=invoice.id, patient_id=invoice.patient_id, facility_id=facility_id, amount=amount, payment_method=payload["payment_method"], provider=payload.get("provider"), external_reference=payload.get("external_reference"), status="CONFIRMED", confirmed_at=datetime.now(timezone.utc))
     db.add(payment)
     db.flush()
     new_paid = paid + amount
     invoice.status = "PAID" if new_paid == Decimal(str(invoice.patient_amount)) else "PARTIALLY_PAID"
-    from datetime import datetime, timezone
-    payment.confirmed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(payment)
     return payment
