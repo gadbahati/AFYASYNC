@@ -36,6 +36,10 @@ class PatientUpdate(BaseModel):
     status: Literal["ACTIVE", "INACTIVE"] | None = None
 
 
+class PatientFacilityStatusUpdate(BaseModel):
+    status: Literal["ACTIVE", "INACTIVE"]
+
+
 class PatientFacilityResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
