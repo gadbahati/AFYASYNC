@@ -79,18 +79,26 @@ def get_patient_for_facility(db: Session, patient_id: UUID, facility_id: UUID) -
     return db.scalar(statement)
 
 
-def search_patients(db: Session, query: str, limit: int = 20) -> list[tuple[Person, AfyaIdentity]]:
+def search_patients(
+    db: Session,
+    query: str,
+    facility_id: UUID,
+    limit: int = 20,
+) -> list[tuple[Person, AfyaIdentity]]:
     term = f"%{query.strip()}%"
     statement = (
         select(Person, AfyaIdentity)
         .join(AfyaIdentity, AfyaIdentity.person_id == Person.id)
+        .join(PatientFacility, PatientFacility.patient_id == Person.id)
         .where(
+            PatientFacility.facility_id == facility_id,
+            PatientFacility.status == "ACTIVE",
             or_(
                 AfyaIdentity.afya_id.ilike(term),
                 Person.phone.ilike(term),
                 Person.first_name.ilike(term),
                 Person.last_name.ilike(term),
-            )
+            ),
         )
         .order_by(Person.last_name, Person.first_name)
         .limit(min(max(limit, 1), 50))
