@@ -50,6 +50,41 @@ def get_patient_facility_enrollments(db: Session, patient_id: UUID, facility_id:
     return list(db.scalars(statement).all())
 
 
+def list_patients_for_facility(
+    db: Session,
+    facility_id: UUID,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    enrollment_status: str | None = "ACTIVE",
+) -> list[tuple[Person, AfyaIdentity]]:
+    """Return patients enrolled at the given facility only.
+
+    Strictly facility-scoped: never returns patients that are only enrolled
+    at other facilities. Defaults to ACTIVE enrollments.
+    """
+    if facility_id is None:
+        raise ValueError("FACILITY_CONTEXT_REQUIRED")
+    limit = min(max(limit, 1), 100)
+    offset = max(offset, 0)
+
+    statement = (
+        select(Person, AfyaIdentity)
+        .join(AfyaIdentity, AfyaIdentity.person_id == Person.id)
+        .join(PatientFacility, PatientFacility.patient_id == Person.id)
+        .where(PatientFacility.facility_id == facility_id)
+        .order_by(Person.last_name, Person.first_name, Person.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    if enrollment_status is not None:
+        if enrollment_status not in _ALLOWED_PATIENT_STATUSES:
+            raise ValueError("INVALID_ENROLLMENT_STATUS")
+        statement = statement.where(PatientFacility.status == enrollment_status)
+
+    return list(db.execute(statement).all())
+
+
 def update_patient(db: Session, patient: Person, payload: PatientUpdate, *, actor_user_id: UUID | None = None, facility_id: UUID | None = None) -> Person:
     if facility_id is None:
         raise ValueError("FACILITY_CONTEXT_REQUIRED")
