@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import FacilityOption, FacilitySelectionRequest, LoginRequest, RefreshTokenRequest, TokenResponse
-from app.auth.service import authenticate_user, issue_access_token, issue_refresh_token, rotate_tokens_from_refresh
+from app.auth.service import authenticate_user, issue_access_token, issue_refresh_token, revoke_refresh_token, rotate_tokens_from_refresh
 from app.config import settings
 from app.database import get_db
 from app.facilities.models import Facility
@@ -18,10 +18,10 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _token_response(user: User, facility_id) -> TokenResponse:
+def _token_response(db: Session, user: User, facility_id) -> TokenResponse:
     return TokenResponse(
         access_token=issue_access_token(user, facility_id),
-        refresh_token=issue_refresh_token(user, facility_id),
+        refresh_token=issue_refresh_token(db, user, facility_id),
         expires_in=settings.access_token_minutes * 60,
     )
 
@@ -64,7 +64,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         facility_id=facility_id,
         ip_address=_client_ip(request),
     )
-    return _token_response(user, facility_id)
+    return _token_response(db, user, facility_id)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -91,7 +91,7 @@ def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user, facility_id = result
+    user, facility_id, new_refresh_token = result
     record_audit(
         db,
         action="AUTH_REFRESH",
@@ -101,7 +101,30 @@ def refresh(
         facility_id=facility_id,
         ip_address=_client_ip(request),
     )
-    return _token_response(user, facility_id)
+    return TokenResponse(
+        access_token=issue_access_token(user, facility_id),
+        refresh_token=new_refresh_token,
+        expires_in=settings.access_token_minutes * 60,
+    )
+
+
+@router.post("/logout")
+def logout(
+    payload: RefreshTokenRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    revoked = revoke_refresh_token(db, payload.refresh_token)
+    if not revoked:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_REFRESH_TOKEN")
+    record_audit(
+        db,
+        action="AUTH_LOGOUT",
+        resource_type="REFRESH_SESSION",
+        result="SUCCESS",
+        ip_address=_client_ip(request),
+    )
+    return {"success": True, "data": {"revoked": True}, "message": "Session revoked"}
 
 
 @router.get("/facilities", response_model=list[FacilityOption])
@@ -151,7 +174,7 @@ def select_facility(
         user_id=user.id,
         facility_id=payload.facility_id,
     )
-    return _token_response(user, payload.facility_id)
+    return _token_response(db, user, payload.facility_id)
 
 
 @router.get("/me")
