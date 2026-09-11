@@ -125,6 +125,43 @@ def enroll_patient_in_facility(db: Session, patient_id: UUID, facility_id: UUID,
     return membership
 
 
+def update_patient_facility_status(db: Session, patient_id: UUID, facility_id: UUID, status: str, *, actor_user_id: UUID | None = None) -> PatientFacility:
+    if facility_id is None:
+        raise ValueError("FACILITY_CONTEXT_REQUIRED")
+    if status not in _ALLOWED_PATIENT_STATUSES:
+        raise ValueError("INVALID_PATIENT_FACILITY_STATUS")
+
+    membership = db.scalar(
+        select(PatientFacility).where(
+            PatientFacility.patient_id == patient_id,
+            PatientFacility.facility_id == facility_id,
+        )
+    )
+    if membership is None:
+        raise ValueError("PATIENT_NOT_IN_FACILITY")
+    if membership.status == status:
+        raise ValueError("PATIENT_FACILITY_STATUS_UNCHANGED")
+
+    previous_status = membership.status
+    membership.status = status
+    db.flush()
+    record_audit(
+        db,
+        action="UPDATE_PATIENT_FACILITY_STATUS",
+        resource_type="PATIENT_FACILITY",
+        resource_id=str(membership.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=patient_id,
+        metadata={"previous_status": previous_status, "new_status": status},
+        commit=False,
+    )
+    db.commit()
+    db.refresh(membership)
+    return membership
+
+
 def search_patients(db: Session, query: str, facility_id: UUID, limit: int = 20) -> list[tuple[Person, AfyaIdentity]]:
     term = f"%{query.strip()}%"
     statement = select(Person, AfyaIdentity).join(AfyaIdentity, AfyaIdentity.person_id == Person.id).join(PatientFacility, PatientFacility.patient_id == Person.id).where(PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE", or_(AfyaIdentity.afya_id.ilike(term), Person.phone.ilike(term), Person.first_name.ilike(term), Person.last_name.ilike(term))).order_by(Person.last_name, Person.first_name).limit(min(max(limit, 1), 50))
