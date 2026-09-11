@@ -83,8 +83,8 @@ def create(
             payload.model_dump(),
             actor_user_id=user.id,
         )
-    except ReferralError as exc:
-        raise _error(exc) from exc
+    except ReferralError as err:
+        raise _error(err) from err
 
 
 @router.get("", response_model=ReferralListResponse)
@@ -116,8 +116,8 @@ def create_transfer_endpoint(
             payload.model_dump(),
             actor_user_id=user.id,
         )
-    except ReferralError as exc:
-        raise _error(exc) from exc
+    except ReferralError as err:
+        raise _error(err) from err
 
 
 @router.get("/transfers", response_model=TransferListResponse)
@@ -142,8 +142,8 @@ def get_transfer(
 ) -> TransferOut:
     try:
         return get_transfer_for_facility(db, transfer_id, facility_id)
-    except ReferralError as exc:
-        raise _error(exc) from exp
+    except ReferralError as err:
+        raise _error(err) from err
 
 
 @router.post("/transfers/{transfer_id}/status", response_model=TransferOut)
@@ -156,8 +156,8 @@ def transfer_status(
 ) -> TransferOut:
     try:
         return update_transfer_status(db, facility_id, transfer_id, payload.status, actor_user_id=user.id)
-    except ReferralError as exc:
-        raise _error(exc) from exp
+    except ReferralError as err:
+        raise _error(err) from err
 
 
 @router.get("/{referral_id}", response_model=ReferralOut)
@@ -169,8 +169,8 @@ def get_referral(
 ) -> ReferralOut:
     try:
         return get_referral_for_facility(db, referral_id, facility_id)
-    except ReferralError as exc:
-        raise _error(exc) from exp
+    except ReferralError as err:
+        raise _error(err) from err
 
 
 @router.post("/{referral_id}/status", response_model=ReferralOut)
@@ -183,5 +183,5 @@ def status_update(
 ) -> ReferralOut:
     try:
         return update_referral_status(db, facility_id, referral_id, payload.status, actor_user_id=user.id)
-    except ReferralError as exc:
-        raise _error(exc) from exp
+    except ReferralError as err:
+        raise _error(err) from err
