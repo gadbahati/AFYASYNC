@@ -7,7 +7,7 @@ from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
 from app.patients.schemas import PatientCreate, PatientFacilityResponse, PatientFacilityStatusUpdate, PatientResponse, PatientSearchResult, PatientUpdate
-from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_for_facility, search_patients, update_patient, update_patient_facility_status
+from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_facility_enrollments, get_patient_for_facility, search_patients, update_patient, update_patient_facility_status
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/patients", tags=["Patients"])
@@ -41,6 +41,16 @@ def get_patient_record(patient_id: UUID, user: User = Depends(require_permission
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found."})
     record_audit(db, action="VIEW_PATIENT_RECORD", resource_type="PERSON", resource_id=str(patient.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient.id, commit=True)
     return _response(patient)
+
+
+@router.get("/{patient_id}/enrollments", response_model=list[PatientFacilityResponse])
+def list_patient_enrollments(patient_id: UUID, user: User = Depends(require_permission("patients.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> list[PatientFacilityResponse]:
+    patient = get_patient_for_facility(db, patient_id, facility_id)
+    if patient is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found."})
+    enrollments = get_patient_facility_enrollments(db, patient_id)
+    record_audit(db, action="VIEW_PATIENT_ENROLLMENTS", resource_type="PERSON", resource_id=str(patient_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"enrollment_count": len(enrollments)}, commit=True)
+    return enrollments
 
 
 @router.post("/{patient_id}/enrollment", response_model=PatientFacilityResponse, status_code=status.HTTP_201_CREATED)
