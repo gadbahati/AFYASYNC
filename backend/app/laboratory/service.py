@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.encounters.models import Encounter
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabSample, LabTest
 from app.notifications.events import notify_patient_event
@@ -26,7 +27,7 @@ def _encounter(db: Session, encounter_id: UUID) -> Encounter:
     return encounter
 
 
-def create_order(db: Session, staff_id: UUID, data: dict) -> LabOrder:
+def create_order(db: Session, staff_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> LabOrder:
     encounter = _encounter(db, data["encounter_id"])
     _staff(db, staff_id, encounter.facility_id)
     tests = []
@@ -36,7 +37,7 @@ def create_order(db: Session, staff_id: UUID, data: dict) -> LabOrder:
             raise ValueError("LAB_TEST_NOT_FOUND")
         tests.append((test, item))
     order = LabOrder(
-        order_id=f"LAB-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{str(UUID(int=__import__('uuid').uuid4().int))[:6]}",
+        order_id=f"LAB-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{str(uuid4())[:6].upper()}",
         encounter_id=encounter.id,
         patient_id=encounter.patient_id,
         ordered_by=staff_id,
@@ -46,12 +47,14 @@ def create_order(db: Session, staff_id: UUID, data: dict) -> LabOrder:
     db.flush()
     for _, item in tests:
         db.add(LabOrderItem(lab_order_id=order.id, test_id=item["test_id"], instructions=item.get("instructions")))
+    if actor_user_id:
+        record_audit(db, action="LAB_ORDER_CREATED", resource_type="LAB_ORDER", resource_id=str(order.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"lab_order_id": order.order_id}, commit=False)
     db.commit()
     db.refresh(order)
     return order
 
 
-def collect_sample(db: Session, staff_id: UUID, item_id: UUID) -> LabSample:
+def collect_sample(db: Session, staff_id: UUID, item_id: UUID, *, actor_user_id: UUID | None = None) -> LabSample:
     item = db.get(LabOrderItem, item_id)
     if not item:
         raise ValueError("LAB_ORDER_ITEM_NOT_FOUND")
@@ -63,19 +66,22 @@ def collect_sample(db: Session, staff_id: UUID, item_id: UUID) -> LabSample:
     if item.status != "ORDERED":
         raise ValueError("INVALID_SAMPLE_STATE")
     sample = LabSample(
-        sample_id=f"SMP-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{str(__import__('uuid').uuid4())[:8].upper()}",
+        sample_id=f"SMP-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{str(uuid4())[:8].upper()}",
         lab_order_item_id=item.id,
         collected_by=staff_id,
     )
     item.status = "SAMPLE_COLLECTED"
     order.status = "SAMPLE_COLLECTED"
     db.add(sample)
+    db.flush()
+    if actor_user_id:
+        record_audit(db, action="LAB_SAMPLE_COLLECTED", resource_type="LAB_SAMPLE", resource_id=str(sample.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"sample_id": sample.sample_id}, commit=False)
     db.commit()
     db.refresh(sample)
     return sample
 
 
-def receive_sample(db: Session, staff_id: UUID, sample_id: UUID) -> LabSample:
+def receive_sample(db: Session, staff_id: UUID, sample_id: UUID, *, actor_user_id: UUID | None = None) -> LabSample:
     sample = db.get(LabSample, sample_id)
     if not sample:
         raise ValueError("SAMPLE_NOT_FOUND")
@@ -89,12 +95,14 @@ def receive_sample(db: Session, staff_id: UUID, sample_id: UUID) -> LabSample:
     sample.status = "RECEIVED"
     item.status = "SAMPLE_RECEIVED"
     order.status = "PROCESSING"
+    if actor_user_id:
+        record_audit(db, action="LAB_SAMPLE_RECEIVED", resource_type="LAB_SAMPLE", resource_id=str(sample.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"sample_id": sample.sample_id}, commit=False)
     db.commit()
     db.refresh(sample)
     return sample
 
 
-def enter_result(db: Session, staff_id: UUID, data: dict) -> LabResult:
+def enter_result(db: Session, staff_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> LabResult:
     item = db.get(LabOrderItem, data["lab_order_item_id"])
     sample = db.get(LabSample, data["sample_id"])
     if not item or not sample or sample.lab_order_item_id != item.id:
@@ -111,12 +119,15 @@ def enter_result(db: Session, staff_id: UUID, data: dict) -> LabResult:
     db.add(result)
     sample.status = "PROCESSING"
     item.status = "RESULT_ENTERED"
+    db.flush()
+    if actor_user_id:
+        record_audit(db, action="LAB_RESULT_ENTERED", resource_type="LAB_RESULT", resource_id=str(result.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"lab_result_id": str(result.id)}, commit=False)
     db.commit()
     db.refresh(result)
     return result
 
 
-def verify_result(db: Session, staff_id: UUID, result_id: UUID) -> LabResult:
+def verify_result(db: Session, staff_id: UUID, result_id: UUID, *, actor_user_id: UUID | None = None) -> LabResult:
     result = db.get(LabResult, result_id)
     if not result:
         raise ValueError("RESULT_NOT_FOUND")
@@ -139,10 +150,12 @@ def verify_result(db: Session, staff_id: UUID, result_id: UUID) -> LabResult:
         facility_id=encounter.facility_id,
         event_type="LAB_RESULT_READY",
         action_url=f"/patient/encounters/{encounter.id}/labs",
-        actor_user_id=None,
+        actor_user_id=actor_user_id,
         commit=False,
         metadata={"lab_result_id": str(result.id), "lab_order_id": str(order.id)},
     )
+    if actor_user_id:
+        record_audit(db, action="LAB_RESULT_VERIFIED", resource_type="LAB_RESULT", resource_id=str(result.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"lab_result_id": str(result.id), "lab_order_id": str(order.id)}, commit=False)
     db.commit()
     db.refresh(result)
     return result
