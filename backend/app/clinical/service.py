@@ -44,10 +44,21 @@ def record_vitals(db: Session, encounter_id: UUID, staff_id: UUID, data: dict, *
         **data,
     )
     db.add(vital)
+    db.flush()
+    if actor_user_id:
+        record_audit(
+            db,
+            action="CLINICAL_VITALS_RECORDED",
+            resource_type="VITAL",
+            resource_id=str(vital.id),
+            result="SUCCESS",
+            user_id=actor_user_id,
+            facility_id=encounter.facility_id,
+            patient_id=encounter.patient_id,
+            commit=False,
+        )
     db.commit()
     db.refresh(vital)
-    if actor_user_id:
-        record_audit(db, action="CLINICAL_VITALS_RECORDED", resource_type="VITAL", resource_id=str(vital.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id)
     return vital
 
 
@@ -64,10 +75,21 @@ def create_or_update_consultation(db: Session, encounter_id: UUID, doctor_id: UU
         consultation.doctor_id = doctor_id
         for key, value in data.items():
             setattr(consultation, key, value)
+    db.flush()
+    if actor_user_id:
+        record_audit(
+            db,
+            action=action,
+            resource_type="CONSULTATION",
+            resource_id=str(consultation.id),
+            result="SUCCESS",
+            user_id=actor_user_id,
+            facility_id=encounter.facility_id,
+            patient_id=encounter.patient_id,
+            commit=False,
+        )
     db.commit()
     db.refresh(consultation)
-    if actor_user_id:
-        record_audit(db, action=action, resource_type="CONSULTATION", resource_id=str(consultation.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id)
     return consultation
 
 
@@ -76,8 +98,19 @@ def add_diagnosis(db: Session, encounter_id: UUID, staff_id: UUID, data: dict, *
     _staff_at_facility(db, staff_id, encounter.facility_id)
     diagnosis = Diagnosis(encounter_id=encounter_id, recorded_by=staff_id, **data)
     db.add(diagnosis)
+    db.flush()
+    if actor_user_id:
+        record_audit(
+            db,
+            action="CLINICAL_DIAGNOSIS_RECORDED",
+            resource_type="DIAGNOSIS",
+            resource_id=str(diagnosis.id),
+            result="SUCCESS",
+            user_id=actor_user_id,
+            facility_id=encounter.facility_id,
+            patient_id=encounter.patient_id,
+            commit=False,
+        )
     db.commit()
     db.refresh(diagnosis)
-    if actor_user_id:
-        record_audit(db, action="CLINICAL_DIAGNOSIS_RECORDED", resource_type="DIAGNOSIS", resource_id=str(diagnosis.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id)
     return diagnosis
