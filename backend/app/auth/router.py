@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.auth.dependencies import get_current_user
-from app.auth.schemas import FacilityOption, FacilitySelectionRequest, LoginRequest, TokenResponse
-from app.auth.service import authenticate_user, issue_access_token
+from app.auth.schemas import FacilityOption, FacilitySelectionRequest, LoginRequest, RefreshTokenRequest, TokenResponse
+from app.auth.service import authenticate_user, issue_access_token, issue_refresh_token, rotate_tokens_from_refresh
 from app.config import settings
 from app.database import get_db
 from app.facilities.models import Facility
@@ -16,6 +16,14 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 
 def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
+
+
+def _token_response(user: User, facility_id) -> TokenResponse:
+    return TokenResponse(
+        access_token=issue_access_token(user, facility_id),
+        refresh_token=issue_refresh_token(user, facility_id),
+        expires_in=settings.access_token_minutes * 60,
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -56,10 +64,44 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         facility_id=facility_id,
         ip_address=_client_ip(request),
     )
-    return TokenResponse(
-        access_token=issue_access_token(user, facility_id),
-        expires_in=settings.access_token_minutes * 60,
+    return _token_response(user, facility_id)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh(
+    payload: RefreshTokenRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    try:
+        result = rotate_tokens_from_refresh(db, payload.refresh_token)
+    except HTTPException:
+        result = None
+    if result is None:
+        record_audit(
+            db,
+            action="AUTH_REFRESH",
+            resource_type="USER",
+            result="FAILURE",
+            ip_address=_client_ip(request),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="INVALID_REFRESH_TOKEN",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user, facility_id = result
+    record_audit(
+        db,
+        action="AUTH_REFRESH",
+        resource_type="USER",
+        result="SUCCESS",
+        user_id=user.id,
+        facility_id=facility_id,
+        ip_address=_client_ip(request),
     )
+    return _token_response(user, facility_id)
 
 
 @router.get("/facilities", response_model=list[FacilityOption])
@@ -109,10 +151,7 @@ def select_facility(
         user_id=user.id,
         facility_id=payload.facility_id,
     )
-    return TokenResponse(
-        access_token=issue_access_token(user, payload.facility_id),
-        expires_in=settings.access_token_minutes * 60,
-    )
+    return _token_response(user, payload.facility_id)
 
 
 @router.get("/me")
