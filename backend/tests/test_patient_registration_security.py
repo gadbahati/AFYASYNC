@@ -15,6 +15,7 @@ def test_create_patient_audits_before_commit(monkeypatch) -> None:
 
     monkeypatch.setattr(patient_service, "Person", lambda **_: person)
     monkeypatch.setattr(patient_service, "AfyaIdentity", lambda **_: identity)
+    monkeypatch.setattr(patient_service, "PatientFacility", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
 
     payload = SimpleNamespace(
@@ -29,7 +30,7 @@ def test_create_patient_audits_before_commit(monkeypatch) -> None:
     result = create_patient(db, payload, actor_user_id=actor_user_id, facility_id=facility_id)
 
     assert result is person
-    assert db.flush.call_count == 2
+    assert db.flush.call_count == 3
     assert db.commit.call_count == 1
     assert audit_mock.call_args.kwargs["commit"] is False
     assert audit_mock.call_args.kwargs["user_id"] == actor_user_id
