@@ -97,8 +97,25 @@ def list_patient_records(
 
 
 @router.get("/search", response_model=list[PatientSearchResult])
-def search_patient_records(q: str = Query(min_length=2, max_length=100), limit: int = Query(default=20, ge=1, le=50), _: User = Depends(require_permission("patients.search")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> list[PatientSearchResult]:
+def search_patient_records(
+    q: str = Query(min_length=2, max_length=100),
+    limit: int = Query(default=20, ge=1, le=50),
+    user: User = Depends(require_permission("patients.search")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> list[PatientSearchResult]:
     results = search_patients(db, q, facility_id, limit)
+    record_audit(
+        db,
+        action="SEARCH_PATIENT_RECORDS",
+        resource_type="PERSON",
+        resource_id=str(facility_id),
+        result="SUCCESS",
+        user_id=user.id,
+        facility_id=facility_id,
+        metadata={"result_count": len(results), "limit": limit},
+        commit=True,
+    )
     return [PatientSearchResult(id=person.id, afya_id=identity.afya_id, full_name=" ".join(filter(None, [person.first_name, person.middle_name, person.last_name])), phone=person.phone, status=person.status) for person, identity in results]
 
 
