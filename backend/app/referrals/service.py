@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
@@ -90,10 +90,67 @@ def create_referral(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         actor_user_id=actor_user_id,
         commit=False,
     )
-    record_audit(db, action="CREATE_REFERRAL", resource_type="REFERRAL", resource_id=str(referral.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=referral.patient_id, metadata={"referral_id": referral.referral_id, "destination_facility_id": str(destination.id)}, commit=False)
+    record_audit(
+        db,
+        action="CREATE_REFERRAL",
+        resource_type="REFERRAL",
+        resource_id=str(referral.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=referral.patient_id,
+        metadata={"referral_id": referral.referral_id, "destination_facility_id": str(destination.id)},
+        commit=False,
+    )
     db.commit()
     db.refresh(referral)
     return referral
+
+
+def get_referral_for_facility(db: Session, referral_id: UUID, facility_id: UUID) -> Referral:
+    referral = db.get(Referral, referral_id)
+    if referral is None:
+        raise ReferralError("REFERRAL_NOT_FOUND")
+    if facility_id not in {referral.source_facility_id, referral.destination_facility_id}:
+        raise ReferralError("FACILITY_ACCESS_DENIED")
+    return referral
+
+
+def list_referrals_for_facility(
+    db: Session,
+    facility_id: UUID,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    role: str = "all",
+) -> tuple[list[Referral], int]:
+    """List referrals where this facility is source, destination, or either."""
+    limit = min(max(limit, 1), 100)
+    offset = max(offset, 0)
+
+    if role == "source":
+        filters = [Referral.source_facility_id == facility_id]
+    elif role == "destination":
+        filters = [Referral.destination_facility_id == facility_id]
+    else:
+        filters = [
+            or_(
+                Referral.source_facility_id == facility_id,
+                Referral.destination_facility_id == facility_id,
+            )
+        ]
+
+    total = int(db.scalar(select(func.count()).select_from(Referral).where(*filters)) or 0)
+    items = list(
+        db.scalars(
+            select(Referral)
+            .where(*filters)
+            .order_by(Referral.created_at.desc(), Referral.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    )
+    return items, total
 
 
 def update_referral_status(db: Session, facility_id: UUID, referral_id: UUID, new_status: str, *, actor_user_id: UUID | None = None) -> Referral:
@@ -114,7 +171,18 @@ def update_referral_status(db: Session, facility_id: UUID, referral_id: UUID, ne
         actor_user_id=actor_user_id,
         commit=False,
     )
-    record_audit(db, action="UPDATE_REFERRAL_STATUS", resource_type="REFERRAL", resource_id=str(referral.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=referral.patient_id, metadata={"status": new_status}, commit=False)
+    record_audit(
+        db,
+        action="UPDATE_REFERRAL_STATUS",
+        resource_type="REFERRAL",
+        resource_id=str(referral.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=referral.patient_id,
+        metadata={"status": new_status},
+        commit=False,
+    )
     db.commit()
     db.refresh(referral)
     return referral
@@ -132,7 +200,12 @@ def create_transfer(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
     referral_id = payload.get("referral_id")
     if referral_id is not None:
         referral = db.get(Referral, referral_id)
-        if referral is None or referral.patient_id != encounter.patient_id or referral.source_facility_id != facility_id or referral.destination_facility_id != destination.id:
+        if (
+            referral is None
+            or referral.patient_id != encounter.patient_id
+            or referral.source_facility_id != facility_id
+            or referral.destination_facility_id != destination.id
+        ):
             raise ReferralError("INVALID_REFERRAL")
         if referral.status not in {"ACCEPTED", "IN_PROGRESS"}:
             raise ReferralError("REFERRAL_NOT_READY_FOR_TRANSFER")
@@ -160,10 +233,66 @@ def create_transfer(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         actor_user_id=actor_user_id,
         commit=False,
     )
-    record_audit(db, action="CREATE_TRANSFER", resource_type="TRANSFER", resource_id=str(transfer.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=transfer.patient_id, metadata={"transfer_id": transfer.transfer_id, "destination_facility_id": str(destination.id)}, commit=False)
+    record_audit(
+        db,
+        action="CREATE_TRANSFER",
+        resource_type="TRANSFER",
+        resource_id=str(transfer.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=transfer.patient_id,
+        metadata={"transfer_id": transfer.transfer_id, "destination_facility_id": str(destination.id)},
+        commit=False,
+    )
     db.commit()
     db.refresh(transfer)
     return transfer
+
+
+def get_transfer_for_facility(db: Session, transfer_id: UUID, facility_id: UUID) -> Transfer:
+    transfer = db.get(Transfer, transfer_id)
+    if transfer is None:
+        raise ReferralError("TRANSFER_NOT_FOUND")
+    if facility_id not in {transfer.source_facility_id, transfer.destination_facility_id}:
+        raise ReferralError("FACILITY_ACCESS_DENIED")
+    return transfer
+
+
+def list_transfers_for_facility(
+    db: Session,
+    facility_id: UUID,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    role: str = "all",
+) -> tuple[list[Transfer], int]:
+    limit = min(max(limit, 1), 100)
+    offset = max(offset, 0)
+
+    if role == "source":
+        filters = [Transfer.source_facility_id == facility_id]
+    elif role == "destination":
+        filters = [Transfer.destination_facility_id == facility_id]
+    else:
+        filters = [
+            or_(
+                Transfer.source_facility_id == facility_id,
+                Transfer.destination_facility_id == facility_id,
+            )
+        ]
+
+    total = int(db.scalar(select(func.count()).select_from(Transfer).where(*filters)) or 0)
+    items = list(
+        db.scalars(
+            select(Transfer)
+            .where(*filters)
+            .order_by(Transfer.created_at.desc(), Transfer.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    )
+    return items, total
 
 
 def update_transfer_status(db: Session, facility_id: UUID, transfer_id: UUID, new_status: str, *, actor_user_id: UUID | None = None) -> Transfer:
@@ -184,7 +313,28 @@ def update_transfer_status(db: Session, facility_id: UUID, transfer_id: UUID, ne
         actor_user_id=actor_user_id,
         commit=False,
     )
-    record_audit(db, action="UPDATE_TRANSFER_STATUS", resource_type="TRANSFER", resource_id=str(transfer.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=transfer.patient_id, metadata={"status": new_status}, commit=False)
+    record_audit(
+        db,
+        action="UPDATE_TRANSFER_STATUS",
+        resource_type="TRANSFER",
+        resource_id=str(transfer.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=transfer.patient_id,
+        metadata={"status": new_status},
+        commit=False,
+    )
     db.commit()
     db.refresh(transfer)
     return transfer
+
+
+def list_referrals_for_encounter(db: Session, encounter_id: UUID) -> list[Referral]:
+    return list(
+        db.scalars(
+            select(Referral)
+            .where(Referral.encounter_id == encounter_id)
+            .order_by(Referral.created_at.asc(), Referral.id.asc())
+        )
+    )
