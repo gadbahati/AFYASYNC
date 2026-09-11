@@ -35,11 +35,11 @@ def create_notification(db: Session, payload: dict, *, actor_user_id: UUID | Non
     )
     db.add(notification)
     db.flush()
+    if actor_user_id is not None:
+        record_audit(db, action="CREATE_NOTIFICATION", resource_type="NOTIFICATION", resource_id=str(notification.id), result="SUCCESS", user_id=actor_user_id, facility_id=notification.facility_id, patient_id=notification.person_id, metadata={"notification_type": notification.notification_type}, commit=False)
     if commit:
         db.commit()
         db.refresh(notification)
-    if actor_user_id is not None:
-        record_audit(db, action="CREATE_NOTIFICATION", resource_type="NOTIFICATION", resource_id=str(notification.id), result="SUCCESS", user_id=actor_user_id, facility_id=notification.facility_id, patient_id=notification.person_id, metadata={"notification_type": notification.notification_type}, commit=commit)
     return notification
 
 
