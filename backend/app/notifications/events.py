@@ -13,6 +13,7 @@ EVENT_TEMPLATES = {
     "APPOINTMENT_CONFIRMED": ("Appointment confirmed", "Your AfyaSync appointment has been confirmed."),
     "APPOINTMENT_REMINDER": ("Appointment reminder", "You have an upcoming AfyaSync appointment."),
     "QUEUE_CHECKIN": ("Check-in complete", "Your AfyaSync check-in has been recorded."),
+    "QUEUE_STATUS_CHANGED": ("Queue status updated", "Your AfyaSync queue status has been updated."),
     "LAB_RESULT_READY": ("Lab result available", "A laboratory result is available in your AfyaSync account."),
     "PRESCRIPTION_READY": ("Prescription update", "A prescription update is available in your AfyaSync account."),
     "BILL_CREATED": ("New bill", "A new bill is available in your AfyaSync account."),
@@ -48,7 +49,6 @@ def notify_patient_event(
         .limit(1)
     )
     if user is None:
-        # Patients may have an AfyaSync identity without a portal account.
         return None
 
     title, message = EVENT_TEMPLATES[event_type]
