@@ -137,10 +137,10 @@ def enroll_patient_in_facility(db: Session, patient_id: UUID, facility_id: UUID,
         db.commit()
         db.refresh(membership)
         return membership
-    membership = PatientFacility(patient_id=patient_id, facility_id=facility_id, status="ACTIVE")
-    db.add(membership)
     try:
         with db.begin_nested():
+            membership = PatientFacility(patient_id=patient_id, facility_id=facility_id, status="ACTIVE")
+            db.add(membership)
             db.flush()
     except IntegrityError:
         # The unique patient/facility constraint may race with another request.
