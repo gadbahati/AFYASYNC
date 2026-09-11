@@ -1,7 +1,9 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
 from app.patients.schemas import PatientCreate, PatientResponse, PatientSearchResult
 from app.patients.service import create_patient, search_patients
@@ -11,9 +13,14 @@ router = APIRouter(prefix="/api/v1/patients", tags=["Patients"])
 
 
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
-def register_patient(payload: PatientCreate, db: Session = Depends(get_db)) -> PatientResponse:
+def register_patient(
+    payload: PatientCreate,
+    user: User = Depends(require_permission("patients.create")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> PatientResponse:
     try:
-        patient = create_patient(db, payload)
+        patient = create_patient(db, payload, actor_user_id=user.id, facility_id=facility_id)
     except ValueError as exc:
         if str(exc) == "DUPLICATE_PATIENT":
             raise HTTPException(
