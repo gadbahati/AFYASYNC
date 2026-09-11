@@ -13,8 +13,15 @@ from app.patients.service import (
 )
 
 
+def _configure_nested_transaction(db: Mock) -> None:
+    """Make the mocked savepoint behave like SQLAlchemy's context manager."""
+    db.begin_nested.return_value.__enter__.return_value = db.begin_nested.return_value
+    db.begin_nested.return_value.__exit__.return_value = False
+
+
 def test_enroll_patient_in_facility_creates_active_membership(monkeypatch) -> None:
     db = Mock()
+    _configure_nested_transaction(db)
     db.scalar.side_effect = [uuid4(), None]
     audit_mock = Mock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
@@ -80,6 +87,7 @@ def test_enroll_patient_in_facility_rejects_unknown_patient(monkeypatch) -> None
 
 def test_enroll_patient_in_facility_handles_concurrent_duplicate(monkeypatch) -> None:
     db = Mock()
+    _configure_nested_transaction(db)
     patient_id, facility_id = uuid4(), uuid4()
     membership = SimpleNamespace(id=uuid4(), patient_id=patient_id, facility_id=facility_id, status="ACTIVE")
     db.scalar.side_effect = [uuid4(), None, membership]
