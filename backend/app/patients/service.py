@@ -8,6 +8,9 @@ from app.patients.models import AfyaIdentity, PatientFacility, Person
 from app.patients.schemas import PatientCreate, PatientUpdate
 
 
+_ALLOWED_PATIENT_STATUSES = {"ACTIVE", "INACTIVE"}
+
+
 def _next_afya_id(db: Session) -> str:
     """Generate the next concurrency-safe human-facing AfyaSync ID."""
     sequence = db.scalar(text("nextval('afasync_patient_id_seq')"))
@@ -48,6 +51,8 @@ def update_patient(db: Session, patient: Person, payload: PatientUpdate, *, acto
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise ValueError("NO_CHANGES")
+    if "status" in changes and changes["status"] not in _ALLOWED_PATIENT_STATUSES:
+        raise ValueError("INVALID_PATIENT_STATUS")
     if "phone" in changes and changes["phone"]:
         duplicate = db.scalar(select(Person).where(Person.id != patient.id, Person.phone == changes["phone"]))
         if duplicate:
