@@ -78,9 +78,10 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
         raise ClaimsError("CLAIM_INVOICE_TOTAL_MISMATCH")
     claim.claim_amount = claim_amount
     invoice.status = "CLAIM_PENDING"
+    db.flush()
+    record_audit(db, action="CREATE_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "amount": str(claim.claim_amount), "payer_id": str(payer.id)}, commit=False)
     db.commit()
     db.refresh(claim)
-    record_audit(db, action="CREATE_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "amount": str(claim.claim_amount), "payer_id": str(payer.id)})
     return claim
 
 
@@ -105,8 +106,9 @@ def validate_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user
     if coverage is None:
         errors.append("VERIFIED_COVERAGE_REQUIRED")
     claim.status = "DRAFT" if errors else "READY"
+    db.flush()
+    record_audit(db, action="VALIDATE_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS" if not errors else "VALIDATION_FAILED", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"errors": errors}, commit=False)
     db.commit()
-    record_audit(db, action="VALIDATE_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS" if not errors else "VALIDATION_FAILED", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"errors": errors})
     return errors
 
 
@@ -156,14 +158,15 @@ def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_i
     claim.status = "SUBMITTED"
     claim.submitted_at = datetime.now(timezone.utc)
     db.add(ClaimResponse(claim_id=claim.id, status="SUBMITTED", response_message="Queued for authorised payer submission"))
+    db.flush()
+    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", metadata={"claim_id": claim.claim_id, "status": "SUBMITTED"}, actor_user_id=actor_user_id, commit=False)
+    record_audit(db, action="SUBMIT_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "integration_id": str(integration.id)}, commit=False)
     db.commit()
     db.refresh(claim)
-    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", metadata={"claim_id": claim.claim_id, "status": "SUBMITTED"}, actor_user_id=actor_user_id)
-    record_audit(db, action="SUBMIT_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "integration_id": str(integration.id)})
     return claim
 
 
-def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status: str, response_code: str | None, response_message: str | None, external_reference: str | None, approved_amount: Decimal | None, *, actor_user_id: UUID | None = None) -> Claim:
+def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status: str, response_code: str | None, response_message: str | None, external_reference: str | None, approved_amount: Decimal | None, *, actor_user_id: UUID | None = None, commit: bool = True) -> Claim:
     allowed = {"ACCEPTED", "UNDER_REVIEW", "REJECTED", "PARTIALLY_PAID", "PAID"}
     if status not in allowed:
         raise ClaimsError("INVALID_CLAIM_RESPONSE_STATUS")
@@ -191,10 +194,12 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
         claim.approved_amount = approved_amount
     claim.status = status
     db.add(ClaimResponse(claim_id=claim.id, status=status, response_code=response_code, response_message=response_message, external_reference=external_reference))
-    db.commit()
-    db.refresh(claim)
-    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", priority="HIGH" if status in {"REJECTED", "PARTIALLY_PAID"} else "NORMAL", metadata={"claim_id": claim.claim_id, "status": status}, actor_user_id=actor_user_id)
-    record_audit(db, action="RECORD_PAYER_RESPONSE", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"status": status, "external_reference": external_reference})
+    db.flush()
+    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", priority="HIGH" if status in {"REJECTED", "PARTIALLY_PAID"} else "NORMAL", metadata={"claim_id": claim.claim_id, "status": status}, actor_user_id=actor_user_id, commit=False)
+    record_audit(db, action="RECORD_PAYER_RESPONSE", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"status": status, "external_reference": external_reference}, commit=False)
+    if commit:
+        db.commit()
+        db.refresh(claim)
     return claim
 
 
@@ -239,11 +244,13 @@ def process_payer_callback(db: Session, facility_id: UUID, integration_id: UUID,
     db.flush()
 
     try:
-        result = record_payer_response(db, claim_id, facility_id, status, response_code, response_message, external_reference, approved_amount, actor_user_id=actor_user_id)
+        result = record_payer_response(db, claim_id, facility_id, status, response_code, response_message, external_reference, approved_amount, actor_user_id=actor_user_id, commit=False)
     except Exception:
         db.rollback()
         raise
-    record_audit(db, action="PROCESS_PAYER_CALLBACK", resource_type="INTEGRATION_TRANSACTION", resource_id=str(transaction.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=result.patient_id, metadata={"claim_id": result.claim_id, "integration_id": str(integration.id), "external_reference": external_reference, "payer_status": status})
+    record_audit(db, action="PROCESS_PAYER_CALLBACK", resource_type="INTEGRATION_TRANSACTION", resource_id=str(transaction.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=result.patient_id, metadata={"claim_id": result.claim_id, "integration_id": str(integration.id), "external_reference": external_reference, "payer_status": status}, commit=False)
+    db.commit()
+    db.refresh(result)
     return result
 
 
@@ -270,8 +277,9 @@ def reconcile_claim(db: Session, claim_id: UUID, facility_id: UUID, staff_id: UU
     claim.paid_amount = received_amount
     claim.status = "PAID" if received_amount == expected else "PARTIALLY_PAID"
     db.add(reconciliation)
+    db.flush()
+    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", priority="HIGH" if claim.status == "PARTIALLY_PAID" else "NORMAL", metadata={"claim_id": claim.claim_id, "status": claim.status}, actor_user_id=actor_user_id, commit=False)
+    record_audit(db, action="RECONCILE_CLAIM", resource_type="RECONCILIATION", resource_id=str(reconciliation.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "expected": str(expected), "received": str(received_amount), "difference": str(difference), "status": status}, commit=False)
     db.commit()
     db.refresh(reconciliation)
-    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", priority="HIGH" if claim.status == "PARTIALLY_PAID" else "NORMAL", metadata={"claim_id": claim.claim_id, "status": claim.status}, actor_user_id=actor_user_id)
-    record_audit(db, action="RECONCILE_CLAIM", resource_type="RECONCILIATION", resource_id=str(reconciliation.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "expected": str(expected), "received": str(received_amount), "difference": str(difference), "status": status})
     return reconciliation
