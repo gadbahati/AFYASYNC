@@ -20,3 +20,10 @@ class EncounterResponse(EncounterCreate):
     started_at: datetime
     ended_at: datetime | None
     created_by: UUID
+
+
+class EncounterListResponse(BaseModel):
+    items: list[EncounterResponse]
+    total: int
+    limit: int
+    offset: int
