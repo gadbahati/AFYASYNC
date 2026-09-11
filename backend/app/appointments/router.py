@@ -9,7 +9,6 @@ from app.appointments.models import Queue, QueueEntry
 from app.appointments.schemas import AppointmentCreate, AppointmentResponse, QueueCreate, QueueEntryCreate, QueueEntryResponse, QueueResponse
 from app.appointments.service import add_to_queue, create_appointment, create_queue, list_appointments, update_queue_status
 from app.auth.dependencies import get_token_payload, require_permission
-from app.database import get_db
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/appointments", tags=["Appointments & Queue"])
@@ -69,7 +68,7 @@ def add_queue_entry(payload: QueueEntryCreate, user: User = Depends(require_perm
 
 
 @router.patch("/queues/entries/{entry_id}/{new_status}", response_model=QueueEntryResponse)
-def change_queue_status(entry_id: UUID, new_status: str, _: User = Depends(require_permission("queue.manage")), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+def change_queue_status(entry_id: UUID, new_status: str, user: User = Depends(require_permission("queue.manage")), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     entry = db.get(QueueEntry, entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="QUEUE_ENTRY_NOT_FOUND")
@@ -77,6 +76,6 @@ def change_queue_status(entry_id: UUID, new_status: str, _: User = Depends(requi
     if queue is None or queue.facility_id != _facility(token):
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        return update_queue_status(db, entry_id, new_status.upper())
+        return update_queue_status(db, entry_id, new_status.upper(), actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
