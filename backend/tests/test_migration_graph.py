@@ -1,64 +1,59 @@
-from __future__ import annotations
-
-import ast
+import re
 from pathlib import Path
 
+VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
-
-def _revision_graph() -> tuple[dict[str, set[str]], set[str]]:
-    revisions: dict[str, set[str]] = {}
-    parents: set[str] = set()
-
-    for path in MIGRATIONS.glob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        revision = None
-        down_revision: str | tuple[str, ...] | None = None
-        for node in tree.body:
-            if not isinstance(node, ast.Assign):
-                continue
-            for target in node.targets:
-                if not isinstance(target, ast.Name):
-                    continue
-                if target.id == "revision":
-                    revision = ast.literal_eval(node.value)
-                elif target.id == "down_revision":
-                    down_revision = ast.literal_eval(node.value)
-
-        if not isinstance(revision, str):
+def _load_revisions() -> dict[str, tuple[str, ...]]:
+    """Parse revision/down_revision out of every migration file without importing Alembic."""
+    revisions: dict[str, tuple[str, ...]] = {}
+    for path in sorted(VERSIONS_DIR.glob("*.py")):
+        text = path.read_text()
+        rev_match = re.search(r'^revision\s*=\s*["\']([^"\']+)["\']', text, re.M)
+        if not rev_match:
             continue
-        if down_revision is None:
-            parent_values: tuple[str, ...] = ()
-        elif isinstance(down_revision, str):
-            parent_values = (down_revision,)
-        else:
-            parent_values = tuple(down_revision)
-
-        revisions[revision] = set(parent_values)
-        parents.update(parent_values)
-
-    return revisions, parents
-
-
-def test_migration_graph_has_single_head() -> None:
-    revisions, parents = _revision_graph()
-    heads = set(revisions) - parents
-    assert heads == {"0028_refresh_sessions"}
+        revision = rev_match.group(1)
+        down_match = re.search(r'^down_revision\s*=\s*(.+?)$', text, re.M)
+        if not down_match or down_match.group(1).strip() == "None":
+            revisions[revision] = ()
+            continue
+        raw = down_match.group(1)
+        if raw.strip().startswith("("):
+            block_match = re.search(r"down_revision\s*=\s*\((.*?)\)", text, re.S)
+            raw = block_match.group(1) if block_match else raw
+        down_ids = tuple(re.findall(r'["\']([^"\']+)["\']', raw))
+        revisions[revision] = down_ids
+    return revisions
 
 
-def test_merge_revision_includes_all_previous_heads() -> None:
-    revisions, _ = _revision_graph()
-    merge_parents = revisions["0027_merge_migration_heads"]
-    assert merge_parents == {
-        "0026_post_hardening_permissions",
-        "0016_patient_access_permissions",
-        "0016_patient_record_permission",
-        "0016_patient_record_write_permission",
-        "0015_department_write_permission",
-    }
+def test_migration_graph_has_a_single_head() -> None:
+    """Guards against orphaned Alembic branches that `alembic upgrade head` cannot resolve.
+
+    This does not require a database: it statically parses every migration
+    file\'s revision/down_revision and checks the graph converges on exactly
+    one head. A dangling branch here means a deployment will either fail
+    outright ("Multiple head revisions are present") or, depending on how
+    upgrade is invoked, silently skip an entire branch of schema/permission
+    changes.
+    """
+    revisions = _load_revisions()
+    assert revisions, "expected to find migration version files"
+
+    referenced_as_parent: set[str] = set()
+    for parents in revisions.values():
+        referenced_as_parent.update(parents)
+
+    heads = [rev for rev in revisions if rev not in referenced_as_parent]
+
+    assert len(heads) == 1, (
+        "Alembic migration graph must resolve to exactly one head; "
+        f"found {len(heads)}: {sorted(heads)}. "
+        "Add every unmerged head to a merge revision\'s down_revision tuple."
+    )
 
 
-def test_refresh_session_migration_follows_merge() -> None:
-    revisions, _ = _revision_graph()
-    assert revisions["0028_refresh_sessions"] == {"0027_merge_migration_heads"}
+def test_every_referenced_parent_revision_exists() -> None:
+    revisions = _load_revisions()
+    all_parents = {parent for parents in revisions.values() for parent in parents}
+    missing = all_parents - set(revisions)
+    assert not missing, f"down_revision references missing migration file(s): {sorted(missing)}"
