@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.encounters.models import Encounter
 from app.facilities.models import Department, Facility
-from app.patients.models import Person
+from app.patients.models import PatientFacility, Person
 
 
 def _require_active_context(db: Session, patient_id: UUID, facility_id: UUID, department_id: UUID) -> None:
@@ -45,6 +45,59 @@ def get_encounter(db: Session, encounter_id: UUID) -> Encounter:
     if encounter is None:
         raise ValueError("ENCOUNTER_NOT_FOUND")
     return encounter
+
+
+def get_encounter_for_facility(db: Session, encounter_id: UUID, facility_id: UUID) -> Encounter:
+    encounter = get_encounter(db, encounter_id)
+    if encounter.facility_id != facility_id:
+        raise ValueError("FACILITY_ACCESS_DENIED")
+    return encounter
+
+
+def list_patient_encounters_for_facility(
+    db: Session,
+    patient_id: UUID,
+    facility_id: UUID,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[Encounter], int]:
+    """Return encounters for a patient at one facility only (clinical timeline backbone).
+
+    Requires the patient to be enrolled at the facility. Never returns encounters
+    from other facilities.
+    """
+    if facility_id is None:
+        raise ValueError("FACILITY_CONTEXT_REQUIRED")
+
+    membership = db.scalar(
+        select(PatientFacility.id).where(
+            PatientFacility.patient_id == patient_id,
+            PatientFacility.facility_id == facility_id,
+            PatientFacility.status == "ACTIVE",
+        )
+    )
+    if membership is None:
+        raise ValueError("PATIENT_NOT_IN_FACILITY")
+
+    limit = min(max(limit, 1), 100)
+    offset = max(offset, 0)
+
+    filters = [
+        Encounter.patient_id == patient_id,
+        Encounter.facility_id == facility_id,
+    ]
+    total = int(db.scalar(select(func.count()).select_from(Encounter).where(*filters)) or 0)
+    items = list(
+        db.scalars(
+            select(Encounter)
+            .where(*filters)
+            .order_by(Encounter.started_at.desc(), Encounter.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    )
+    return items, total
 
 
 def close_encounter(db: Session, encounter_id: UUID, actor_user_id: UUID | None = None) -> Encounter:
