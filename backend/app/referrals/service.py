@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.encounters.models import Encounter
 from app.facilities.models import Department, Facility
+from app.notifications.events import notify_patient_event
 from app.rbac.models import Staff
 from app.referrals.models import Referral, Transfer
 
@@ -79,6 +80,15 @@ def create_referral(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         status="CREATED",
     )
     db.add(referral)
+    notify_patient_event(
+        db,
+        patient_id=referral.patient_id,
+        event_type="REFERRAL_CREATED",
+        facility_id=facility_id,
+        metadata={"status": referral.status},
+        actor_user_id=actor_user_id,
+        commit=False,
+    )
     db.commit()
     db.refresh(referral)
     record_audit(db, action="CREATE_REFERRAL", resource_type="REFERRAL", resource_id=str(referral.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=referral.patient_id, metadata={"referral_id": referral.referral_id, "destination_facility_id": str(destination.id)})
@@ -94,6 +104,15 @@ def update_referral_status(db: Session, facility_id: UUID, referral_id: UUID, ne
     if new_status not in REFERRAL_TRANSITIONS.get(referral.status, set()):
         raise ReferralError("INVALID_REFERRAL_TRANSITION")
     referral.status = new_status
+    notify_patient_event(
+        db,
+        patient_id=referral.patient_id,
+        event_type="REFERRAL_STATUS_CHANGED",
+        facility_id=facility_id,
+        metadata={"status": new_status},
+        actor_user_id=actor_user_id,
+        commit=False,
+    )
     db.commit()
     db.refresh(referral)
     record_audit(db, action="UPDATE_REFERRAL_STATUS", resource_type="REFERRAL", resource_id=str(referral.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=referral.patient_id, metadata={"status": new_status})
@@ -130,6 +149,15 @@ def create_transfer(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         status="REQUESTED",
     )
     db.add(transfer)
+    notify_patient_event(
+        db,
+        patient_id=transfer.patient_id,
+        event_type="TRANSFER_REQUESTED",
+        facility_id=facility_id,
+        metadata={"status": transfer.status},
+        actor_user_id=actor_user_id,
+        commit=False,
+    )
     db.commit()
     db.refresh(transfer)
     record_audit(db, action="CREATE_TRANSFER", resource_type="TRANSFER", resource_id=str(transfer.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=transfer.patient_id, metadata={"transfer_id": transfer.transfer_id, "destination_facility_id": str(destination.id)})
@@ -145,6 +173,15 @@ def update_transfer_status(db: Session, facility_id: UUID, transfer_id: UUID, ne
     if new_status not in TRANSFER_TRANSITIONS.get(transfer.status, set()):
         raise ReferralError("INVALID_TRANSFER_TRANSITION")
     transfer.status = new_status
+    notify_patient_event(
+        db,
+        patient_id=transfer.patient_id,
+        event_type="TRANSFER_STATUS_CHANGED",
+        facility_id=facility_id,
+        metadata={"status": new_status},
+        actor_user_id=actor_user_id,
+        commit=False,
+    )
     db.commit()
     db.refresh(transfer)
     record_audit(db, action="UPDATE_TRANSFER_STATUS", resource_type="TRANSFER", resource_id=str(transfer.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=transfer.patient_id, metadata={"status": new_status})
