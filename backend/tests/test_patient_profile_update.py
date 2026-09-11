@@ -45,3 +45,24 @@ def test_update_patient_rejects_duplicate_phone(monkeypatch) -> None:
         raise AssertionError("Expected duplicate phone rejection")
 
     db.commit.assert_not_called()
+
+
+def test_update_patient_rejects_invalid_status_at_service_boundary(monkeypatch) -> None:
+    db = Mock()
+    audit_mock = Mock()
+    monkeypatch.setattr(patient_service, "record_audit", audit_mock)
+
+    patient = SimpleNamespace(id=uuid4(), status="ACTIVE")
+    payload = SimpleNamespace(model_dump=lambda **_: {"status": "DECEASED"})
+
+    try:
+        update_patient(db, patient, payload, actor_user_id=uuid4(), facility_id=uuid4())
+    except ValueError as exc:
+        assert str(exc) == "INVALID_PATIENT_STATUS"
+    else:
+        raise AssertionError("Expected invalid patient status rejection")
+
+    assert patient.status == "ACTIVE"
+    db.flush.assert_not_called()
+    db.commit.assert_not_called()
+    audit_mock.assert_not_called()
