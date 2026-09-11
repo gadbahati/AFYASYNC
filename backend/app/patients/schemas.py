@@ -70,3 +70,10 @@ class PatientSearchResult(BaseModel):
     full_name: str
     phone: str | None
     status: str
+
+
+class PatientListResponse(BaseModel):
+    items: list[PatientResponse]
+    total: int
+    limit: int
+    offset: int
