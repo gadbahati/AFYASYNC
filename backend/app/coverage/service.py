@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.coverage.models import Coverage, Payer, PayerBenefitRule, PayerPlan
 from app.coverage.schemas import BenefitRuleCreate, CoverageCreate
 
@@ -12,7 +13,7 @@ from app.coverage.schemas import BenefitRuleCreate, CoverageCreate
 CENT = Decimal("0.01")
 
 
-def create_coverage(db: Session, payload: CoverageCreate) -> Coverage:
+def create_coverage(db: Session, payload: CoverageCreate, *, actor_user_id: UUID | None = None) -> Coverage:
     if payload.end_date and payload.start_date and payload.end_date < payload.start_date:
         raise ValueError("INVALID_COVERAGE_DATES")
     payer = db.get(Payer, payload.payer_id)
@@ -24,6 +25,18 @@ def create_coverage(db: Session, payload: CoverageCreate) -> Coverage:
             raise ValueError("INVALID_PAYER_PLAN")
     coverage = Coverage(**payload.model_dump())
     db.add(coverage)
+    db.flush()
+    record_audit(
+        db,
+        action="CREATE_COVERAGE",
+        resource_type="COVERAGE",
+        resource_id=str(coverage.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        patient_id=coverage.person_id,
+        metadata={"payer_id": str(coverage.payer_id), "payer_plan_id": str(coverage.payer_plan_id) if coverage.payer_plan_id else None},
+        commit=False,
+    )
     db.commit()
     db.refresh(coverage)
     return coverage
@@ -35,7 +48,7 @@ def get_active_coverage(db: Session, person_id: UUID) -> list[Coverage]:
     return list(db.scalars(statement).all())
 
 
-def create_benefit_rule(db: Session, payload: BenefitRuleCreate) -> PayerBenefitRule:
+def create_benefit_rule(db: Session, payload: BenefitRuleCreate, *, actor_user_id: UUID | None = None) -> PayerBenefitRule:
     if payload.effective_to and payload.effective_from and payload.effective_to < payload.effective_from:
         raise ValueError("INVALID_BENEFIT_DATES")
     payer = db.get(Payer, payload.payer_id)
@@ -47,6 +60,17 @@ def create_benefit_rule(db: Session, payload: BenefitRuleCreate) -> PayerBenefit
             raise ValueError("INVALID_PAYER_PLAN")
     rule = PayerBenefitRule(**payload.model_dump())
     db.add(rule)
+    db.flush()
+    record_audit(
+        db,
+        action="CREATE_BENEFIT_RULE",
+        resource_type="PAYER_BENEFIT_RULE",
+        resource_id=str(rule.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        metadata={"payer_id": str(rule.payer_id), "payer_plan_id": str(rule.payer_plan_id) if rule.payer_plan_id else None, "service_code": rule.service_code, "service_type": rule.service_type},
+        commit=False,
+    )
     db.commit()
     db.refresh(rule)
     return rule
@@ -95,7 +119,6 @@ def calculate_charge_responsibility(db: Session, coverage: Coverage, *, amount: 
         payer_amount = min(payer_amount, Decimal(str(rule.max_covered_amount)).quantize(CENT))
     natural_patient_amount = amount - payer_amount
     copay = Decimal(str(rule.fixed_patient_copay)).quantize(CENT)
-    # A fixed copay is a minimum patient responsibility. It cannot exceed the charge.
     patient_amount = min(amount, max(natural_patient_amount, copay))
     payer_amount = (amount - patient_amount).quantize(CENT)
     patient_amount = (amount - payer_amount).quantize(CENT)
