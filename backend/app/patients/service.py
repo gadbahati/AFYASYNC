@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import func, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
@@ -138,7 +139,25 @@ def enroll_patient_in_facility(db: Session, patient_id: UUID, facility_id: UUID,
         return membership
     membership = PatientFacility(patient_id=patient_id, facility_id=facility_id, status="ACTIVE")
     db.add(membership)
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        # The unique patient/facility constraint may race with another request.
+        # A savepoint keeps the caller's outer transaction usable after the
+        # losing insert is rolled back. Re-read the row and apply the same
+        # business rules as the non-racing path.
+        membership = db.scalar(select(PatientFacility).where(PatientFacility.patient_id == patient_id, PatientFacility.facility_id == facility_id))
+        if membership is None:
+            raise
+        if membership.status == "ACTIVE":
+            raise ValueError("PATIENT_ALREADY_ENROLLED")
+        membership.status = "ACTIVE"
+        db.flush()
+        record_audit(db, action="REACTIVATE_PATIENT_FACILITY", resource_type="PATIENT_FACILITY", resource_id=str(membership.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=patient_id, commit=False)
+        db.commit()
+        db.refresh(membership)
+        return membership
     record_audit(db, action="ENROLL_PATIENT_FACILITY", resource_type="PATIENT_FACILITY", resource_id=str(membership.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=patient_id, commit=False)
     db.commit()
     db.refresh(membership)
