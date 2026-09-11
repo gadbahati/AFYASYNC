@@ -38,8 +38,8 @@ def add_coverage(
     _require_patient_enrolled(db, payload.person_id, facility_id)
     try:
         coverage = create_coverage(db, payload, actor_user_id=user.id)
-    except ValueError as exc:
-        code = str(exc)
+    except ValueError as err:
+        code = str(err)
         messages = {
             "INVALID_COVERAGE_DATES": "Coverage end date cannot be before start date.",
             "PAYER_NOT_FOUND": "The selected payer is not available.",
@@ -48,36 +48,20 @@ def add_coverage(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": code, "message": messages.get(code, code)},
-        ) from exc
+        ) from err
     return coverage
 
 
 @router.get("/person/{person_id}/active", response_model=list[CoverageResponse])
-def active_coverage(
+def active_coverage_self(
     person_id: UUID,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    facility_id: UUID | None = None,
 ) -> list[CoverageResponse]:
-    """Patients may view their own coverage; staff need coverage.read + enrollment."""
-    if user.person_id == person_id:
-        return get_active_coverage(db, person_id)
-
-    # Staff path: facility context + permission enforced manually to avoid forcing
-    # patient tokens to carry facility_id
-    from app.auth.dependencies import get_token_payload, require_permission as _rp
-
-    # Fall through using facility-scoped staff access
-    try:
-        from app.auth.security import bearer_scheme, decode_access_token
-        from fastapi import Request  # noqa: F401 — not used; keep logic inline
-    except Exception:
-        pass
-
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="COVERAGE_ACCESS_DENIED",
-    )
+    """Patient may view only their own active coverage."""
+    if user.person_id != person_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="COVERAGE_ACCESS_DENIED")
+    return get_active_coverage(db, person_id)
 
 
 @router.get("/facility/person/{person_id}/active", response_model=list[CoverageResponse])
@@ -87,6 +71,7 @@ def active_coverage_for_facility(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(COVERAGE_READ)),
 ) -> list[CoverageResponse]:
+    """Staff may view coverage for patients enrolled at their facility."""
     _require_patient_enrolled(db, person_id, facility_id)
     return get_active_coverage(db, person_id)
 
@@ -101,8 +86,8 @@ def add_benefit_rule(
     _ = facility_id
     try:
         return create_benefit_rule(db, payload, actor_user_id=user.id)
-    except ValueError as exc:
-        code = str(exc)
+    except ValueError as err:
+        code = str(err)
         messages = {
             "INVALID_BENEFIT_DATES": "Benefit rule end date cannot be before its start date.",
             "PAYER_NOT_FOUND": "The selected payer is not available.",
@@ -111,4 +96,4 @@ def add_benefit_rule(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": code, "message": messages.get(code, code)},
-        ) from exp
+        ) from err
