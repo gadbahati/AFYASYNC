@@ -156,6 +156,17 @@ def update_queue_status(db: Session, entry_id: UUID, new_status: str, actor_user
         entry.called_at = now
     if new_status in {"COMPLETED", "CANCELLED"}:
         entry.completed_at = now
+
+    notify_patient_event(
+        db,
+        patient_id=entry.patient_id,
+        facility_id=entry.queue.facility_id if entry.queue is not None else None,
+        event_type="QUEUE_STATUS_CHANGED",
+        action_url=f"/queue/{entry.id}",
+        metadata={"status": new_status},
+        actor_user_id=actor_user_id,
+        commit=False,
+    )
     db.commit()
     db.refresh(entry)
     return entry
