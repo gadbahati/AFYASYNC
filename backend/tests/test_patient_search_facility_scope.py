@@ -14,6 +14,9 @@ def test_search_patients_scopes_query_to_facility(monkeypatch) -> None:
     captured = {}
 
     class Statement:
+        def join(self, *args, **kwargs):
+            return self
+
         def where(self, *criteria):
             captured["criteria"] = criteria
             return self
