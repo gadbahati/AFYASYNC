@@ -2,7 +2,14 @@ from app.main import app
 
 
 def _paths() -> set[str]:
-    return {getattr(route, "path", "") for route in app.routes}
+    """Return every route path FastAPI actually exposes.
+
+    Walking `app.routes` directly is not reliable across FastAPI versions:
+    newer versions wrap included routers in `fastapi.routing._IncludedRouter`
+    objects that don't expose `.path`. The OpenAPI schema is the
+    version-stable source of truth for what's actually registered.
+    """
+    return set(app.openapi()["paths"].keys())
 
 
 def test_system_routes_registered() -> None:
