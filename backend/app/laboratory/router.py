@@ -50,7 +50,7 @@ def order_labs(payload: LabOrderCreate, user: User = Depends(get_current_user), 
     facility_id = _facility(token)
     _encounter_facility(db, payload.encounter_id, facility_id)
     try:
-        return create_order(db, _staff(db, user, facility_id).id, payload.model_dump())
+        return create_order(db, _staff(db, user, facility_id).id, payload.model_dump(), actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
 
@@ -58,7 +58,7 @@ def order_labs(payload: LabOrderCreate, user: User = Depends(get_current_user), 
 @router.post("/samples/collect", response_model=SampleResponse, status_code=status.HTTP_201_CREATED)
 def collect(payload: SampleCollect, user: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     try:
-        return collect_sample(db, _staff(db, user, _facility(token)).id, payload.lab_order_item_id)
+        return collect_sample(db, _staff(db, user, _facility(token)).id, payload.lab_order_item_id, actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
 
@@ -66,7 +66,7 @@ def collect(payload: SampleCollect, user: User = Depends(get_current_user), toke
 @router.post("/samples/receive", response_model=SampleResponse)
 def receive(payload: SampleReceive, user: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     try:
-        return receive_sample(db, _staff(db, user, _facility(token)).id, payload.sample_id)
+        return receive_sample(db, _staff(db, user, _facility(token)).id, payload.sample_id, actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
 
@@ -74,7 +74,7 @@ def receive(payload: SampleReceive, user: User = Depends(get_current_user), toke
 @router.post("/results", response_model=ResultResponse, status_code=status.HTTP_201_CREATED)
 def result(payload: ResultCreate, user: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     try:
-        return enter_result(db, _staff(db, user, _facility(token)).id, payload.model_dump())
+        return enter_result(db, _staff(db, user, _facility(token)).id, payload.model_dump(), actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
 
@@ -82,6 +82,6 @@ def result(payload: ResultCreate, user: User = Depends(get_current_user), token:
 @router.post("/results/{result_id}/verify", response_model=ResultResponse)
 def verify(result_id: UUID, user: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     try:
-        return verify_result(db, _staff(db, user, _facility(token)).id, result_id)
+        return verify_result(db, _staff(db, user, _facility(token)).id, result_id, actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
