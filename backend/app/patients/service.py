@@ -48,6 +48,9 @@ def get_patient_for_facility(db: Session, patient_id: UUID, facility_id: UUID) -
 def update_patient(db: Session, patient: Person, payload: PatientUpdate, *, actor_user_id: UUID | None = None, facility_id: UUID | None = None) -> Person:
     if facility_id is None:
         raise ValueError("FACILITY_CONTEXT_REQUIRED")
+    membership = db.scalar(select(PatientFacility.id).where(PatientFacility.patient_id == patient.id, PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE"))
+    if membership is None:
+        raise ValueError("PATIENT_NOT_IN_FACILITY")
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise ValueError("NO_CHANGES")
