@@ -110,7 +110,7 @@ def create_vitals(
             actor_user_id=user.id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exp
 
 
 @router.post("/{encounter_id}/consultation", response_model=ConsultationResponse)
@@ -151,5 +151,5 @@ def create_diagnosis(
             payload.model_dump(),
             actor_user_id=user.id,
         )
-    except ValueError as exp:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exp
