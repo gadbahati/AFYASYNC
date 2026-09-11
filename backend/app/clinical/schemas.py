@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.encounters.schemas import EncounterResponse
 
@@ -56,8 +56,33 @@ class DiagnosisResponse(DiagnosisCreate):
     created_at: datetime
 
 
+class LabOrderSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    order_id: str
+    encounter_id: UUID
+    patient_id: UUID
+    priority: str
+    status: str
+    created_at: datetime
+
+
+class PrescriptionSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    prescription_id: str
+    encounter_id: UUID
+    patient_id: UUID
+    status: str
+    created_at: datetime
+
+
 class ClinicalTimelineSummary(BaseModel):
     encounter: EncounterResponse
     vitals: list[VitalResponse]
     consultation: ConsultationResponse | None
     diagnoses: list[DiagnosisResponse]
+    lab_orders: list[LabOrderSummary] = []
+    prescriptions: list[PrescriptionSummary] = []
