@@ -100,33 +100,7 @@ def list_referrals(
     return ReferralListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.get("/{referral_id}", response_model=ReferralOut)
-def get_referral(
-    referral_id: UUID,
-    user: User = Depends(require_permission("referrals.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-) -> ReferralOut:
-    try:
-        return get_referral_for_facility(db, referral_id, facility_id)
-    except ReferralError as exc:
-        raise _error(exc) from exc
-
-
-@router.post("/{referral_id}/status", response_model=ReferralOut)
-def status_update(
-    referral_id: UUID,
-    payload: ReferralStatusUpdate,
-    user: User = Depends(require_permission("referrals.manage")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-) -> ReferralOut:
-    try:
-        return update_referral_status(db, facility_id, referral_id, payload.status, actor_user_id=user.id)
-    except ReferralError as exc:
-        raise _error(exc) from exc
-
-
+# Transfer routes MUST be registered before /{referral_id} to avoid path capture
 @router.post("/transfers", response_model=TransferOut, status_code=status.HTTP_201_CREATED)
 def create_transfer_endpoint(
     payload: TransferCreate,
@@ -169,7 +143,7 @@ def get_transfer(
     try:
         return get_transfer_for_facility(db, transfer_id, facility_id)
     except ReferralError as exc:
-        raise _error(exc) from exc
+        raise _error(exc) from exp
 
 
 @router.post("/transfers/{transfer_id}/status", response_model=TransferOut)
@@ -183,4 +157,31 @@ def transfer_status(
     try:
         return update_transfer_status(db, facility_id, transfer_id, payload.status, actor_user_id=user.id)
     except ReferralError as exc:
-        raise _error(exc) from exc
+        raise _error(exc) from exp
+
+
+@router.get("/{referral_id}", response_model=ReferralOut)
+def get_referral(
+    referral_id: UUID,
+    user: User = Depends(require_permission("referrals.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> ReferralOut:
+    try:
+        return get_referral_for_facility(db, referral_id, facility_id)
+    except ReferralError as exc:
+        raise _error(exc) from exp
+
+
+@router.post("/{referral_id}/status", response_model=ReferralOut)
+def status_update(
+    referral_id: UUID,
+    payload: ReferralStatusUpdate,
+    user: User = Depends(require_permission("referrals.manage")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> ReferralOut:
+    try:
+        return update_referral_status(db, facility_id, referral_id, payload.status, actor_user_id=user.id)
+    except ReferralError as exc:
+        raise _error(exc) from exp
