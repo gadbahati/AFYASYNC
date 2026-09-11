@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.encounters.models import Encounter
 from app.facilities.models import Department, Facility
 from app.patients.models import Person
@@ -46,12 +47,24 @@ def get_encounter(db: Session, encounter_id: UUID) -> Encounter:
     return encounter
 
 
-def close_encounter(db: Session, encounter_id: UUID) -> Encounter:
+def close_encounter(db: Session, encounter_id: UUID, actor_user_id: UUID | None = None) -> Encounter:
     encounter = get_encounter(db, encounter_id)
     if encounter.status != "OPEN":
         raise ValueError("ENCOUNTER_CLOSED")
     encounter.status = "COMPLETED"
     encounter.ended_at = datetime.now(timezone.utc)
+    if actor_user_id:
+        record_audit(
+            db,
+            action="ENCOUNTER_CLOSED",
+            resource_type="ENCOUNTER",
+            resource_id=str(encounter.id),
+            result="SUCCESS",
+            user_id=actor_user_id,
+            facility_id=encounter.facility_id,
+            patient_id=encounter.patient_id,
+            commit=False,
+        )
     db.commit()
     db.refresh(encounter)
     return encounter
