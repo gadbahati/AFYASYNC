@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -32,7 +33,7 @@ class PatientUpdate(BaseModel):
     emergency_contact_phone: str | None = Field(default=None, max_length=30)
     next_of_kin_name: str | None = Field(default=None, max_length=200)
     next_of_kin_phone: str | None = Field(default=None, max_length=30)
-    status: str | None = Field(default=None, min_length=1, max_length=30)
+    status: Literal["ACTIVE", "INACTIVE"] | None = None
 
 
 class PatientResponse(BaseModel):
