@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
 from app.patients.schemas import PatientCreate, PatientResponse, PatientSearchResult
@@ -77,7 +78,6 @@ def get_patient_record(
             detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found."},
         )
 
-    record_audit = __import__("app.audit.service", fromlist=["record_audit"]).record_audit
     record_audit(
         db,
         action="VIEW_PATIENT_RECORD",
