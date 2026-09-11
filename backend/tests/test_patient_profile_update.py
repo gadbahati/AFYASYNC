@@ -8,7 +8,7 @@ from app.patients.service import update_patient
 
 def test_update_patient_is_atomic_and_audited(monkeypatch) -> None:
     db = Mock()
-    db.scalar.return_value = None
+    db.scalar.side_effect = [SimpleNamespace(id=uuid4()), None]
     audit_mock = Mock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
 
@@ -33,7 +33,7 @@ def test_update_patient_is_atomic_and_audited(monkeypatch) -> None:
 
 def test_update_patient_rejects_duplicate_phone(monkeypatch) -> None:
     db = Mock()
-    db.scalar.return_value = SimpleNamespace(id=uuid4())
+    db.scalar.side_effect = [SimpleNamespace(id=uuid4()), SimpleNamespace(id=uuid4())]
     patient = SimpleNamespace(id=uuid4(), first_name="Old", last_name="Name", phone="0700000000")
     payload = SimpleNamespace(model_dump=lambda **_: {"phone": "0711111111"})
 
@@ -49,6 +49,7 @@ def test_update_patient_rejects_duplicate_phone(monkeypatch) -> None:
 
 def test_update_patient_rejects_invalid_status_at_service_boundary(monkeypatch) -> None:
     db = Mock()
+    db.scalar.return_value = SimpleNamespace(id=uuid4())
     audit_mock = Mock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
 
@@ -63,6 +64,28 @@ def test_update_patient_rejects_invalid_status_at_service_boundary(monkeypatch) 
         raise AssertionError("Expected invalid patient status rejection")
 
     assert patient.status == "ACTIVE"
+    db.flush.assert_not_called()
+    db.commit.assert_not_called()
+    audit_mock.assert_not_called()
+
+
+def test_update_patient_rejects_cross_facility_patient(monkeypatch) -> None:
+    db = Mock()
+    db.scalar.return_value = None
+    audit_mock = Mock()
+    monkeypatch.setattr(patient_service, "record_audit", audit_mock)
+
+    patient = SimpleNamespace(id=uuid4(), first_name="Old", last_name="Name", phone="0700000000")
+    payload = SimpleNamespace(model_dump=lambda **_: {"first_name": "New"})
+
+    try:
+        update_patient(db, patient, payload, actor_user_id=uuid4(), facility_id=uuid4())
+    except ValueError as exc:
+        assert str(exc) == "PATIENT_NOT_IN_FACILITY"
+    else:
+        raise AssertionError("Expected cross-facility update rejection")
+
+    assert patient.first_name == "Old"
     db.flush.assert_not_called()
     db.commit.assert_not_called()
     audit_mock.assert_not_called()
