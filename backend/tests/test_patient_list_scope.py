@@ -31,7 +31,7 @@ def test_list_patients_for_facility_rejects_invalid_enrollment_status() -> None:
 def test_list_patients_for_facility_query_is_scoped_to_facility() -> None:
     db = MagicMock()
     db.scalar.return_value = 0
-    db.execute.return_value = []
+    db.execute.return_value.all.return_value = []
     facility_id = uuid4()
     other_facility_id = uuid4()
 
@@ -58,7 +58,7 @@ def test_list_patients_for_facility_query_is_scoped_to_facility() -> None:
 def test_list_patients_for_facility_applies_limit_and_offset_bounds() -> None:
     db = MagicMock()
     db.scalar.return_value = 0
-    db.execute.return_value = []
+    db.execute.return_value.all.return_value = []
     facility_id = uuid4()
 
     list_patients_for_facility(db, facility_id, limit=500, offset=-5)
@@ -72,7 +72,7 @@ def test_list_patients_for_facility_returns_mapped_rows_and_total() -> None:
     person = SimpleNamespace(id=uuid4(), first_name="Ada", last_name="Lovelace")
     identity = SimpleNamespace(afya_id="AF-00000001")
     db.scalar.return_value = 1
-    db.execute.return_value = [(person, identity)]
+    db.execute.return_value.all.return_value = [(person, identity)]
 
     items, total = list_patients_for_facility(db, uuid4())
 
