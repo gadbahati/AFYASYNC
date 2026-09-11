@@ -4,9 +4,22 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_token_payload, require_permission
-from app.clinical.schemas import ConsultationCreate, ConsultationResponse, DiagnosisCreate, DiagnosisResponse, VitalCreate, VitalResponse
-from app.clinical.service import add_diagnosis, create_or_update_consultation, record_vitals
+from app.auth.dependencies import get_facility_context, get_token_payload, require_permission
+from app.clinical.schemas import (
+    ClinicalTimelineSummary,
+    ConsultationCreate,
+    ConsultationResponse,
+    DiagnosisCreate,
+    DiagnosisResponse,
+    VitalCreate,
+    VitalResponse,
+)
+from app.clinical.service import (
+    add_diagnosis,
+    create_or_update_consultation,
+    get_encounter_clinical_summary,
+    record_vitals,
+)
 from app.database import get_db
 from app.encounters.models import Encounter
 from app.rbac.models import Staff, User
@@ -44,6 +57,30 @@ def _staff(db: Session, user: User, facility_id: UUID) -> Staff:
     if staff is None:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     return staff
+
+
+@router.get("/{encounter_id}/clinical", response_model=ClinicalTimelineSummary)
+def get_clinical_timeline(
+    encounter_id: UUID,
+    user: User = Depends(require_permission("clinical.record.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> ClinicalTimelineSummary:
+    try:
+        summary = get_encounter_clinical_summary(db, encounter_id, facility_id)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "ENCOUNTER_NOT_FOUND":
+            raise HTTPException(status_code=404, detail=code) from exc
+        if code == "FACILITY_ACCESS_DENIED":
+            raise HTTPException(status_code=403, detail=code) from exc
+        raise HTTPException(status_code=400, detail=code) from exc
+    return ClinicalTimelineSummary(
+        encounter=summary["encounter"],
+        vitals=summary["vitals"],
+        consultation=summary["consultation"],
+        diagnoses=summary["diagnoses"],
+    )
 
 
 @router.post("/{encounter_id}/vitals", response_model=VitalResponse, status_code=status.HTTP_201_CREATED)
