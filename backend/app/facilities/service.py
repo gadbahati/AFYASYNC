@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
@@ -8,6 +9,7 @@ from app.facilities.models import Department, Facility
 
 _ALLOWED_FACILITY_STATUSES = {"APPLICATION", "ACTIVE", "SUSPENDED", "INACTIVE"}
 _ALLOWED_DEPARTMENT_STATUSES = {"ACTIVE", "INACTIVE"}
+_FACILITY_ID_ALLOCATION_ATTEMPTS = 3
 
 
 def _next_facility_id(db: Session) -> str:
@@ -21,23 +23,42 @@ def create_facility(
     *,
     actor_user_id: UUID | None = None,
 ) -> Facility:
-    facility = Facility(facility_id=_next_facility_id(db), **data)
-    db.add(facility)
-    db.flush()
-    record_audit(
-        db,
-        action="CREATE_FACILITY",
-        resource_type="FACILITY",
-        resource_id=str(facility.id),
-        result="SUCCESS",
-        user_id=actor_user_id,
-        facility_id=facility.id,
-        metadata={"facility_id": facility.facility_id, "name": facility.name},
-        commit=False,
-    )
-    db.commit()
-    db.refresh(facility)
-    return facility
+    """Create a facility with a collision-safe human-readable facility ID.
+
+    The UUID primary key remains the authoritative database identity. The
+    FAC-XXXXXX identifier is a human-facing identifier, so allocation based on
+    a row count can race when two facilities are created concurrently. The
+    unique database constraint is the final arbiter; a failed allocation is
+    retried from a fresh savepoint so concurrent creators converge on the next
+    available identifier without losing the surrounding transaction.
+    """
+    for attempt in range(_FACILITY_ID_ALLOCATION_ATTEMPTS):
+        facility = Facility(facility_id=_next_facility_id(db), **data)
+        try:
+            with db.begin_nested():
+                db.add(facility)
+                db.flush()
+                record_audit(
+                    db,
+                    action="CREATE_FACILITY",
+                    resource_type="FACILITY",
+                    resource_id=str(facility.id),
+                    result="SUCCESS",
+                    user_id=actor_user_id,
+                    facility_id=facility.id,
+                    metadata={"facility_id": facility.facility_id, "name": facility.name},
+                    commit=False,
+                )
+        except IntegrityError:
+            if attempt == _FACILITY_ID_ALLOCATION_ATTEMPTS - 1:
+                raise
+            continue
+
+        db.commit()
+        db.refresh(facility)
+        return facility
+
+    raise RuntimeError("FACILITY_ID_ALLOCATION_FAILED")
 
 
 def list_facilities(db: Session, limit: int = 50) -> list[Facility]:
