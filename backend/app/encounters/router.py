@@ -48,11 +48,11 @@ def get(encounter_id: UUID, _: User = Depends(get_current_user), token: dict = D
 
 
 @router.post("/{encounter_id}/close", response_model=EncounterResponse)
-def close(encounter_id: UUID, _: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+def close(encounter_id: UUID, user: User = Depends(get_current_user), token: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     encounter = get_encounter(db, encounter_id)
     if encounter.facility_id != _facility(token):
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        return close_encounter(db, encounter_id)
+        return close_encounter(db, encounter_id, actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
