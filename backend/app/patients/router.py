@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,14 +8,26 @@ from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
 from app.patients.schemas import PatientCreate, PatientFacilityResponse, PatientFacilityStatusUpdate, PatientResponse, PatientSearchResult, PatientUpdate
-from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_facility_enrollments, get_patient_for_facility, search_patients, update_patient, update_patient_facility_status
+from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_facility_enrollments, get_patient_for_facility, list_patients_for_facility, search_patients, update_patient, update_patient_facility_status
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/patients", tags=["Patients"])
 
 
-def _response(patient) -> PatientResponse:
-    return PatientResponse(id=patient.id, afya_id=patient.afya_identity.afya_id, first_name=patient.first_name, middle_name=patient.middle_name, last_name=patient.last_name, date_of_birth=patient.date_of_birth, sex=patient.sex, phone=patient.phone, email=patient.email, status=patient.status)
+def _response(patient, afya_id: str | None = None) -> PatientResponse:
+    resolved_afya_id = afya_id if afya_id is not None else patient.afya_identity.afya_id
+    return PatientResponse(
+        id=patient.id,
+        afya_id=resolved_afya_id,
+        first_name=patient.first_name,
+        middle_name=patient.middle_name,
+        last_name=patient.last_name,
+        date_of_birth=patient.date_of_birth,
+        sex=patient.sex,
+        phone=patient.phone,
+        email=patient.email,
+        status=patient.status,
+    )
 
 
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
@@ -26,6 +39,49 @@ def register_patient(payload: PatientCreate, user: User = Depends(require_permis
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "DUPLICATE_PATIENT", "message": "A possible existing patient was found."}) from exc
         raise
     return _response(patient)
+
+
+@router.get("", response_model=list[PatientResponse])
+def list_patient_records(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    enrollment_status: Literal["ACTIVE", "INACTIVE"] | None = Query(default="ACTIVE"),
+    user: User = Depends(require_permission("patients.record.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> list[PatientResponse]:
+    """List patients enrolled at the authenticated facility only.
+
+    Never returns patients that exist only at other facilities.
+    """
+    try:
+        results = list_patients_for_facility(
+            db,
+            facility_id,
+            limit=limit,
+            offset=offset,
+            enrollment_status=enrollment_status,
+        )
+    except ValueError as exc:
+        if str(exc) == "INVALID_ENROLLMENT_STATUS":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "INVALID_ENROLLMENT_STATUS", "message": "Enrollment status must be ACTIVE or INACTIVE."},
+            ) from exc
+        raise
+
+    record_audit(
+        db,
+        action="LIST_PATIENT_RECORDS",
+        resource_type="PERSON",
+        resource_id=str(facility_id),
+        result="SUCCESS",
+        user_id=user.id,
+        facility_id=facility_id,
+        metadata={"count": len(results), "limit": limit, "offset": offset, "enrollment_status": enrollment_status},
+        commit=True,
+    )
+    return [_response(person, identity.afya_id) for person, identity in results]
 
 
 @router.get("/search", response_model=list[PatientSearchResult])
