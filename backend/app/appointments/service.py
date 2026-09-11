@@ -42,8 +42,7 @@ def create_appointment(db: Session, data: dict, actor_user_id: UUID | None = Non
     _require_provider(db, data.get("provider_id"), data["facility_id"])
     appointment = Appointment(**data)
     db.add(appointment)
-    db.commit()
-    db.refresh(appointment)
+    db.flush()
     notify_patient_event(
         db,
         patient_id=appointment.patient_id,
@@ -52,7 +51,10 @@ def create_appointment(db: Session, data: dict, actor_user_id: UUID | None = Non
         action_url=f"/appointments/{appointment.id}",
         metadata={"appointment_id": str(appointment.id)},
         actor_user_id=actor_user_id,
+        commit=False,
     )
+    db.commit()
+    db.refresh(appointment)
     return appointment
 
 
