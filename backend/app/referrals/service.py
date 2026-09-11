@@ -80,6 +80,7 @@ def create_referral(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         status="CREATED",
     )
     db.add(referral)
+    db.flush()
     notify_patient_event(
         db,
         patient_id=referral.patient_id,
@@ -89,9 +90,9 @@ def create_referral(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         actor_user_id=actor_user_id,
         commit=False,
     )
+    record_audit(db, action="CREATE_REFERRAL", resource_type="REFERRAL", resource_id=str(referral.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=referral.patient_id, metadata={"referral_id": referral.referral_id, "destination_facility_id": str(destination.id)}, commit=False)
     db.commit()
     db.refresh(referral)
-    record_audit(db, action="CREATE_REFERRAL", resource_type="REFERRAL", resource_id=str(referral.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=referral.patient_id, metadata={"referral_id": referral.referral_id, "destination_facility_id": str(destination.id)})
     return referral
 
 
@@ -113,9 +114,9 @@ def update_referral_status(db: Session, facility_id: UUID, referral_id: UUID, ne
         actor_user_id=actor_user_id,
         commit=False,
     )
+    record_audit(db, action="UPDATE_REFERRAL_STATUS", resource_type="REFERRAL", resource_id=str(referral.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=referral.patient_id, metadata={"status": new_status}, commit=False)
     db.commit()
     db.refresh(referral)
-    record_audit(db, action="UPDATE_REFERRAL_STATUS", resource_type="REFERRAL", resource_id=str(referral.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=referral.patient_id, metadata={"status": new_status})
     return referral
 
 
@@ -149,6 +150,7 @@ def create_transfer(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         status="REQUESTED",
     )
     db.add(transfer)
+    db.flush()
     notify_patient_event(
         db,
         patient_id=transfer.patient_id,
@@ -158,9 +160,9 @@ def create_transfer(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         actor_user_id=actor_user_id,
         commit=False,
     )
+    record_audit(db, action="CREATE_TRANSFER", resource_type="TRANSFER", resource_id=str(transfer.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=transfer.patient_id, metadata={"transfer_id": transfer.transfer_id, "destination_facility_id": str(destination.id)}, commit=False)
     db.commit()
     db.refresh(transfer)
-    record_audit(db, action="CREATE_TRANSFER", resource_type="TRANSFER", resource_id=str(transfer.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=transfer.patient_id, metadata={"transfer_id": transfer.transfer_id, "destination_facility_id": str(destination.id)})
     return transfer
 
 
@@ -182,7 +184,7 @@ def update_transfer_status(db: Session, facility_id: UUID, transfer_id: UUID, ne
         actor_user_id=actor_user_id,
         commit=False,
     )
+    record_audit(db, action="UPDATE_TRANSFER_STATUS", resource_type="TRANSFER", resource_id=str(transfer.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=transfer.patient_id, metadata={"status": new_status}, commit=False)
     db.commit()
     db.refresh(transfer)
-    record_audit(db, action="UPDATE_TRANSFER_STATUS", resource_type="TRANSFER", resource_id=str(transfer.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=transfer.patient_id, metadata={"status": new_status})
     return transfer
