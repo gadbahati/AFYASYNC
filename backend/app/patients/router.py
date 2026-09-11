@@ -48,7 +48,7 @@ def list_patient_enrollments(patient_id: UUID, user: User = Depends(require_perm
     patient = get_patient_for_facility(db, patient_id, facility_id)
     if patient is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found."})
-    enrollments = get_patient_facility_enrollments(db, patient_id)
+    enrollments = get_patient_facility_enrollments(db, patient_id, facility_id)
     record_audit(db, action="VIEW_PATIENT_ENROLLMENTS", resource_type="PERSON", resource_id=str(patient_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"enrollment_count": len(enrollments)}, commit=True)
     return enrollments
 
