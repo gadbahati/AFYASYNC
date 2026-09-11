@@ -23,7 +23,7 @@ def create_integration(db: Session, facility_id: UUID, name: str, integration_ty
     return integration
 
 
-def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, transaction_id: str, entity_type: str, entity_id: UUID | None, direction: str, request_reference: str | None) -> IntegrationTransaction:
+def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, transaction_id: str, entity_type: str, entity_id: UUID | None, direction: str, request_reference: str | None, *, commit: bool = True) -> IntegrationTransaction:
     integration = db.scalar(select(Integration).where(Integration.id == integration_id, Integration.facility_id == facility_id))
     if integration is None:
         raise IntegrationError("INTEGRATION_NOT_FOUND")
@@ -34,8 +34,10 @@ def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, tran
         return existing
     transaction = IntegrationTransaction(integration_id=integration_id, transaction_id=transaction_id, entity_type=entity_type, entity_id=entity_id, direction=direction, request_reference=request_reference, status="PENDING", attempt_count=0, response_data={})
     db.add(transaction)
-    db.commit()
-    db.refresh(transaction)
+    db.flush()
+    if commit:
+        db.commit()
+        db.refresh(transaction)
     return transaction
 
 
