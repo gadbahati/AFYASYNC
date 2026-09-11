@@ -14,14 +14,35 @@ jobs:
         working-directory: backend
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Compile Python sources
-        run: python -m compileall -q app migrations
+
+      - name: Compile application and tests
+        run: python -m compileall -q app migrations tests
+
+      - name: Guard production JWT configuration
+        run: |
+          python - <<'PY'
+          import os
+          os.environ["ENVIRONMENT"] = "production"
+          os.environ["JWT_SECRET"] = "change-this-development-secret"
+          try:
+              from app.config import Settings
+              Settings()
+          except Exception as exc:
+              print("OK: production rejects default JWT secret:", type(exc).__name__)
+          else:
+              raise SystemExit("FAIL: production accepted default JWT secret")
+          PY
+
       - name: Run tests
-        run: pytest -q
+        run: pytest -q --tb=short
