@@ -73,8 +73,12 @@ def queue(
     _: User = Depends(require_permission(INTEGRATIONS_QUEUE)),
 ):
     try:
-        return queue_transaction(db, facility_id, integration_id, payload.transaction_id, payload.entity_type, payload.entity_id, payload.direction, payload.request_reference)
+        transaction = queue_transaction(db, facility_id, integration_id, payload.transaction_id, payload.entity_type, payload.entity_id, payload.direction, payload.request_reference)
+        db.commit()
+        db.refresh(transaction)
+        return transaction
     except IntegrationError as exc:
+        db.rollback()
         raise _error(exc) from exc
 
 
