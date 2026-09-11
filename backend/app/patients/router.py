@@ -56,5 +56,9 @@ def update_patient_record(patient_id: UUID, payload: PatientUpdate, user: User =
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": code, "message": "Phone number is already associated with another patient."}) from exc
         if code == "NO_CHANGES":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": code, "message": "At least one patient field must be supplied."}) from exc
+        if code == "PATIENT_NOT_IN_FACILITY":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": code, "message": "Patient record not found."}) from exc
+        if code == "INVALID_PATIENT_STATUS":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": code, "message": "Patient status must be ACTIVE or INACTIVE."}) from exc
         raise
     return _response(patient)
