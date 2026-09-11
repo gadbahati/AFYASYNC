@@ -45,8 +45,8 @@ def get_patient_for_facility(db: Session, patient_id: UUID, facility_id: UUID) -
     return db.scalar(statement)
 
 
-def get_patient_facility_enrollments(db: Session, patient_id: UUID) -> list[PatientFacility]:
-    statement = select(PatientFacility).where(PatientFacility.patient_id == patient_id).order_by(PatientFacility.created_at)
+def get_patient_facility_enrollments(db: Session, patient_id: UUID, facility_id: UUID) -> list[PatientFacility]:
+    statement = select(PatientFacility).where(PatientFacility.patient_id == patient_id, PatientFacility.facility_id == facility_id).order_by(PatientFacility.created_at)
     return list(db.scalars(statement).all())
 
 
