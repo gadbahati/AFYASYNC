@@ -52,11 +52,11 @@ def issue_refresh_token(db: Session, user: User, facility_id: UUID | None = None
             expires_at=now + timedelta(days=settings.refresh_token_days),
         )
     )
-    db.flush()
+    db.commit()
     return token
 
 
-def rotate_tokens_from_refresh(db: Session, refresh_token: str) -> tuple[User, UUID | None] | None:
+def rotate_tokens_from_refresh(db: Session, refresh_token: str) -> tuple[User, UUID | None, str] | None:
     payload = decode_refresh_token(refresh_token)
     try:
         user_id = UUID(payload["sub"])
