@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.encounters.schemas import EncounterResponse
+
 
 class VitalCreate(BaseModel):
     systolic_bp: int | None = Field(default=None, ge=40, le=300)
@@ -52,3 +54,10 @@ class DiagnosisResponse(DiagnosisCreate):
     status: str
     recorded_by: UUID
     created_at: datetime
+
+
+class ClinicalTimelineSummary(BaseModel):
+    encounter: EncounterResponse
+    vitals: list[VitalResponse]
+    consultation: ConsultationResponse | None
+    diagnoses: list[DiagnosisResponse]
