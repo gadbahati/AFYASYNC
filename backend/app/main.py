@@ -28,6 +28,7 @@ from app.patients import models as patient_models
 from app.patients.router import router as patients_router
 from app.pharmacy import models as pharmacy_models
 from app.pharmacy.router import router as pharmacy_router
+from app.portal.router import router as portal_router
 from app.rbac import models as rbac_models
 from app.referrals import models as referral_models
 from app.referrals.router import router as referrals_router
@@ -59,6 +60,7 @@ app.include_router(claims_router)
 app.include_router(integrations_router)
 app.include_router(referrals_router)
 app.include_router(notifications_router)
+app.include_router(portal_router)
 
 
 @app.get("/health", tags=["System"])
