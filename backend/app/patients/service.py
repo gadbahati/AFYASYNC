@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
@@ -57,8 +57,8 @@ def list_patients_for_facility(
     limit: int = 50,
     offset: int = 0,
     enrollment_status: str | None = "ACTIVE",
-) -> list[tuple[Person, AfyaIdentity]]:
-    """Return patients enrolled at the given facility only.
+) -> tuple[list[tuple[Person, AfyaIdentity]], int]:
+    """Return patients enrolled at the given facility only, plus total count.
 
     Strictly facility-scoped: never returns patients that are only enrolled
     at other facilities. Defaults to ACTIVE enrollments.
@@ -68,21 +68,31 @@ def list_patients_for_facility(
     limit = min(max(limit, 1), 100)
     offset = max(offset, 0)
 
+    base_filters = [PatientFacility.facility_id == facility_id]
+    if enrollment_status is not None:
+        if enrollment_status not in _ALLOWED_PATIENT_STATUSES:
+            raise ValueError("INVALID_ENROLLMENT_STATUS")
+        base_filters.append(PatientFacility.status == enrollment_status)
+
+    count_stmt = (
+        select(func.count())
+        .select_from(PatientFacility)
+        .where(*base_filters)
+    )
+    total = int(db.scalar(count_stmt) or 0)
+
     statement = (
         select(Person, AfyaIdentity)
         .join(AfyaIdentity, AfyaIdentity.person_id == Person.id)
         .join(PatientFacility, PatientFacility.patient_id == Person.id)
-        .where(PatientFacility.facility_id == facility_id)
+        .where(*base_filters)
         .order_by(Person.last_name, Person.first_name, Person.id)
         .offset(offset)
         .limit(limit)
     )
-    if enrollment_status is not None:
-        if enrollment_status not in _ALLOWED_PATIENT_STATUSES:
-            raise ValueError("INVALID_ENROLLMENT_STATUS")
-        statement = statement.where(PatientFacility.status == enrollment_status)
 
-    return list(db.execute(statement).all())
+    items = list(db.execute(statement).all())
+    return items, total
 
 
 def update_patient(db: Session, patient: Person, payload: PatientUpdate, *, actor_user_id: UUID | None = None, facility_id: UUID | None = None) -> Person:
