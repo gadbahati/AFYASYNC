@@ -152,5 +152,5 @@ def test_list_patients_for_facility_returns_paginated_rows_and_total() -> None:
     compiled = statement.compile()
     assert "patient_facilities.facility_id" in str(compiled)
     assert facility_id in compiled.params.values()
-    assert "status_1" in compiled.params
-    assert compiled.params["status_1"] == "ACTIVE"
+    status_params = {k: v for k, v in compiled.params.items() if k.startswith("status_")}
+    assert "ACTIVE" in status_params.values()
