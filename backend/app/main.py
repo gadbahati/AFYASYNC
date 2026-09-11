@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
+from sqlalchemy import text
 
 from app.appointments import models as appointment_models
 from app.appointments.router import router as appointments_router
@@ -13,7 +14,7 @@ from app.clinical.router import router as clinical_router
 from app.config import settings
 from app.coverage import models as coverage_models
 from app.coverage.router import router as coverage_router
-from app.database import Base, engine
+from app.database import Base, SessionLocal, engine
 from app.encounters import models as encounter_models
 from app.encounters.router import router as encounters_router
 from app.facilities import models as facility_models
@@ -65,9 +66,49 @@ app.include_router(portal_router)
 
 @app.get("/health", tags=["System"])
 def health_check() -> dict[str, object]:
-    return {"success": True, "data": {"service": "afasync-api", "status": "healthy"}, "message": "AfyaSync API is running"}
+    """Liveness: process is up. Does not check dependencies."""
+    return {
+        "success": True,
+        "data": {
+            "service": "afasync-api",
+            "status": "healthy",
+            "environment": settings.environment,
+            "version": settings.app_version,
+        },
+        "message": "AfyaSync API is running",
+    }
+
+
+@app.get("/ready", tags=["System"])
+def readiness_check(response: Response) -> dict[str, object]:
+    """Readiness: database is reachable. Safe for orchestrators."""
+    db_ok = False
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+            db_ok = True
+    except Exception:
+        db_ok = False
+
+    if not db_ok:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "success": False,
+            "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"},
+            "message": "AfyaSync API is not ready",
+        }
+
+    return {
+        "success": True,
+        "data": {"service": "afasync-api", "status": "ready", "database": "ok"},
+        "message": "AfyaSync API is ready",
+    }
 
 
 @app.get("/api/v1", tags=["System"])
 def api_root() -> dict[str, object]:
-    return {"success": True, "data": {"name": settings.app_name, "version": settings.app_version}, "message": "AfyaSync API v1"}
+    return {
+        "success": True,
+        "data": {"name": settings.app_name, "version": settings.app_version},
+        "message": "AfyaSync API v1",
+    }
