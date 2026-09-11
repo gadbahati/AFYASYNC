@@ -4,7 +4,7 @@ from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
-from app.patients.models import AfyaIdentity, Person
+from app.patients.models import AfyaIdentity, PatientFacility, Person
 from app.patients.schemas import PatientCreate
 
 
@@ -23,6 +23,9 @@ def create_patient(
     actor_user_id: UUID | None = None,
     facility_id: UUID | None = None,
 ) -> Person:
+    if facility_id is None:
+        raise ValueError("FACILITY_CONTEXT_REQUIRED")
+
     # Conservative duplicate candidate search. A final identity should be
     # confirmed through an authorised workflow before merging records.
     if payload.phone:
@@ -43,6 +46,9 @@ def create_patient(
     identity = AfyaIdentity(person_id=person.id, afya_id=_next_afya_id(db))
     db.add(identity)
     db.flush()
+
+    db.add(PatientFacility(patient_id=person.id, facility_id=facility_id, status="ACTIVE"))
+    db.flush()
     record_audit(
         db,
         action="CREATE_PATIENT",
@@ -58,6 +64,19 @@ def create_patient(
     db.commit()
     db.refresh(person)
     return person
+
+
+def get_patient_for_facility(db: Session, patient_id: UUID, facility_id: UUID) -> Person | None:
+    statement = (
+        select(Person)
+        .join(PatientFacility, PatientFacility.patient_id == Person.id)
+        .where(
+            Person.id == patient_id,
+            PatientFacility.facility_id == facility_id,
+            PatientFacility.status == "ACTIVE",
+        )
+    )
+    return db.scalar(statement)
 
 
 def search_patients(db: Session, query: str, limit: int = 20) -> list[tuple[Person, AfyaIdentity]]:
