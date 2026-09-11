@@ -49,9 +49,10 @@ def search_patient_records(
     q: str = Query(min_length=2, max_length=100),
     limit: int = Query(default=20, ge=1, le=50),
     _: User = Depends(require_permission("patients.search")),
+    facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
 ) -> list[PatientSearchResult]:
-    results = search_patients(db, q, limit)
+    results = search_patients(db, q, facility_id, limit)
     return [
         PatientSearchResult(
             id=person.id,
