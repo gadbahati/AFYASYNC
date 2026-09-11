@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +16,22 @@ class FacilityCreate(BaseModel):
     email: str | None = None
 
 
+class FacilityUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=200)
+    facility_type: str | None = Field(default=None, min_length=2, max_length=50)
+    registration_number: str | None = None
+    license_number: str | None = None
+    county: str | None = None
+    sub_county: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    email: str | None = None
+
+
+class FacilityStatusUpdate(BaseModel):
+    status: Literal["APPLICATION", "ACTIVE", "SUSPENDED", "INACTIVE"]
+
+
 class FacilityResponse(FacilityCreate):
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,6 +43,10 @@ class FacilityResponse(FacilityCreate):
 class DepartmentCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     code: str = Field(min_length=2, max_length=50)
+
+
+class DepartmentStatusUpdate(BaseModel):
+    status: Literal["ACTIVE", "INACTIVE"]
 
 
 class DepartmentResponse(DepartmentCreate):
