@@ -34,7 +34,7 @@ def test_payer_callback_updates_integration_transaction_and_claim() -> None:
     assert transaction.external_reference == "PAYER-12345"
     assert transaction.response_code == "200"
     assert transaction.response_data["status"] == "ACCEPTED"
-    record_response.assert_called_once_with(db, claim_id, facility_id, "ACCEPTED", "200", "Accepted by payer", "PAYER-12345", Decimal("125.00"), actor_user_id=None)
+    record_response.assert_called_once_with(db, claim_id, facility_id, "ACCEPTED", "200", "Accepted by payer", "PAYER-12345", Decimal("125.00"), actor_user_id=None, commit=False)
 
 
 def test_duplicate_payer_callback_is_rejected_before_claim_mutation() -> None:
