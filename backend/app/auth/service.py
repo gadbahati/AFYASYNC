@@ -68,11 +68,13 @@ def rotate_tokens_from_refresh(db: Session, refresh_token: str) -> tuple[User, U
 
     now = datetime.now(timezone.utc)
     session = db.scalar(
-        select(RefreshSession).where(
+        select(RefreshSession)
+        .where(
             RefreshSession.id == session_id,
             RefreshSession.family_id == family_id,
             RefreshSession.token_hash == hash_refresh_token(refresh_token),
         )
+        .with_for_update()
     )
     if session is None:
         return None
