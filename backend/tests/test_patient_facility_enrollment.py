@@ -2,6 +2,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
+
 import app.patients.service as patient_service
 from app.patients.service import (
     enroll_patient_in_facility,
@@ -72,6 +74,27 @@ def test_enroll_patient_in_facility_rejects_unknown_patient(monkeypatch) -> None
     else:
         raise AssertionError("Expected unknown patient rejection")
     db.add.assert_not_called()
+    db.commit.assert_not_called()
+    audit_mock.assert_not_called()
+
+
+def test_enroll_patient_in_facility_handles_concurrent_duplicate(monkeypatch) -> None:
+    db = Mock()
+    patient_id, facility_id = uuid4(), uuid4()
+    membership = SimpleNamespace(id=uuid4(), patient_id=patient_id, facility_id=facility_id, status="ACTIVE")
+    db.scalar.side_effect = [uuid4(), None, membership]
+    db.flush.side_effect = [IntegrityError("INSERT", {}, Exception("duplicate key"))]
+    audit_mock = Mock()
+    monkeypatch.setattr(patient_service, "record_audit", audit_mock)
+
+    try:
+        enroll_patient_in_facility(db, patient_id, facility_id, actor_user_id=uuid4())
+    except ValueError as exc:
+        assert str(exc) == "PATIENT_ALREADY_ENROLLED"
+    else:
+        raise AssertionError("Expected concurrent duplicate enrollment rejection")
+
+    db.begin_nested.assert_called_once()
     db.commit.assert_not_called()
     audit_mock.assert_not_called()
 
