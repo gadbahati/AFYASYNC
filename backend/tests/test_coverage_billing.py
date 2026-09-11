@@ -66,7 +66,7 @@ def test_invoice_without_coverage_assigns_full_patient_responsibility() -> None:
     db.commit = MagicMock()
     db.refresh = MagicMock()
 
-    with patch("app.billing.service.record_audit"), patch("app.billing.service.get_verified_current_coverage", return_value=None), patch("app.billing.service.has_current_unverified_coverage", return_value=False):
+    with patch("app.billing.service.record_audit"), patch("app.billing.service.get_verified_current_coverage", return_value=None), patch("app.billing.service.has_current_unverified_coverage", return_value=False), patch("app.billing.service.notify_patient_event"):
         invoice = create_invoice(db, facility_id, encounter.id)
 
     assert invoice.total_amount == Decimal("150.00")
