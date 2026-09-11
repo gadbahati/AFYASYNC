@@ -26,6 +26,11 @@ def _response(patient, afya_id: str | None = None) -> PatientResponse:
         sex=patient.sex,
         phone=patient.phone,
         email=patient.email,
+        address=getattr(patient, "address", None),
+        emergency_contact_name=getattr(patient, "emergency_contact_name", None),
+        emergency_contact_phone=getattr(patient, "emergency_contact_phone", None),
+        next_of_kin_name=getattr(patient, "next_of_kin_name", None),
+        next_of_kin_phone=getattr(patient, "next_of_kin_phone", None),
         status=patient.status,
     )
 
