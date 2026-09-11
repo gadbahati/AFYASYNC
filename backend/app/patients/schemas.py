@@ -61,6 +61,11 @@ class PatientResponse(BaseModel):
     sex: str | None
     phone: str | None
     email: str | None
+    address: str | None = None
+    emergency_contact_name: str | None = None
+    emergency_contact_phone: str | None = None
+    next_of_kin_name: str | None = None
+    next_of_kin_phone: str | None = None
     status: str
 
 
