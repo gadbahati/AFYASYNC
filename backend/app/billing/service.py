@@ -91,10 +91,11 @@ def create_invoice(db: Session, facility_id: UUID, encounter_id: UUID, *, actor_
     db.flush()
     for charge, service, payer_amount, patient_amount, rule_id in breakdown:
         db.add(InvoiceItem(invoice_id=invoice.id, charge_id=charge.id, description=f"{service.code} - {service.name}", quantity=charge.quantity, unit_price=charge.unit_price, amount=charge.total_amount, payer_amount=payer_amount, patient_amount=patient_amount, benefit_rule_id=rule_id))
+    db.flush()
     notify_patient_event(db, patient_id=invoice.patient_id, facility_id=facility_id, event_type="BILL_CREATED", action_url=f"/patient/billing/invoices/{invoice.id}", actor_user_id=actor_user_id, commit=False, metadata={"invoice_id": invoice.invoice_id})
+    record_audit(db, action="CREATE_INVOICE", resource_type="INVOICE", resource_id=str(invoice.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=invoice.patient_id, metadata={"invoice_id": invoice.invoice_id, "amount": str(invoice.total_amount), "payer_amount": str(invoice.payer_amount), "patient_amount": str(invoice.patient_amount), "coverage_id": str(coverage.id) if coverage else None}, commit=False)
     db.commit()
     db.refresh(invoice)
-    record_audit(db, action="CREATE_INVOICE", resource_type="INVOICE", resource_id=str(invoice.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=invoice.patient_id, metadata={"invoice_id": invoice.invoice_id, "amount": str(invoice.total_amount), "payer_amount": str(invoice.payer_amount), "patient_amount": str(invoice.patient_amount), "coverage_id": str(coverage.id) if coverage else None})
     return invoice
 
 
@@ -142,9 +143,10 @@ def record_payment(db: Session, facility_id: UUID, payload: dict, *, actor_user_
         invoice.status = "PAID" if new_paid == Decimal(str(invoice.patient_amount)) else "PARTIALLY_PAID"
         notify_patient_event(db, patient_id=payment.patient_id, facility_id=facility_id, event_type="PAYMENT_CONFIRMED", action_url=f"/patient/billing/invoices/{invoice.id}", actor_user_id=actor_user_id, commit=False, metadata={"payment_id": str(payment.id), "transaction_id": payment.transaction_id})
 
+    db.flush()
+    record_audit(db, action="CREATE_PAYMENT" if requires_provider else "RECORD_PAYMENT", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "amount": str(amount), "invoice_id": str(invoice.id), "status": payment.status, "provider": provider}, commit=False)
     db.commit()
     db.refresh(payment)
-    record_audit(db, action="CREATE_PAYMENT" if requires_provider else "RECORD_PAYMENT", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "amount": str(amount), "invoice_id": str(invoice.id), "status": payment.status, "provider": provider})
     return payment
 
 
@@ -189,6 +191,8 @@ def process_payment_callback(db: Session, facility_id: UUID, integration_id: UUI
         transaction.status = "SUCCEEDED"
         transaction.response_code = response_code
         transaction.response_data = {"status": normalized, "message": response_message} if response_message else {"status": normalized}
+        db.flush()
+        record_audit(db, action="FAIL_PAYMENT_CALLBACK", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=None, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "external_reference": external_reference, "response_code": response_code}, commit=False)
         db.commit()
         return payment
     paid = sum((Decimal(str(p.amount)) for p in db.scalars(select(Payment).where(Payment.invoice_id == invoice.id, Payment.status == "CONFIRMED", Payment.id != payment.id))), Decimal("0"))
@@ -202,6 +206,7 @@ def process_payment_callback(db: Session, facility_id: UUID, integration_id: UUI
     transaction.response_code = response_code
     transaction.response_data = {"status": normalized, "message": response_message} if response_message else {"status": normalized}
     notify_patient_event(db, patient_id=payment.patient_id, facility_id=facility_id, event_type="PAYMENT_CONFIRMED", action_url=f"/patient/billing/invoices/{invoice.id}", actor_user_id=None, commit=False, metadata={"payment_id": str(payment.id), "transaction_id": payment.transaction_id})
+    db.flush()
+    record_audit(db, action="CONFIRM_PAYMENT_CALLBACK", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=None, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "external_reference": external_reference, "response_code": response_code}, commit=False)
     db.commit()
-    record_audit(db, action="CONFIRM_PAYMENT_CALLBACK", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=None, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "external_reference": external_reference, "response_code": response_code})
     return payment
