@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.security import bearer_scheme, decode_access_token
 from app.database import get_db
+from app.facilities.models import Facility
 from app.rbac.models import Permission, Role, RolePermission, Staff, StaffRole, User
 
 
@@ -38,7 +39,16 @@ def get_facility_context(payload: dict = Depends(get_token_payload), user: User 
         facility_id = UUID(raw)
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=403, detail="INVALID_FACILITY_CONTEXT") from exc
-    staff = db.scalar(select(Staff).where(Staff.person_id == user.person_id, Staff.facility_id == facility_id, Staff.status == "ACTIVE"))
+    staff = db.scalar(
+        select(Staff)
+        .join(Facility, Facility.id == Staff.facility_id)
+        .where(
+            Staff.person_id == user.person_id,
+            Staff.facility_id == facility_id,
+            Staff.status == "ACTIVE",
+            Facility.status == "ACTIVE",
+        )
+    )
     if staff is None:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     return facility_id
@@ -52,12 +62,14 @@ def require_permission(permission_code: str):
             .join(Role, Role.id == RolePermission.role_id)
             .join(StaffRole, StaffRole.role_id == Role.id)
             .join(Staff, Staff.id == StaffRole.staff_id)
+            .join(Facility, Facility.id == Staff.facility_id)
             .where(
                 Permission.code == permission_code,
                 Staff.person_id == user.person_id,
                 Staff.facility_id == facility_id,
                 StaffRole.facility_id == facility_id,
                 Staff.status == "ACTIVE",
+                Facility.status == "ACTIVE",
             ).limit(1)
         )
         if db.scalar(stmt) is None:
