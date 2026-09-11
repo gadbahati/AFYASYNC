@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.clinical.models import Consultation, Diagnosis, Vital
 from app.encounters.models import Encounter
+from app.laboratory.models import LabOrder
+from app.pharmacy.models import Prescription
 from app.rbac.models import Staff
 
 
@@ -121,9 +123,10 @@ def get_encounter_clinical_summary(
     encounter_id: UUID,
     facility_id: UUID,
 ) -> dict:
-    """Facility-scoped clinical timeline for a single encounter.
+    """Facility-scoped cross-module clinical timeline for a single encounter.
 
-    Returns vitals, consultation, and diagnoses. Does not include other facilities.
+    Includes clinical notes plus linked lab orders and prescriptions for this
+    encounter only. Never returns data from other facilities.
     """
     encounter = db.get(Encounter, encounter_id)
     if encounter is None:
@@ -146,9 +149,25 @@ def get_encounter_clinical_summary(
             .order_by(Diagnosis.created_at.asc(), Diagnosis.id.asc())
         )
     )
+    lab_orders = list(
+        db.scalars(
+            select(LabOrder)
+            .where(LabOrder.encounter_id == encounter_id)
+            .order_by(LabOrder.created_at.asc(), LabOrder.id.asc())
+        )
+    )
+    prescriptions = list(
+        db.scalars(
+            select(Prescription)
+            .where(Prescription.encounter_id == encounter_id)
+            .order_by(Prescription.created_at.asc(), Prescription.id.asc())
+        )
+    )
     return {
         "encounter": encounter,
         "vitals": vitals,
         "consultation": consultation,
         "diagnoses": diagnoses,
+        "lab_orders": lab_orders,
+        "prescriptions": prescriptions,
     }
