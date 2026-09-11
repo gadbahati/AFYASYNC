@@ -45,6 +45,11 @@ def get_patient_for_facility(db: Session, patient_id: UUID, facility_id: UUID) -
     return db.scalar(statement)
 
 
+def get_patient_facility_enrollments(db: Session, patient_id: UUID) -> list[PatientFacility]:
+    statement = select(PatientFacility).where(PatientFacility.patient_id == patient_id).order_by(PatientFacility.created_at)
+    return list(db.scalars(statement).all())
+
+
 def update_patient(db: Session, patient: Person, payload: PatientUpdate, *, actor_user_id: UUID | None = None, facility_id: UUID | None = None) -> Person:
     if facility_id is None:
         raise ValueError("FACILITY_CONTEXT_REQUIRED")
@@ -73,53 +78,23 @@ def update_patient(db: Session, patient: Person, payload: PatientUpdate, *, acto
 def enroll_patient_in_facility(db: Session, patient_id: UUID, facility_id: UUID, *, actor_user_id: UUID | None = None) -> PatientFacility:
     if facility_id is None:
         raise ValueError("FACILITY_CONTEXT_REQUIRED")
-
-    patient_exists = db.scalar(
-        select(AfyaIdentity.person_id).where(AfyaIdentity.person_id == patient_id)
-    )
+    patient_exists = db.scalar(select(AfyaIdentity.person_id).where(AfyaIdentity.person_id == patient_id))
     if patient_exists is None:
         raise ValueError("PATIENT_NOT_FOUND")
-
-    membership = db.scalar(
-        select(PatientFacility).where(
-            PatientFacility.patient_id == patient_id,
-            PatientFacility.facility_id == facility_id,
-        )
-    )
+    membership = db.scalar(select(PatientFacility).where(PatientFacility.patient_id == patient_id, PatientFacility.facility_id == facility_id))
     if membership is not None:
         if membership.status == "ACTIVE":
             raise ValueError("PATIENT_ALREADY_ENROLLED")
         membership.status = "ACTIVE"
         db.flush()
-        record_audit(
-            db,
-            action="REACTIVATE_PATIENT_FACILITY",
-            resource_type="PATIENT_FACILITY",
-            resource_id=str(membership.id),
-            result="SUCCESS",
-            user_id=actor_user_id,
-            facility_id=facility_id,
-            patient_id=patient_id,
-            commit=False,
-        )
+        record_audit(db, action="REACTIVATE_PATIENT_FACILITY", resource_type="PATIENT_FACILITY", resource_id=str(membership.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=patient_id, commit=False)
         db.commit()
         db.refresh(membership)
         return membership
-
     membership = PatientFacility(patient_id=patient_id, facility_id=facility_id, status="ACTIVE")
     db.add(membership)
     db.flush()
-    record_audit(
-        db,
-        action="ENROLL_PATIENT_FACILITY",
-        resource_type="PATIENT_FACILITY",
-        resource_id=str(membership.id),
-        result="SUCCESS",
-        user_id=actor_user_id,
-        facility_id=facility_id,
-        patient_id=patient_id,
-        commit=False,
-    )
+    record_audit(db, action="ENROLL_PATIENT_FACILITY", resource_type="PATIENT_FACILITY", resource_id=str(membership.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=patient_id, commit=False)
     db.commit()
     db.refresh(membership)
     return membership
@@ -130,33 +105,15 @@ def update_patient_facility_status(db: Session, patient_id: UUID, facility_id: U
         raise ValueError("FACILITY_CONTEXT_REQUIRED")
     if status not in _ALLOWED_PATIENT_STATUSES:
         raise ValueError("INVALID_PATIENT_FACILITY_STATUS")
-
-    membership = db.scalar(
-        select(PatientFacility).where(
-            PatientFacility.patient_id == patient_id,
-            PatientFacility.facility_id == facility_id,
-        )
-    )
+    membership = db.scalar(select(PatientFacility).where(PatientFacility.patient_id == patient_id, PatientFacility.facility_id == facility_id))
     if membership is None:
         raise ValueError("PATIENT_NOT_IN_FACILITY")
     if membership.status == status:
         raise ValueError("PATIENT_FACILITY_STATUS_UNCHANGED")
-
     previous_status = membership.status
     membership.status = status
     db.flush()
-    record_audit(
-        db,
-        action="UPDATE_PATIENT_FACILITY_STATUS",
-        resource_type="PATIENT_FACILITY",
-        resource_id=str(membership.id),
-        result="SUCCESS",
-        user_id=actor_user_id,
-        facility_id=facility_id,
-        patient_id=patient_id,
-        metadata={"previous_status": previous_status, "new_status": status},
-        commit=False,
-    )
+    record_audit(db, action="UPDATE_PATIENT_FACILITY_STATUS", resource_type="PATIENT_FACILITY", resource_id=str(membership.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=patient_id, metadata={"previous_status": previous_status, "new_status": status}, commit=False)
     db.commit()
     db.refresh(membership)
     return membership
