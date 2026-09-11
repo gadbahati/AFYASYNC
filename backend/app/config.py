@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     jwt_secret: str = _DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 15
+    refresh_token_days: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -26,6 +27,13 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_environment(cls, value: str) -> str:
         return value.strip().lower()
+
+    @field_validator("access_token_minutes", "refresh_token_days")
+    @classmethod
+    def validate_token_lifetimes(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("Token lifetime must be positive")
+        return value
 
     @model_validator(mode="after")
     def reject_insecure_production_secrets(self) -> "Settings":
