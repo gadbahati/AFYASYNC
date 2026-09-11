@@ -9,6 +9,7 @@ from app.appointments.models import Queue, QueueEntry
 from app.appointments.schemas import AppointmentCreate, AppointmentResponse, QueueCreate, QueueEntryCreate, QueueEntryResponse, QueueResponse
 from app.appointments.service import add_to_queue, create_appointment, create_queue, list_appointments, update_queue_status
 from app.auth.dependencies import get_token_payload, require_permission
+from app.database import get_db
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/appointments", tags=["Appointments & Queue"])
