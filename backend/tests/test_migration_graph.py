@@ -44,7 +44,7 @@ def _revision_graph() -> tuple[dict[str, set[str]], set[str]]:
 def test_migration_graph_has_single_head() -> None:
     revisions, parents = _revision_graph()
     heads = set(revisions) - parents
-    assert heads == {"0027_merge_migration_heads"}
+    assert heads == {"0028_refresh_sessions"}
 
 
 def test_merge_revision_includes_all_previous_heads() -> None:
@@ -57,3 +57,8 @@ def test_merge_revision_includes_all_previous_heads() -> None:
         "0016_patient_record_write_permission",
         "0015_department_write_permission",
     }
+
+
+def test_refresh_session_migration_follows_merge() -> None:
+    revisions, _ = _revision_graph()
+    assert revisions["0028_refresh_sessions"] == {"0027_merge_migration_heads"}
