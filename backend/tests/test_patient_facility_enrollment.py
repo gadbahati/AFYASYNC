@@ -3,7 +3,12 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import app.patients.service as patient_service
-from app.patients.service import enroll_patient_in_facility, get_patient_facility_enrollments, update_patient_facility_status
+from app.patients.service import (
+    enroll_patient_in_facility,
+    get_patient_facility_enrollments,
+    list_patients_for_facility,
+    update_patient_facility_status,
+)
 
 
 def test_enroll_patient_in_facility_creates_active_membership(monkeypatch) -> None:
@@ -117,10 +122,35 @@ def test_update_patient_facility_status_rejects_invalid_status(monkeypatch) -> N
     audit_mock.assert_not_called()
 
 
-def test_get_patient_facility_enrollments_returns_all_links_in_creation_order() -> None:
+def test_get_patient_facility_enrollments_is_scoped_to_requested_facility() -> None:
     db = Mock()
-    memberships = [SimpleNamespace(id=uuid4(), status="ACTIVE"), SimpleNamespace(id=uuid4(), status="INACTIVE")]
+    patient_id, facility_id = uuid4(), uuid4()
+    memberships = [SimpleNamespace(id=uuid4(), facility_id=facility_id, status="ACTIVE")]
     db.scalars.return_value.all.return_value = memberships
-    result = get_patient_facility_enrollments(db, uuid4())
+    result = get_patient_facility_enrollments(db, patient_id, facility_id)
     assert result == memberships
     db.scalars.assert_called_once()
+    statement = db.scalars.call_args.args[0]
+    compiled = statement.compile()
+    assert "patient_facilities.facility_id" in str(compiled)
+    assert facility_id in compiled.params.values()
+
+
+def test_list_patients_for_facility_returns_paginated_rows_and_total() -> None:
+    db = Mock()
+    facility_id = uuid4()
+    person = SimpleNamespace(id=uuid4(), first_name="Jane", last_name="Doe")
+    identity = SimpleNamespace(person_id=person.id, afya_id="AF-00000001")
+    db.scalar.return_value = 1
+    db.execute.return_value.all.return_value = [(person, identity)]
+    items, total = list_patients_for_facility(db, facility_id, limit=25, offset=10)
+    assert items == [(person, identity)]
+    assert total == 1
+    db.scalar.assert_called_once()
+    db.execute.assert_called_once()
+    statement = db.execute.call_args.args[0]
+    compiled = statement.compile()
+    assert "patient_facilities.facility_id" in str(compiled)
+    assert facility_id in compiled.params.values()
+    assert "status_1" in compiled.params
+    assert compiled.params["status_1"] == "ACTIVE"
