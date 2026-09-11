@@ -4,6 +4,7 @@ from sqlalchemy import text
 from app.appointments import models as appointment_models
 from app.appointments.router import router as appointments_router
 from app.audit import models as audit_models
+from app.auth import models as auth_models
 from app.auth import router as auth_router
 from app.billing import models as billing_models
 from app.billing.router import router as billing_router
@@ -36,7 +37,8 @@ from app.referrals.router import router as referrals_router
 
 _ = (patient_models, coverage_models, facility_models, rbac_models, appointment_models,
      encounter_models, clinical_models, laboratory_models, pharmacy_models, billing_models,
-     claims_models, integration_models, audit_models, referral_models, notification_models)
+     claims_models, integration_models, audit_models, referral_models, notification_models,
+     auth_models)
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, description="AfyaSync healthcare platform API")
 
