@@ -59,3 +59,36 @@ def test_claim_event_without_portal_account_is_safe():
         metadata={"status": "REJECTED"},
         commit=False,
     ) is None
+
+
+def test_referral_and_transfer_event_templates_are_non_clinical():
+    expected = {
+        "REFERRAL_CREATED": "Referral created",
+        "REFERRAL_STATUS_CHANGED": "Referral updated",
+        "TRANSFER_REQUESTED": "Transfer requested",
+        "TRANSFER_STATUS_CHANGED": "Transfer updated",
+    }
+    for event_type, title in expected.items():
+        actual_title, message = EVENT_TEMPLATES[event_type]
+        assert actual_title == title
+        assert "diagnosis" not in message.lower()
+        assert "result" not in message.lower()
+        assert "clinical" not in message.lower()
+
+
+def test_referral_and_transfer_events_without_portal_account_are_safe():
+    db = DummyDB()
+    patient_id = uuid4()
+    for event_type, status in (
+        ("REFERRAL_CREATED", "CREATED"),
+        ("REFERRAL_STATUS_CHANGED", "SENT"),
+        ("TRANSFER_REQUESTED", "REQUESTED"),
+        ("TRANSFER_STATUS_CHANGED", "ACCEPTED"),
+    ):
+        assert notify_patient_event(
+            db,
+            patient_id=patient_id,
+            event_type=event_type,
+            metadata={"status": status},
+            commit=False,
+        ) is None
