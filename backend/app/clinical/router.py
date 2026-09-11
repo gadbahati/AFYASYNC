@@ -81,6 +81,8 @@ def get_clinical_timeline(
             "vitals_count": len(summary["vitals"]),
             "diagnoses_count": len(summary["diagnoses"]),
             "has_consultation": summary["consultation"] is not None,
+            "lab_orders_count": len(summary["lab_orders"]),
+            "prescriptions_count": len(summary["prescriptions"]),
         },
         commit=True,
     )
@@ -89,6 +91,8 @@ def get_clinical_timeline(
         vitals=summary["vitals"],
         consultation=summary["consultation"],
         diagnoses=summary["diagnoses"],
+        lab_orders=summary["lab_orders"],
+        prescriptions=summary["prescriptions"],
     )
 
 
