@@ -13,6 +13,9 @@ class DummyDB:
     def get(self, model, value):
         return None
 
+    def scalar(self, statement):
+        return None
+
     def add(self, value):
         self.added.append(value)
 
