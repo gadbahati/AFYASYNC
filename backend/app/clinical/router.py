@@ -59,13 +59,13 @@ def get_clinical_timeline(
 ) -> ClinicalTimelineSummary:
     try:
         summary = get_encounter_clinical_summary(db, encounter_id, facility_id)
-    except ValueError as exc:
-        code = str(exc)
+    except ValueError as err:
+        code = str(err)
         if code == "ENCOUNTER_NOT_FOUND":
-            raise HTTPException(status_code=404, detail=code) from exc
+            raise HTTPException(status_code=404, detail=code) from err
         if code == "FACILITY_ACCESS_DENIED":
-            raise HTTPException(status_code=403, detail=code) from exc
-        raise HTTPException(status_code=400, detail=code) from exc
+            raise HTTPException(status_code=403, detail=code) from err
+        raise HTTPException(status_code=400, detail=code) from err
 
     encounter = summary["encounter"]
     record_audit(
@@ -109,8 +109,8 @@ def create_vitals(
             payload.model_dump(exclude_none=True),
             actor_user_id=user.id,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exp
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
 
 
 @router.post("/{encounter_id}/consultation", response_model=ConsultationResponse)
@@ -130,8 +130,8 @@ def save_consultation(
             payload.model_dump(),
             actor_user_id=user.id,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exp
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
 
 
 @router.post("/{encounter_id}/diagnoses", response_model=DiagnosisResponse, status_code=status.HTTP_201_CREATED)
@@ -151,5 +151,5 @@ def create_diagnosis(
             payload.model_dump(),
             actor_user_id=user.id,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exp
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
