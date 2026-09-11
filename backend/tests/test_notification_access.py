@@ -73,9 +73,9 @@ def test_list_notifications_query_is_scoped_to_the_requesting_user() -> None:
 
     scalars_stmt = db.scalars.call_args[0][0]
     compiled = str(scalars_stmt.compile(compile_kwargs={"literal_binds": True}))
-    assert f"notifications.user_id = \'{user_id}\'" in compiled
-    assert str(other_user_id) not in compiled
+    assert user_id.hex in compiled
+    assert other_user_id.hex not in compiled
 
     count_stmt = db.scalar.call_args[0][0]
     compiled_count = str(count_stmt.compile(compile_kwargs={"literal_binds": True}))
-    assert f"notifications.user_id = \'{user_id}\'" in compiled_count
+    assert user_id.hex in compiled_count
