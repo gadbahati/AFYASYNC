@@ -1,6 +1,9 @@
+from uuid import UUID
+
 from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.patients.models import AfyaIdentity, Person
 from app.patients.schemas import PatientCreate
 
@@ -13,7 +16,13 @@ def _next_afya_id(db: Session) -> str:
     return f"AF-{int(sequence):08d}"
 
 
-def create_patient(db: Session, payload: PatientCreate) -> Person:
+def create_patient(
+    db: Session,
+    payload: PatientCreate,
+    *,
+    actor_user_id: UUID | None = None,
+    facility_id: UUID | None = None,
+) -> Person:
     # Conservative duplicate candidate search. A final identity should be
     # confirmed through an authorised workflow before merging records.
     if payload.phone:
@@ -33,6 +42,19 @@ def create_patient(db: Session, payload: PatientCreate) -> Person:
 
     identity = AfyaIdentity(person_id=person.id, afya_id=_next_afya_id(db))
     db.add(identity)
+    db.flush()
+    record_audit(
+        db,
+        action="CREATE_PATIENT",
+        resource_type="PERSON",
+        resource_id=str(person.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=person.id,
+        metadata={"afya_id": identity.afya_id},
+        commit=False,
+    )
     db.commit()
     db.refresh(person)
     return person
