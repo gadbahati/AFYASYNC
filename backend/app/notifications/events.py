@@ -20,6 +20,7 @@ EVENT_TEMPLATES = {
     "CLAIM_STATUS_CHANGED": ("Claim status updated", "Your healthcare claim status has been updated."),
     "REFERRAL_CREATED": ("Referral created", "A healthcare referral has been created for you."),
     "REFERRAL_STATUS_CHANGED": ("Referral updated", "Your healthcare referral status has been updated."),
+    "TRANSFER_REQUESTED": ("Transfer requested", "A healthcare transfer has been requested for you."),
     "TRANSFER_STATUS_CHANGED": ("Transfer updated", "Your interfacility transfer status has been updated."),
 }
 
