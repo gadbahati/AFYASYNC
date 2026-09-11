@@ -114,3 +114,41 @@ def add_diagnosis(db: Session, encounter_id: UUID, staff_id: UUID, data: dict, *
     db.commit()
     db.refresh(diagnosis)
     return diagnosis
+
+
+def get_encounter_clinical_summary(
+    db: Session,
+    encounter_id: UUID,
+    facility_id: UUID,
+) -> dict:
+    """Facility-scoped clinical timeline for a single encounter.
+
+    Returns vitals, consultation, and diagnoses. Does not include other facilities.
+    """
+    encounter = db.get(Encounter, encounter_id)
+    if encounter is None:
+        raise ValueError("ENCOUNTER_NOT_FOUND")
+    if encounter.facility_id != facility_id:
+        raise ValueError("FACILITY_ACCESS_DENIED")
+
+    vitals = list(
+        db.scalars(
+            select(Vital)
+            .where(Vital.encounter_id == encounter_id)
+            .order_by(Vital.recorded_at.asc(), Vital.id.asc())
+        )
+    )
+    consultation = db.scalar(select(Consultation).where(Consultation.encounter_id == encounter_id))
+    diagnoses = list(
+        db.scalars(
+            select(Diagnosis)
+            .where(Diagnosis.encounter_id == encounter_id)
+            .order_by(Diagnosis.created_at.asc(), Diagnosis.id.asc())
+        )
+    )
+    return {
+        "encounter": encounter,
+        "vitals": vitals,
+        "consultation": consultation,
+        "diagnoses": diagnoses,
+    }
