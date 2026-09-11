@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
+from app.encounters.schemas import EncounterListResponse
+from app.encounters.service import list_patient_encounters_for_facility
 from app.patients.schemas import PatientCreate, PatientFacilityResponse, PatientFacilityStatusUpdate, PatientListResponse, PatientResponse, PatientSearchResult, PatientUpdate
 from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_facility_enrollments, get_patient_for_facility, list_patients_for_facility, search_patients, update_patient, update_patient_facility_status
 from app.rbac.models import User
@@ -107,6 +109,40 @@ def get_patient_record(patient_id: UUID, user: User = Depends(require_permission
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found."})
     record_audit(db, action="VIEW_PATIENT_RECORD", resource_type="PERSON", resource_id=str(patient.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient.id, commit=True)
     return _response(patient)
+
+
+@router.get("/{patient_id}/encounters", response_model=EncounterListResponse)
+def list_patient_encounter_timeline(
+    patient_id: UUID,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(require_permission("clinical.record.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> EncounterListResponse:
+    """Clinical timeline backbone: encounters for this patient at this facility only."""
+    try:
+        items, total = list_patient_encounters_for_facility(
+            db, patient_id, facility_id, limit=limit, offset=offset
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "PATIENT_NOT_IN_FACILITY":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": code, "message": "Patient not enrolled at this facility."}) from exc
+        raise
+    record_audit(
+        db,
+        action="VIEW_PATIENT_ENCOUNTER_TIMELINE",
+        resource_type="PERSON",
+        resource_id=str(patient_id),
+        result="SUCCESS",
+        user_id=user.id,
+        facility_id=facility_id,
+        patient_id=patient_id,
+        metadata={"count": len(items), "total": total},
+        commit=True,
+    )
+    return EncounterListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{patient_id}/enrollments", response_model=list[PatientFacilityResponse])
