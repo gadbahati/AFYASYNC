@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
-from app.patients.schemas import PatientCreate, PatientResponse, PatientSearchResult, PatientUpdate
-from app.patients.service import create_patient, get_patient_for_facility, search_patients, update_patient
+from app.patients.schemas import PatientCreate, PatientFacilityResponse, PatientResponse, PatientSearchResult, PatientUpdate
+from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_for_facility, search_patients, update_patient
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/patients", tags=["Patients"])
@@ -41,6 +41,20 @@ def get_patient_record(patient_id: UUID, user: User = Depends(require_permission
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found."})
     record_audit(db, action="VIEW_PATIENT_RECORD", resource_type="PERSON", resource_id=str(patient.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient.id, commit=True)
     return _response(patient)
+
+
+@router.post("/{patient_id}/enrollment", response_model=PatientFacilityResponse, status_code=status.HTTP_201_CREATED)
+def enroll_patient_record(patient_id: UUID, user: User = Depends(require_permission("patients.record.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> PatientFacilityResponse:
+    try:
+        membership = enroll_patient_in_facility(db, patient_id, facility_id, actor_user_id=user.id)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "PATIENT_NOT_FOUND":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": code, "message": "Patient record not found."}) from exc
+        if code == "PATIENT_ALREADY_ENROLLED":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": code, "message": "Patient is already enrolled at this facility."}) from exc
+        raise
+    return membership
 
 
 @router.patch("/{patient_id}", response_model=PatientResponse)
