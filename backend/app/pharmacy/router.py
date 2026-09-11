@@ -55,9 +55,10 @@ def create_medication(payload: MedicationCreate, db: Session = Depends(get_db), 
         raise HTTPException(status_code=409, detail="MEDICATION_CODE_EXISTS")
     medication = Medication(**payload.model_dump())
     db.add(medication)
+    db.flush()
+    record_audit(db, action="PHARMACY_MEDICATION_CREATED", resource_type="MEDICATION", resource_id=str(medication.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, commit=False)
     db.commit()
     db.refresh(medication)
-    record_audit(db, action="PHARMACY_MEDICATION_CREATED", resource_type="MEDICATION", resource_id=str(medication.id), result="SUCCESS", user_id=user.id, facility_id=facility_id)
     return medication
 
 
@@ -81,9 +82,10 @@ def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_d
             db.rollback()
             raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
         db.add(PrescriptionItem(prescription_id=prescription.id, **item.model_dump()))
+    db.flush()
+    record_audit(db, action="PHARMACY_PRESCRIPTION_CREATED", resource_type="PRESCRIPTION", resource_id=str(prescription.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"item_count": len(payload.items)}, commit=False)
     db.commit()
     db.refresh(prescription)
-    record_audit(db, action="PHARMACY_PRESCRIPTION_CREATED", resource_type="PRESCRIPTION", resource_id=str(prescription.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"item_count": len(payload.items)})
     return prescription
 
 
@@ -116,9 +118,10 @@ def receive_inventory(payload: InventoryReceive, db: Session = Depends(get_db), 
     item.current_quantity += payload.quantity
     db.flush()
     db.add(StockMovement(inventory_item_id=item.id, batch_id=batch.id, movement_type="RECEIVE", quantity=payload.quantity, reference_type="INVENTORY_RECEIPT", performed_by=staff.id))
+    db.flush()
+    record_audit(db, action="PHARMACY_INVENTORY_RECEIVED", resource_type="INVENTORY_ITEM", resource_id=str(item.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, metadata={"batch_number": payload.batch_number, "quantity": payload.quantity}, commit=False)
     db.commit()
     db.refresh(item)
-    record_audit(db, action="PHARMACY_INVENTORY_RECEIVED", resource_type="INVENTORY_ITEM", resource_id=str(item.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, metadata={"batch_number": payload.batch_number, "quantity": payload.quantity})
     return item
 
 
