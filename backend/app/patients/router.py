@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
-from app.patients.schemas import PatientCreate, PatientFacilityResponse, PatientFacilityStatusUpdate, PatientResponse, PatientSearchResult, PatientUpdate
+from app.patients.schemas import PatientCreate, PatientFacilityResponse, PatientFacilityStatusUpdate, PatientListResponse, PatientResponse, PatientSearchResult, PatientUpdate
 from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_facility_enrollments, get_patient_for_facility, list_patients_for_facility, search_patients, update_patient, update_patient_facility_status
 from app.rbac.models import User
 
@@ -41,7 +41,7 @@ def register_patient(payload: PatientCreate, user: User = Depends(require_permis
     return _response(patient)
 
 
-@router.get("", response_model=list[PatientResponse])
+@router.get("", response_model=PatientListResponse)
 def list_patient_records(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -49,13 +49,13 @@ def list_patient_records(
     user: User = Depends(require_permission("patients.record.read")),
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
-) -> list[PatientResponse]:
+) -> PatientListResponse:
     """List patients enrolled at the authenticated facility only.
 
     Never returns patients that exist only at other facilities.
     """
     try:
-        results = list_patients_for_facility(
+        results, total = list_patients_for_facility(
             db,
             facility_id,
             limit=limit,
@@ -78,10 +78,15 @@ def list_patient_records(
         result="SUCCESS",
         user_id=user.id,
         facility_id=facility_id,
-        metadata={"count": len(results), "limit": limit, "offset": offset, "enrollment_status": enrollment_status},
+        metadata={"count": len(results), "total": total, "limit": limit, "offset": offset, "enrollment_status": enrollment_status},
         commit=True,
     )
-    return [_response(person, identity.afya_id) for person, identity in results]
+    return PatientListResponse(
+        items=[_response(person, identity.afya_id) for person, identity in results],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/search", response_model=list[PatientSearchResult])
