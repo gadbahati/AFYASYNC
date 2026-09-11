@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -64,3 +65,17 @@ class TransferOut(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ReferralListResponse(BaseModel):
+    items: list[ReferralOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class TransferListResponse(BaseModel):
+    items: list[TransferOut]
+    total: int
+    limit: int
+    offset: int
