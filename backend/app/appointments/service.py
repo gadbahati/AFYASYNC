@@ -140,6 +140,10 @@ def update_queue_status(db: Session, entry_id: UUID, new_status: str, actor_user
     if entry is None:
         raise ValueError("QUEUE_ENTRY_NOT_FOUND")
 
+    queue = db.get(Queue, entry.queue_id)
+    if queue is None:
+        raise ValueError("QUEUE_NOT_FOUND")
+
     transitions = {
         "WAITING": {"CALLED", "CANCELLED"},
         "CALLED": {"IN_SERVICE", "CANCELLED", "WAITING"},
@@ -160,7 +164,7 @@ def update_queue_status(db: Session, entry_id: UUID, new_status: str, actor_user
     notify_patient_event(
         db,
         patient_id=entry.patient_id,
-        facility_id=entry.queue.facility_id if entry.queue is not None else None,
+        facility_id=queue.facility_id,
         event_type="QUEUE_STATUS_CHANGED",
         action_url=f"/queue/{entry.id}",
         metadata={"status": new_status},
