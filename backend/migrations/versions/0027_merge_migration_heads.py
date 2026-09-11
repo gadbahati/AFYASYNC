@@ -11,8 +11,6 @@ path converge on one head so fresh and existing databases receive every
 branch instead of silently leaving patient/facility migrations unapplied.
 """
 
-from alembic import op
-
 revision = "0027_merge_migration_heads"
 down_revision = (
     "0026_post_hardening_permissions",
@@ -26,8 +24,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    pass
+    """Merge point only; all schema changes live in its ancestor revisions."""
 
 
 def downgrade() -> None:
-    pass
+    """Merge point only; Alembic downgrades through the ancestor branches."""
