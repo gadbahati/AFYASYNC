@@ -29,24 +29,19 @@ def test_create_patient_requires_facility_context() -> None:
 def test_create_patient_links_patient_to_facility(monkeypatch) -> None:
     db = Mock()
     db.scalar.side_effect = [None, 7]
-    person = SimpleNamespace(id=uuid4(), afya_identity=None)
     identity = SimpleNamespace(afya_id="AF-00000007")
     audit_mock = Mock()
-    link = SimpleNamespace(patient_id=person.id, facility_id=uuid4())
-    person_factory = Mock(return_value=person)
-    person_factory.national_id_hash = "national_id_hash"
-    monkeypatch.setattr(patient_service, "Person", person_factory)
+    link = SimpleNamespace(patient_id=uuid4(), facility_id=uuid4())
     monkeypatch.setattr(patient_service, "AfyaIdentity", lambda **_: identity)
     monkeypatch.setattr(patient_service, "PatientFacility", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
-    payload = SimpleNamespace(national_id_number="12345678", phone=None, model_dump=lambda: {"first_name": "Test", "last_name": "Patient"})
+    payload = SimpleNamespace(national_id_number="12345678", phone=None, first_name="Test", last_name="Patient", model_dump=lambda: {"first_name": "Test", "last_name": "Patient"})
     result = patient_service.create_patient(db, payload, actor_user_id=uuid4(), facility_id=link.facility_id)
-    assert result is person
+    assert result.first_name == "Test"
     assert db.add.call_count == 3
     assert db.flush.call_count == 3
     assert db.commit.call_count == 1
     added_link = db.add.call_args_list[2].args[0]
-    assert added_link.patient_id == person.id
     assert added_link.facility_id == link.facility_id
     assert audit_mock.call_args.kwargs["facility_id"] == link.facility_id
     assert audit_mock.call_args.kwargs["commit"] is False
