@@ -26,6 +26,7 @@ export function Layout() {
           <div className="nav-section">Clinical</div>
           <NavLink to="/appointments">Appointments</NavLink>
           <NavLink to="/queue">Queue</NavLink>
+          <NavLink to="/benefits">SHA benefits</NavLink>
           <NavLink to="/laboratory">Laboratory</NavLink>
           <NavLink to="/pharmacy">Pharmacy</NavLink>
 
