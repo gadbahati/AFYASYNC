@@ -59,10 +59,14 @@ export function PatientsPage() {
               {items.map((p) => (
                 <tr key={p.id}>
                   <td><Link to={`/patients/${p.id}`}>{p.afya_id}</Link></td>
-                  <td>{[p.first_name, p.middle_name, p.last_name].filter(Boolean).join(" ")}</td>
+                  <td>
+                    <Link className="patient-name-link" to={`/patients/${p.id}`}>
+                      {[p.first_name, p.middle_name, p.last_name].filter(Boolean).join(" ")}
+                    </Link>
+                  </td>
                   <td>{p.phone || "—"}</td>
                   <td>{p.sex || "—"}</td>
-                  <td>{p.status}</td>
+                  <td><span className="status-pill">{p.status}</span></td>
                 </tr>
               ))}
               {items.length === 0 && (
