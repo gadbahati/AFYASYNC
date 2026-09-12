@@ -76,6 +76,27 @@ def create_queue(db: Session, data: dict) -> Queue:
     return queue
 
 
+def list_queues(db: Session, facility_id: UUID) -> list[Queue]:
+    return list(
+        db.scalars(
+            select(Queue)
+            .where(Queue.facility_id == facility_id)
+            .order_by(Queue.name)
+        )
+    )
+
+
+def list_queue_entries(db: Session, facility_id: UUID, queue_id: UUID | None = None) -> list[QueueEntry]:
+    stmt = (
+        select(QueueEntry)
+        .join(Queue, Queue.id == QueueEntry.queue_id)
+        .where(Queue.facility_id == facility_id)
+    )
+    if queue_id is not None:
+        stmt = stmt.where(QueueEntry.queue_id == queue_id)
+    return list(db.scalars(stmt.order_by(QueueEntry.queued_at.desc())))
+
+
 def add_to_queue(db: Session, data: dict, created_by: UUID, actor_user_id: UUID | None = None) -> QueueEntry:
     _require_patient(db, data["patient_id"])
     queue = db.get(Queue, data["queue_id"])
