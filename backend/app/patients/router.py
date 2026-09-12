@@ -9,6 +9,8 @@ from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
 from app.encounters.schemas import EncounterListResponse
 from app.encounters.service import list_patient_encounters_for_facility
+from app.patients.record_schemas import PatientRecordSummaryResponse
+from app.patients.record_service import get_patient_record_summary
 from app.patients.schemas import PatientCreate, PatientFacilityResponse, PatientFacilityStatusUpdate, PatientListResponse, PatientResponse, PatientSearchResult, PatientUpdate
 from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_facility_enrollments, get_patient_for_facility, list_patients_for_facility, search_patients, update_patient, update_patient_facility_status
 from app.rbac.models import User
@@ -140,3 +142,12 @@ def update_patient_record(patient_id: UUID, payload: PatientUpdate, user: User =
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": code, "message": "Patient status must be ACTIVE or INACTIVE."}) from exc
         raise
     return _response(patient)
+
+
+@router.get("/{patient_id}/summary", response_model=PatientRecordSummaryResponse)
+def get_complete_patient_record(patient_id: UUID, user: User = Depends(require_permission("patients.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> PatientRecordSummaryResponse:
+    record = get_patient_record_summary(db, patient_id, facility_id)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found at this facility."})
+    record_audit(db, action="VIEW_COMPLETE_PATIENT_RECORD", resource_type="PERSON", resource_id=str(patient_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"sections": ["identity", "coverage", "encounters", "laboratory", "prescriptions", "medication_actions", "admissions", "preauthorizations", "billing", "claims", "appointments", "queue", "referrals", "transfers"]}, commit=True)
+    return PatientRecordSummaryResponse.model_validate(record)
