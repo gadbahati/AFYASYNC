@@ -16,7 +16,7 @@ export type Patient = {
   address?: string | null; status: string;
 };
 export type PatientListResponse = { items: Patient[]; total: number; limit: number; offset: number };
-export type PatientCreate = { first_name: string; middle_name?: string | null; last_name: string; date_of_birth?: string | null; sex?: string | null; phone?: string | null; email?: string | null; address?: string | null };
+export type PatientCreate = { first_name: string; middle_name?: string | null; last_name: string; national_id_number: string; date_of_birth?: string | null; sex?: string | null; phone?: string | null; email?: string | null; address?: string | null };
 
 export type FacilityReport = {
   facility_id: string; start_date: string; end_date: string; patients: number; encounters: number;
@@ -27,7 +27,7 @@ export type BenefitPackage = { id: string; payer_code: string; package_code: str
 
 export type SHAMember = {
   person_id: string; afya_id: string; membership_number: string; full_name: string;
-  date_of_birth: string | null; sex: string | null; coverage_status: string; benefit_package_codes: string[];
+  date_of_birth: string | null; sex: string | null; coverage_status: string; coverage_id: string; payer_id: string; benefit_package_codes: string[];
 };
 export type Admission = {
   id: string; admission_number: string; patient_id: string; facility_id: string; encounter_id: string;
