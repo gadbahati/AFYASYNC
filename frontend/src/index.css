@@ -80,6 +80,7 @@ a.active { font-weight: 700; }
 }
 .remember-row input { width: auto; }
 .auth-note { margin: 0; }
+.bypass-btn { width: 100%; }
 
 label { display: grid; gap: 0.35rem; font-size: 0.92rem; }
 input, select, button, textarea {
@@ -110,6 +111,16 @@ button:disabled { opacity: 0.7; cursor: not-allowed; }
 .sidebar .muted { color: #99f6e4; }
 .small { font-size: 0.85rem; }
 .error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; padding: 0.6rem 0.75rem; border-radius: 8px; }
+.demo-banner {
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
 
 .hero-banner {
   display: flex;
