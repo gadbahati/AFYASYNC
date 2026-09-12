@@ -36,11 +36,11 @@ def test_paid_response_requires_approved_amount() -> None:
 
 
 def test_reconciliation_cannot_overpay() -> None:
-    claim = SimpleNamespace(id=uuid4(), invoice_id=uuid4(), status="ACCEPTED", claim_amount=Decimal("100"), approved_amount=Decimal("80"), paid_amount=Decimal("0"), patient_id=uuid4())
+    claim = SimpleNamespace(id=uuid4(), invoice_id=uuid4(), status="ACCEPTED", claim_amount=Decimal("100"), approved_amount=Decimal("80"), paid_amount=Decimal("0"), patient_id=uuid4(), claim_id="CLM-RECON")
     invoice = SimpleNamespace(facility_id=uuid4())
     db = MagicMock()
-    db.get.side_effect = [claim, invoice]
-    db.scalar.return_value = None
+    db.scalar.return_value = claim
+    db.get.return_value = invoice
 
     with pytest.raises(ClaimsError, match="RECEIVED_AMOUNT_EXCEEDS_EXPECTED"):
         reconcile_claim(db, claim.id, invoice.facility_id, uuid4(), Decimal("81"))
