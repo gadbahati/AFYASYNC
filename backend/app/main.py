@@ -34,6 +34,7 @@ from app.portal.router import router as portal_router
 from app.rbac import models as rbac_models
 from app.referrals import models as referral_models
 from app.referrals.router import router as referrals_router
+from app.reports.router import router as reports_router
 
 _ = (patient_models, coverage_models, facility_models, rbac_models, appointment_models,
      encounter_models, clinical_models, laboratory_models, pharmacy_models, billing_models,
@@ -64,6 +65,7 @@ app.include_router(integrations_router)
 app.include_router(referrals_router)
 app.include_router(notifications_router)
 app.include_router(portal_router)
+app.include_router(reports_router)
 
 
 @app.get("/health", tags=["System"])
