@@ -2,11 +2,19 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api, ApiError } from "../api/client";
 import type { FacilityOption, FacilitySelectionRequired, LoginResult, TokenResponse } from "../api/types";
 import {
+  DEMO_FACILITY_ID,
+  DEMO_FACILITY_NAME,
+  DEMO_USERNAME,
+} from "../api/demoData";
+import {
   clearSession,
+  enableDemoMode,
   getAccessToken,
+  getDemoUsername,
   getFacilityId,
   getFacilityName,
   getRefreshToken,
+  isDemoMode,
   setSession,
 } from "./storage";
 
@@ -16,7 +24,9 @@ type AuthState = {
   facilityId: string | null;
   facilityName: string | null;
   pendingFacilities: FacilityOption[] | null;
+  demoMode: boolean;
   login: (username: string, password: string) => Promise<"ready" | "select_facility">;
+  enterDemoMode: () => void;
   selectFacility: (facility: FacilityOption) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -33,8 +43,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [facilityId, setFacilityId] = useState<string | null>(getFacilityId());
   const [facilityName, setFacilityName] = useState<string | null>(getFacilityName());
   const [pendingFacilities, setPendingFacilities] = useState<FacilityOption[] | null>(null);
+  const [demoMode, setDemoMode] = useState(isDemoMode());
 
   useEffect(() => {
+    if (isDemoMode()) {
+      setDemoMode(true);
+      setUsername(getDemoUsername() || DEMO_USERNAME);
+      setFacilityId(getFacilityId() || DEMO_FACILITY_ID);
+      setFacilityName(getFacilityName() || DEMO_FACILITY_NAME);
+      setReady(true);
+      return;
+    }
+
     const token = getAccessToken();
     if (!token) {
       setReady(true);
@@ -56,6 +76,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setReady(true));
   }, []);
 
+  const enterDemoMode = useCallback(() => {
+    enableDemoMode(DEMO_USERNAME, DEMO_FACILITY_ID, DEMO_FACILITY_NAME);
+    setDemoMode(true);
+    setUsername(DEMO_USERNAME);
+    setFacilityId(DEMO_FACILITY_ID);
+    setFacilityName(DEMO_FACILITY_NAME);
+    setPendingFacilities(null);
+  }, []);
+
   const login = useCallback(async (user: string, password: string) => {
     const result = await api.login(user, password);
     if (isFacilitySelectionRequired(result)) {
@@ -64,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPendingFacilities(result.facilities);
       setFacilityId(null);
       setFacilityName(null);
+      setDemoMode(false);
       return "select_facility";
     }
 
@@ -72,7 +102,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
     });
-    // Single-facility login: resolve facility name for UI
     try {
       const facilities = await api.facilities();
       if (facilities.length === 1) {
@@ -86,11 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setFacilityName(facilities[0].facility_name);
       }
     } catch {
-      // facility context still present in JWT even if list fails
+      // JWT may still carry facility context
     }
     const me = await api.me();
     setUsername(me.data.username);
     setPendingFacilities(null);
+    setDemoMode(false);
     return "ready";
   }, []);
 
@@ -105,13 +135,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setFacilityId(facility.facility_id);
     setFacilityName(facility.facility_name);
     setPendingFacilities(null);
+    setDemoMode(false);
     const me = await api.me();
     setUsername(me.data.username);
   }, []);
 
   const logout = useCallback(async () => {
     const refresh = getRefreshToken();
-    if (refresh) {
+    if (refresh && !isDemoMode()) {
       try {
         await api.logout(refresh);
       } catch (err) {
@@ -119,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     clearSession();
+    setDemoMode(false);
     setUsername(null);
     setFacilityId(null);
     setFacilityName(null);
@@ -132,11 +164,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       facilityId,
       facilityName,
       pendingFacilities,
+      demoMode,
       login,
+      enterDemoMode,
       selectFacility,
       logout,
     }),
-    [ready, username, facilityId, facilityName, pendingFacilities, login, selectFacility, logout],
+    [ready, username, facilityId, facilityName, pendingFacilities, demoMode, login, enterDemoMode, selectFacility, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
