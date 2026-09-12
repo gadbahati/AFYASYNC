@@ -73,6 +73,15 @@ export type FacilityReport = {
   claims_paid: string;
 };
 
+export type BenefitPackage = {
+  id: string;
+  payer_code: string;
+  package_code: string;
+  name: string;
+  description: string;
+  status: string;
+};
+
 export type Department = {
   id: string;
   facility_id: string;
