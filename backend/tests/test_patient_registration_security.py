@@ -13,10 +13,11 @@ def test_create_patient_audits_before_commit(monkeypatch) -> None:
     identity = SimpleNamespace(afya_id="AF-00000042")
     audit_mock = Mock()
 
-    monkeypatch.setattr(patient_service, "Person", lambda **_: person)
+    monkeypatch.setattr(patient_service, "Person", SimpleNamespace(national_id_hash="national_id_hash"))
     monkeypatch.setattr(patient_service, "AfyaIdentity", lambda **_: identity)
     monkeypatch.setattr(patient_service, "PatientFacility", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
+    monkeypatch.setattr(patient_service, "_hash_national_id", lambda value: "hashed-id")
 
     payload = SimpleNamespace(
         national_id_number="87654321",
