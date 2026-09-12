@@ -9,12 +9,8 @@ from app.patients.service import create_patient
 def test_create_patient_audits_before_commit(monkeypatch) -> None:
     db = Mock()
     db.scalar.side_effect = [None, 42]
-    person = SimpleNamespace(id=uuid4(), afya_identity=None)
     identity = SimpleNamespace(afya_id="AF-00000042")
     audit_mock = Mock()
-    person_factory = Mock(return_value=person)
-    person_factory.national_id_hash = "national_id_hash"
-    monkeypatch.setattr(patient_service, "Person", person_factory)
     monkeypatch.setattr(patient_service, "AfyaIdentity", lambda **_: identity)
     monkeypatch.setattr(patient_service, "PatientFacility", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
@@ -22,10 +18,10 @@ def test_create_patient_audits_before_commit(monkeypatch) -> None:
     actor_user_id = uuid4()
     facility_id = uuid4()
     result = create_patient(db, payload, actor_user_id=actor_user_id, facility_id=facility_id)
-    assert result is person
+    assert result.first_name == "Test"
     assert db.flush.call_count == 3
     assert db.commit.call_count == 1
     assert audit_mock.call_args.kwargs["commit"] is False
     assert audit_mock.call_args.kwargs["user_id"] == actor_user_id
     assert audit_mock.call_args.kwargs["facility_id"] == facility_id
-    assert audit_mock.call_args.kwargs["patient_id"] == person.id
+    assert audit_mock.call_args.kwargs["patient_id"] == result.id
