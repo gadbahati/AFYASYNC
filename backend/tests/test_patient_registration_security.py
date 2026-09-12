@@ -12,13 +12,13 @@ def test_create_patient_audits_before_commit(monkeypatch) -> None:
     person = SimpleNamespace(id=uuid4(), afya_identity=None)
     identity = SimpleNamespace(afya_id="AF-00000042")
     audit_mock = Mock()
-
-    monkeypatch.setattr(patient_service, "Person", SimpleNamespace(national_id_hash="national_id_hash"))
+    person_factory = Mock(return_value=person)
+    person_factory.national_id_hash = "national_id_hash"
+    monkeypatch.setattr(patient_service, "Person", person_factory)
     monkeypatch.setattr(patient_service, "AfyaIdentity", lambda **_: identity)
     monkeypatch.setattr(patient_service, "PatientFacility", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
     monkeypatch.setattr(patient_service, "_hash_national_id", lambda value: "hashed-id")
-
     payload = SimpleNamespace(
         national_id_number="87654321",
         phone=None,
@@ -26,11 +26,9 @@ def test_create_patient_audits_before_commit(monkeypatch) -> None:
         last_name="Patient",
         model_dump=lambda: {"first_name": "Test", "last_name": "Patient"},
     )
-
     actor_user_id = uuid4()
     facility_id = uuid4()
     result = create_patient(db, payload, actor_user_id=actor_user_id, facility_id=facility_id)
-
     assert result is person
     assert db.flush.call_count == 3
     assert db.commit.call_count == 1
