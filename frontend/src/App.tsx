@@ -5,6 +5,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { BenefitPackagesPage } from "./pages/BenefitPackagesPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { ShaCareDemoPage } from "./pages/ShaCareDemoPage";
 import {
   BillingPage,
   ClaimsPage,
@@ -38,6 +39,7 @@ export default function App() {
               <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
               <Route path="/appointments" element={<AppointmentsPage />} />
               <Route path="/queue" element={<QueuePage />} />
+              <Route path="/sha-workflow" element={<ShaCareDemoPage />} />
               <Route path="/benefits" element={<BenefitPackagesPage />} />
               <Route path="/laboratory" element={<LabPage />} />
               <Route path="/pharmacy" element={<PharmacyPage />} />
