@@ -15,6 +15,7 @@ class Person(Base):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     middle_name: Mapped[str | None] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    national_id_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     date_of_birth: Mapped[date | None] = mapped_column(Date)
     sex: Mapped[str | None] = mapped_column(String(30))
     phone: Mapped[str | None] = mapped_column(String(30), index=True)
