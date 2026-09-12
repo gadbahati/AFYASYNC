@@ -1,47 +1,5 @@
 import { FeatureListPage } from "./FeatureListPage";
 
-export function AppointmentsPage() {
-  return (
-    <FeatureListPage
-      title="Appointments"
-      subtitle="Scheduled visits for this facility"
-      columns={[
-        { key: "time", label: "Time" },
-        { key: "patient", label: "Patient" },
-        { key: "department", label: "Department" },
-        { key: "type", label: "Type" },
-        { key: "status", label: "Status" },
-      ]}
-      rows={[
-        { time: "08:30", patient: "Amina Wanjiku", department: "OPD", type: "Follow-up", status: "BOOKED" },
-        { time: "09:15", patient: "Brian Ochieng", department: "OPD", type: "New", status: "CHECKED_IN" },
-        { time: "10:00", patient: "Faith Mwangi", department: "A&E", type: "Urgent", status: "BOOKED" },
-      ]}
-    />
-  );
-}
-
-export function QueuePage() {
-  return (
-    <FeatureListPage
-      title="Queue"
-      subtitle="Patients waiting or in service"
-      columns={[
-        { key: "ticket", label: "Ticket" },
-        { key: "patient", label: "Patient" },
-        { key: "department", label: "Department" },
-        { key: "priority", label: "Priority" },
-        { key: "status", label: "Status" },
-      ]}
-      rows={[
-        { ticket: "Q-012", patient: "Brian Ochieng", department: "OPD", priority: "Normal", status: "WAITING" },
-        { ticket: "Q-013", patient: "Amina Wanjiku", department: "OPD", priority: "Normal", status: "IN_SERVICE" },
-        { ticket: "Q-014", patient: "Faith Mwangi", department: "A&E", priority: "High", status: "WAITING" },
-      ]}
-    />
-  );
-}
-
 export function LabPage() {
   return (
     <FeatureListPage
