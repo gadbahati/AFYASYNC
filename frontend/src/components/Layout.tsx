@@ -12,13 +12,29 @@ export function Layout() {
           <KenyaFlag />
           <div>
             <strong>AfyaSync</strong>
-            <span className="muted">National health console</span>
+            <span className="muted">Staff console</span>
           </div>
         </div>
         <nav>
+          <div className="nav-section">Overview</div>
           <NavLink to="/" end>Dashboard</NavLink>
-          <NavLink to="/patients">Patients</NavLink>
+
+          <div className="nav-section">Patients</div>
+          <NavLink to="/patients">Patient register</NavLink>
           <NavLink to="/patients/new">Register patient</NavLink>
+
+          <div className="nav-section">Clinical</div>
+          <NavLink to="/appointments">Appointments</NavLink>
+          <NavLink to="/queue">Queue</NavLink>
+          <NavLink to="/laboratory">Laboratory</NavLink>
+          <NavLink to="/pharmacy">Pharmacy</NavLink>
+
+          <div className="nav-section">Finance</div>
+          <NavLink to="/billing">Billing</NavLink>
+          <NavLink to="/claims">Claims</NavLink>
+
+          <div className="nav-section">Movement</div>
+          <NavLink to="/referrals">Referrals</NavLink>
         </nav>
         <div className="sidebar-footer">
           <div className="muted small">{auth.username}</div>
@@ -31,7 +47,7 @@ export function Layout() {
       <main className="content">
         {auth.demoMode && (
           <div className="demo-banner">
-            DEMO MODE — offline sample data. Not connected to the live API. Remove this bypass before production.
+            Demo mode: sample data only. Not connected to the live API.
           </div>
         )}
         <Outlet />
