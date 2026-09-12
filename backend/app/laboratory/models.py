@@ -30,6 +30,8 @@ class LabOrder(Base):
     ordered_by: Mapped[UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
     priority: Mapped[str] = mapped_column(String(20), default="NORMAL")
     status: Mapped[str] = mapped_column(String(30), default="ORDERED", index=True)
+    forwarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    forwarded_by: Mapped[UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -41,6 +43,7 @@ class LabOrderItem(Base):
     test_id: Mapped[UUID] = mapped_column(ForeignKey("lab_tests.id", ondelete="RESTRICT"))
     instructions: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="ORDERED", index=True)
+    charge_id: Mapped[UUID | None] = mapped_column(ForeignKey("charges.id", ondelete="RESTRICT"), unique=True, nullable=True)
 
 
 class LabSample(Base):
