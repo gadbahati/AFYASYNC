@@ -19,6 +19,7 @@ export function LabPage() {
 
   const selectedTests = catalogue.filter((test) => selected.includes(test.id));
   const total = selectedTests.reduce((sum, test) => sum + Number(test.price || 0), 0);
+  const completed = selectedTests.filter((test) => performed.includes(test.id) && results[test.id]?.trim()).length;
 
   function toggleTest(id: string) {
     setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -30,23 +31,30 @@ export function LabPage() {
   }
 
   return <section className="page-stack">
-    <header className="page-heading"><div><p className="eyebrow">Laboratory information system</p><h1>Laboratory</h1><p className="muted">Order tests, record each examination separately, capture results, calculate laboratory charges and forward verified findings to the clinician for prescription review.</p></div><span className="status-pill">DEMO WORKFLOW</span></header>
+    <header className="page-heading"><div><p className="eyebrow">Laboratory information system</p><h1>Laboratory</h1><p className="muted">Professional diagnostic workflow: order individual tests, document each examination, capture results, calculate charges and forward verified findings for clinical prescription review.</p></div><span className="status-pill">DEMO WORKFLOW</span></header>
     {error && <div className="error">{error}</div>}
     {loading ? <p>Loading laboratory catalogue…</p> : <>
       <article className="card">
-        <div className="row-between"><div><h2>1. Select laboratory tests</h2><p className="muted">Each examination has its own description, specimen type and unit price.</p></div><strong>KES {total.toLocaleString()}</strong></div>
+        <div className="row-between"><div><h2>1. Test order</h2><p className="muted">Choose individual examinations. Each test has its own description, specimen requirement and price.</p></div><div><small>Laboratory total</small><h2>KES {total.toLocaleString()}</h2></div></div>
         <div className="lab-test-grid">{catalogue.map((test) => <label className={selected.includes(test.id) ? "lab-test-card selected" : "lab-test-card"} key={test.id}><input type="checkbox" checked={selected.includes(test.id)} onChange={() => toggleTest(test.id)} /><div><div className="row-between"><strong>{test.name}</strong><strong>KES {Number(test.price).toLocaleString()}</strong></div><p className="muted">{test.code} · {test.category || "General laboratory"}</p><p>{test.description || "Laboratory examination."}</p><small>Specimen: {test.sample_type || "Not specified"}</small></div></label>)}</div>
       </article>
 
       <article className="card">
-        <div><h2>2. Test record & results</h2><p className="muted">Every selected test is recorded independently. Sample collection, processing and result verification remain traceable.</p></div>
-        <div className="table-wrap"><table><thead><tr><th>Test</th><th>Specimen</th><th>Price</th><th>Result / observation</th><th>Status</th></tr></thead><tbody>{selectedTests.map((test) => <tr key={test.id}><td><strong>{test.name}</strong><br /><small>{test.code}</small></td><td>{test.sample_type || "—"}</td><td>KES {Number(test.price).toLocaleString()}</td><td><input value={results[test.id] || ""} placeholder="Enter result" onChange={(e) => setResults((current) => ({ ...current, [test.id]: e.target.value }))} /></td><td>{performed.includes(test.id) ? <span className="status-pill">RESULT RECORDED</span> : <button onClick={() => markPerformed(test.id)}>Mark performed</button>}</td></tr>)}</tbody></table></div>
+        <div className="row-between"><div><h2>2. Individual test records</h2><p className="muted">Each examination is written down independently so the clinical record shows exactly what was requested and performed.</p></div><span className="status-pill">{completed}/{selectedTests.length} COMPLETED</span></div>
+        <div className="table-wrap"><table><thead><tr><th>Test / code</th><th>Description</th><th>Specimen</th><th>Price</th><th>Result / observation</th><th>Workflow</th></tr></thead><tbody>{selectedTests.map((test) => <tr key={test.id}><td><strong>{test.name}</strong><br /><small>{test.code}</small></td><td>{test.description || "Laboratory examination"}</td><td>{test.sample_type || "—"}</td><td><strong>KES {Number(test.price).toLocaleString()}</strong></td><td><input value={results[test.id] || ""} placeholder="Enter measured result / observation" onChange={(e) => { setResults((current) => ({ ...current, [test.id]: e.target.value })); setForwarded(false); }} /></td><td>{performed.includes(test.id) ? <span className="status-pill">RESULT RECORDED</span> : <button onClick={() => markPerformed(test.id)}>Mark performed</button>}</td></tr>)}</tbody></table></div>
       </article>
 
       <article className="card">
-        <div className="row-between"><div><h2>3. Review & forward to prescription</h2><p className="muted">Results are presented to the clinician. AfyaSync does not automatically prescribe from a laboratory result; the authorized clinician reviews the findings and creates the prescription.</p></div><strong>{performed.filter((id) => selected.includes(id)).length}/{selectedTests.length} tests complete</strong></div>
-        <div className="lab-summary">{selectedTests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{results[test.id] || "Result pending"}</p></div><strong>KES {Number(test.price).toLocaleString()}</strong></div>)}</div>
-        <div className="form-actions"><button disabled={selectedTests.length === 0 || selectedTests.some((test) => !performed.includes(test.id) || !results[test.id]?.trim())} onClick={() => setForwarded(true)}>{forwarded ? "Forwarded to clinician / prescription review" : "Forward results to prescription review"}</button>{forwarded && <span className="success-box">All completed tests recorded · results forwarded · laboratory total KES {total.toLocaleString()}</span>}</div>
+        <h2>3. Laboratory billing</h2>
+        <p className="muted">Every completed test contributes its own standalone laboratory charge.</p>
+        <div className="lab-summary">{selectedTests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{performed.includes(test.id) ? "Performed" : "Pending"}</p></div><strong>KES {Number(test.price).toLocaleString()}</strong></div>)}</div>
+        <div className="billing-total">Laboratory total: KES {total.toLocaleString()}</div>
+      </article>
+
+      <article className="card">
+        <div className="row-between"><div><h2>4. Review & forward to prescription</h2><p className="muted">Completed results are forwarded to the authorized clinician for review. The system does not automatically prescribe medication from a laboratory result.</p></div><strong>{completed}/{selectedTests.length} results ready</strong></div>
+        <div className="lab-summary">{selectedTests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{results[test.id] || "Result pending"}</p></div><span className={performed.includes(test.id) && results[test.id]?.trim() ? "status-pill" : "badge"}>{performed.includes(test.id) && results[test.id]?.trim() ? "READY" : "PENDING"}</span></div>)}</div>
+        <div className="form-actions"><button disabled={selectedTests.length === 0 || completed !== selectedTests.length} onClick={() => setForwarded(true)}>{forwarded ? "Forwarded to prescription review" : "Forward results to prescription review"}</button>{forwarded && <span className="success-box">✓ All individual tests recorded · results forwarded to clinician · laboratory charges KES {total.toLocaleString()}</span>}</div>
       </article>
     </>}
   </section>;
