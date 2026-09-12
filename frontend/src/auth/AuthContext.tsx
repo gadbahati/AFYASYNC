@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, ApiError } from "../api/client";
-import type { FacilityOption } from "../api/types";
+import type { FacilityOption, FacilitySelectionRequired, LoginResult, TokenResponse } from "../api/types";
 import {
   clearSession,
   getAccessToken,
@@ -22,6 +22,10 @@ type AuthState = {
 };
 
 const AuthContext = createContext<AuthState | null>(null);
+
+function isFacilitySelectionRequired(result: LoginResult): result is FacilitySelectionRequired {
+  return "requires_facility_selection" in result && result.requires_facility_selection === true;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -54,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (user: string, password: string) => {
     const result = await api.login(user, password);
-    if ("requires_facility_selection" in result && result.requires_facility_selection) {
+    if (isFacilitySelectionRequired(result)) {
       setSession({ access_token: result.access_token });
       setUsername(user);
       setPendingFacilities(result.facilities);
@@ -62,17 +66,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFacilityName(null);
       return "select_facility";
     }
+
+    const tokens: TokenResponse = result;
     setSession({
-      access_token: result.access_token,
-      refresh_token: result.refresh_token,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
     });
     // Single-facility login: resolve facility name for UI
     try {
       const facilities = await api.facilities();
       if (facilities.length === 1) {
         setSession({
-          access_token: result.access_token,
-          refresh_token: result.refresh_token,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
           facility_id: facilities[0].facility_id,
           facility_name: facilities[0].facility_name,
         });
