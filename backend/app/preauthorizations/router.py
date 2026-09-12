@@ -1,10 +1,10 @@
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_db, get_facility_context, require_permission
-from app.auth.models import User
 from app.preauthorizations.schemas import PreAuthorizationCreate, PreAuthorizationDecision, PreAuthorizationResponse
 from app.preauthorizations.service import PreAuthorizationError, decide_preauthorization, request_preauthorization
 
@@ -35,7 +35,7 @@ def _error(exc: PreAuthorizationError) -> HTTPException:
 def create_preauthorization(
     payload: PreAuthorizationCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission("encounters.create")),
+    user: Any = Depends(require_permission("encounters.create")),
     facility_id: UUID = Depends(get_facility_context),
 ):
     try:
@@ -49,7 +49,7 @@ def decide(
     authorization_id: UUID,
     payload: PreAuthorizationDecision,
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission("encounters.create")),
+    user: Any = Depends(require_permission("encounters.create")),
     facility_id: UUID = Depends(get_facility_context),
 ):
     try:
