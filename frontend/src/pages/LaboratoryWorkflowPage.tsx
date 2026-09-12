@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { api, ApiError } from "../api/client";
 import { isDemoMode } from "../auth/storage";
 import type { LabOrderDetail, LabTest } from "../api/types";
 import "./lab.css";
 
 type DemoTest = LabTest & { specimen: string };
+type NewTest = { name: string; code: string; description: string; specimen: string; price: string };
 const DEMO_TESTS: DemoTest[] = [
   { id: "fbc", code: "FBC", name: "Full Blood Count", category: "Haematology", description: "Measures haemoglobin, white cells, platelets and related blood indices.", sample_type: "EDTA whole blood", specimen: "EDTA whole blood", price: 650, status: "ACTIVE" },
   { id: "malaria", code: "MAL-RDT", name: "Malaria Rapid Diagnostic Test", category: "Parasitology", description: "Screens for malaria infection using a rapid diagnostic blood test.", sample_type: "Whole blood", specimen: "Whole blood", price: 350, status: "ACTIVE" },
@@ -16,16 +17,14 @@ const DEMO_TESTS: DemoTest[] = [
 
 type DemoRecord = { result: string; status: "PENDING" | "PERFORMED" | "RESULTED" };
 
-export function LaboratoryWorkflowPage() {
-  return isDemoMode() ? <DemoLaboratory /> : <LiveLaboratory />;
-}
+export function LaboratoryWorkflowPage() { return isDemoMode() ? <DemoLaboratory /> : <LiveLaboratory />; }
 
 function DemoLaboratory() {
   const [selected, setSelected] = useState<string[]>(["fbc", "malaria"]);
   const [records, setRecords] = useState<Record<string, DemoRecord>>({ fbc: { result: "Hb 12.8 g/dL · WBC 7.2 ×10⁹/L · Platelets 286 ×10⁹/L", status: "RESULTED" }, malaria: { result: "Negative", status: "RESULTED" } });
   const [showAdd, setShowAdd] = useState(false);
   const [customTests, setCustomTests] = useState<DemoTest[]>([]);
-  const [newTest, setNewTest] = useState({ name: "", code: "", description: "", specimen: "", price: "" });
+  const [newTest, setNewTest] = useState<NewTest>({ name: "", code: "", description: "", specimen: "", price: "" });
   const [forwarded, setForwarded] = useState(false);
   const allTests = useMemo(() => [...DEMO_TESTS, ...customTests], [customTests]);
   const selectedTests = allTests.filter((test) => selected.includes(test.id));
@@ -37,7 +36,7 @@ function DemoLaboratory() {
     {showAdd && <AddTestCard value={newTest} setValue={setNewTest} onAdd={addTest} onCancel={() => setShowAdd(false)} />}
     <WorkflowSteps />
     <article className="card"><div className="row-between"><div><h2>1. Add / select tests</h2><p className="muted">Each examination has its own description, specimen and standalone price.</p></div><div className="lab-total-card"><small>Laboratory total</small><strong>KES {total.toLocaleString()}</strong></div></div><div className="lab-test-grid">{allTests.map((test) => <label key={test.id} className={selected.includes(test.id) ? "lab-test-card selected" : "lab-test-card"}><input type="checkbox" checked={selected.includes(test.id)} onChange={() => { setSelected((c) => c.includes(test.id) ? c.filter((x) => x !== test.id) : [...c, test.id]); setForwarded(false); }} /><div><div className="row-between"><strong>{test.name}</strong><strong>KES {test.price.toLocaleString()}</strong></div><p className="muted">{test.code} · {test.category}</p><p>{test.description}</p><small>Specimen: {test.specimen}</small></div></label>)}</div></article>
-    <TestRecords tests={selectedTests} records={records} setRecords={setRecords} demo />
+    <TestRecords tests={selectedTests} records={records} setRecords={setRecords} />
     <BillingCard tests={selectedTests} />
     <ForwardCard tests={selectedTests} records={records} ready={completed === selectedTests.length && selectedTests.length > 0} forwarded={forwarded} onForward={() => setForwarded(true)} />
   </section>;
@@ -52,7 +51,7 @@ function LiveLaboratory() {
   const [resultInputs, setResultInputs] = useState<Record<string, string>>({});
   const [samples, setSamples] = useState<Record<string, string>>({});
   const [showAdd, setShowAdd] = useState(false);
-  const [newTest, setNewTest] = useState({ name: "", code: "", description: "", specimen: "", price: "" });
+  const [newTest, setNewTest] = useState<NewTest>({ name: "", code: "", description: "", specimen: "", price: "" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   useEffect(() => { api.listLabTests().then(setCatalogue).catch((e) => setError(e instanceof ApiError ? e.code : "LAB_CATALOGUE_FAILED")); }, []);
@@ -81,9 +80,9 @@ function LabHeader({ demo = false, live = false, onAdd }: { demo?: boolean; live
 
 function WorkflowSteps() { return <article className="card"><div className="row-between"><div><h2>Laboratory workflow</h2><p className="muted">A complete clinical sequence from request to clinician hand-off.</p></div></div><div className="lab-workflow-strip">{["Order test", "Collect specimen", "Perform test", "Record result", "Bill test", "Forward to clinician"].map((step, index) => <div className="lab-workflow-step" key={step}><span>{index + 1}</span><strong>{step}</strong></div>)}</div></article>; }
 
-function AddTestCard({ value, setValue, onAdd, onCancel }: { value: { name: string; code: string; description: string; specimen: string; price: string }; setValue: (value: typeof value) => void; onAdd: () => void; onCancel: () => void }) { return <article className="card"><div className="row-between"><div><h2>+ Add laboratory test</h2><p className="muted">Create a test with its own code, clinical description, specimen requirement and standalone price.</p></div><span className="badge">TEST CATALOGUE</span></div><div className="lab-add-grid"><label>Test name<input value={value.name} placeholder="e.g. Kidney Function Test" onChange={(e) => setValue({ ...value, name: e.target.value })} /></label><label>Test code<input value={value.code} placeholder="e.g. KFT" onChange={(e) => setValue({ ...value, code: e.target.value })} /></label><label>Specimen / sample<input value={value.specimen} placeholder="e.g. Serum" onChange={(e) => setValue({ ...value, specimen: e.target.value })} /></label><label>Price (KES)<input type="number" min="1" value={value.price} placeholder="e.g. 1200" onChange={(e) => setValue({ ...value, price: e.target.value })} /></label><label className="lab-add-wide">Description<textarea value={value.description} placeholder="What this examination measures or helps assess" onChange={(e) => setValue({ ...value, description: e.target.value })} /></label></div><div className="form-actions"><button disabled={!value.name.trim() || !value.code.trim() || !value.description.trim() || !value.specimen.trim() || Number(value.price) <= 0} onClick={onAdd}>Add test</button><button className="button secondary" onClick={onCancel}>Cancel</button></div></article>; }
+function AddTestCard({ value, setValue, onAdd, onCancel }: { value: NewTest; setValue: Dispatch<SetStateAction<NewTest>>; onAdd: () => void; onCancel: () => void }) { return <article className="card"><div className="row-between"><div><h2>+ Add laboratory test</h2><p className="muted">Create a test with its own code, clinical description, specimen requirement and standalone price.</p></div><span className="badge">TEST CATALOGUE</span></div><div className="lab-add-grid"><label>Test name<input value={value.name} placeholder="e.g. Kidney Function Test" onChange={(e) => setValue({ ...value, name: e.target.value })} /></label><label>Test code<input value={value.code} placeholder="e.g. KFT" onChange={(e) => setValue({ ...value, code: e.target.value })} /></label><label>Specimen / sample<input value={value.specimen} placeholder="e.g. Serum" onChange={(e) => setValue({ ...value, specimen: e.target.value })} /></label><label>Price (KES)<input type="number" min="1" value={value.price} placeholder="e.g. 1200" onChange={(e) => setValue({ ...value, price: e.target.value })} /></label><label className="lab-add-wide">Description<textarea value={value.description} placeholder="What this examination measures or helps assess" onChange={(e) => setValue({ ...value, description: e.target.value })} /></label></div><div className="form-actions"><button disabled={!value.name.trim() || !value.code.trim() || !value.description.trim() || !value.specimen.trim() || Number(value.price) <= 0} onClick={onAdd}>Add test</button><button className="button secondary" onClick={onCancel}>Cancel</button></div></article>; }
 
-function TestRecords({ tests, records, setRecords, demo }: { tests: DemoTest[]; records: Record<string, DemoRecord>; setRecords: React.Dispatch<React.SetStateAction<Record<string, DemoRecord>>>; demo: boolean }) { const completed = tests.filter((t) => records[t.id]?.status === "RESULTED" && records[t.id]?.result.trim()).length; return <article className="card"><div className="row-between"><div><h2>2. Individual test records</h2><p className="muted">Every examination is recorded separately with its own result and status.</p></div><span className="status-pill">{completed} OF {tests.length} COMPLETE</span></div><div className="table-wrap"><table><thead><tr><th>Test</th><th>Description</th><th>Specimen</th><th>Price</th><th>Result / observation</th><th>Status</th></tr></thead><tbody>{tests.map((test) => { const record = records[test.id] ?? { result: "", status: "PENDING" as const }; return <tr key={test.id}><td><strong>{test.name}</strong><br /><small>{test.code}</small></td><td>{test.description}</td><td>{test.specimen}</td><td><strong>KES {test.price.toLocaleString()}</strong></td><td><input value={record.result} placeholder="Enter laboratory result" onChange={(e) => { setRecords((c) => ({ ...c, [test.id]: { result: e.target.value, status: e.target.value.trim() ? "RESULTED" : "PENDING" } })); }} /></td><td>{record.status === "RESULTED" ? <span className="status-pill">RESULTED</span> : <button className="button secondary" onClick={() => setRecords((c) => ({ ...c, [test.id]: { ...record, status: "PERFORMED" } }))}>Mark performed</button>}</td></tr>; })}</tbody></table></div></article>; }
+function TestRecords({ tests, records, setRecords }: { tests: DemoTest[]; records: Record<string, DemoRecord>; setRecords: Dispatch<SetStateAction<Record<string, DemoRecord>>> }) { const completed = tests.filter((t) => records[t.id]?.status === "RESULTED" && records[t.id]?.result.trim()).length; return <article className="card"><div className="row-between"><div><h2>2. Individual test records</h2><p className="muted">Every examination is recorded separately with its own result and status.</p></div><span className="status-pill">{completed} OF {tests.length} COMPLETE</span></div><div className="table-wrap"><table><thead><tr><th>Test</th><th>Description</th><th>Specimen</th><th>Price</th><th>Result / observation</th><th>Status</th></tr></thead><tbody>{tests.map((test) => { const record = records[test.id] ?? { result: "", status: "PENDING" as const }; return <tr key={test.id}><td><strong>{test.name}</strong><br /><small>{test.code}</small></td><td>{test.description}</td><td>{test.specimen}</td><td><strong>KES {test.price.toLocaleString()}</strong></td><td><input value={record.result} placeholder="Enter laboratory result" onChange={(e) => { setRecords((c) => ({ ...c, [test.id]: { result: e.target.value, status: e.target.value.trim() ? "RESULTED" : "PENDING" } })); }} /></td><td>{record.status === "RESULTED" ? <span className="status-pill">RESULTED</span> : <button className="button secondary" onClick={() => setRecords((c) => ({ ...c, [test.id]: { ...record, status: "PERFORMED" } }))}>Mark performed</button>}</td></tr>; })}</tbody></table></div></article>; }
 
 function BillingCard({ tests }: { tests: LabTest[] }) { const total = tests.reduce((sum, test) => sum + Number(test.price), 0); return <article className="card"><h2>3. Test-by-test billing</h2><p className="muted">Every laboratory test has its own standalone charge.</p><div className="lab-summary">{tests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{test.code}</p></div><span>1 ×</span><strong>KES {Number(test.price).toLocaleString()}</strong></div>)}</div><div className="billing-total">Laboratory total: KES {total.toLocaleString()}</div></article>; }
 
