@@ -8,9 +8,9 @@ class LabTestCreate(BaseModel):
     code: str = Field(min_length=2, max_length=50)
     name: str = Field(min_length=2, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
-    category: str | None = None
-    sample_type: str | None = None
-    price: float = Field(default=0, ge=0)
+    category: str | None = Field(default=None, max_length=100)
+    sample_type: str | None = Field(default=None, max_length=100)
+    price: float = Field(gt=0)
 
 
 class LabTestResponse(LabTestCreate):
@@ -37,6 +37,8 @@ class LabOrderResponse(BaseModel):
     ordered_by: UUID
     priority: str
     status: str
+    forwarded_at: datetime | None = None
+    forwarded_by: UUID | None = None
     created_at: datetime
 
 
@@ -74,3 +76,37 @@ class ResultResponse(ResultCreate):
     status: str
     created_at: datetime
     verified_at: datetime | None
+
+
+class LabOrderItemResponse(BaseModel):
+    id: UUID
+    test_id: UUID
+    test_code: str
+    test_name: str
+    description: str | None
+    category: str | None
+    sample_type: str | None
+    price: float
+    instructions: str | None
+    status: str
+    charge_id: UUID | None
+    result: ResultResponse | None
+
+
+class LabOrderDetailResponse(BaseModel):
+    id: UUID
+    order_id: str
+    encounter_id: UUID
+    patient_id: UUID
+    priority: str
+    status: str
+    forwarded_at: datetime | None
+    items: list[LabOrderItemResponse]
+    total_amount: float
+
+
+class LabForwardResponse(BaseModel):
+    order_id: str
+    status: str
+    forwarded_at: datetime
+    message: str
