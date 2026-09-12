@@ -1,14 +1,16 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.admissions.models import Admission
 from app.audit.service import record_audit
 from app.auth.dependencies import get_token_payload, require_permission
 from app.database import get_db
 from app.encounters.models import Encounter
+from app.encounters.service import close_encounter
 from app.pharmacy.models import InventoryBatch, InventoryItem, Medication, Prescription, PrescriptionItem, StockMovement
 from app.pharmacy.permissions import PHARMACY_CREATE_MEDICATION, PHARMACY_CREATE_PRESCRIPTION, PHARMACY_DISPENSE, PHARMACY_RECEIVE_INVENTORY
 from app.pharmacy.schemas import DispenseRequest, DispenseResponse, InventoryReceive, InventoryResponse, MedicationCreate, MedicationResponse, PrescriptionCreate, PrescriptionResponse
@@ -138,11 +140,20 @@ def dispense(prescription_id: UUID, payload: DispenseRequest, db: Session = Depe
     if encounter.facility_id != facility_id:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        movements, charges_created = dispense_prescription(
-            db, prescription_id, staff.id, actor_user_id=user.id,
-            billing_items=[item.model_dump() for item in payload.billing_items],
-        )
+        movements, charges_created = dispense_prescription(db, prescription_id, staff.id, actor_user_id=user.id, billing_items=[item.model_dump() for item in payload.billing_items])
     except PharmacyError as exc:
         raise _error(exc) from exc
+
+    # Dispensing completes the medication hand-off. For an inpatient admission,
+    # close the encounter and mark the admission discharged so the care journey
+    # has an explicit RELEASED endpoint rather than leaving the patient admitted.
+    admission = db.scalar(select(Admission).where(Admission.encounter_id == encounter.id, Admission.facility_id == facility_id).with_for_update())
+    if admission is not None and admission.status == "ADMITTED":
+        closed = close_encounter(db, encounter.id, actor_user_id=user.id)
+        admission.status = "DISCHARGED"
+        admission.discharged_at = datetime.now(timezone.utc)
+        record_audit(db, action="PATIENT_RELEASED_AFTER_PHARMACY", resource_type="ADMISSION", resource_id=str(admission.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"prescription_id": str(prescription_id), "encounter_id": str(encounter.id), "status": admission.status}, commit=False)
+        db.commit()
+        _ = closed
     prescription = db.get(Prescription, prescription_id)
     return DispenseResponse(prescription_id=prescription.id, status=prescription.status, movements_created=len(movements), charges_created=charges_created)
