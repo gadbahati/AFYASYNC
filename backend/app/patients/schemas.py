@@ -9,6 +9,7 @@ class PatientCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=100)
     middle_name: str | None = Field(default=None, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
+    national_id_number: str = Field(min_length=7, max_length=9, pattern=r"^\d{7,9}$", description="Kenyan national ID number")
     date_of_birth: date | None = None
     sex: str | None = Field(default=None, max_length=30)
     phone: str | None = Field(default=None, max_length=30)
