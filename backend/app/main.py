@@ -39,6 +39,8 @@ from app.patients.router import router as patients_router
 from app.pharmacy import models as pharmacy_models
 from app.pharmacy.router import router as pharmacy_router
 from app.portal.router import router as portal_router
+from app.preauthorizations import models as preauthorization_models
+from app.preauthorizations.router import router as preauthorizations_router
 from app.rbac import models as rbac_models
 from app.referrals import models as referral_models
 from app.referrals.router import router as referrals_router
@@ -47,7 +49,7 @@ from app.reports.router import router as reports_router
 _ = (patient_models, coverage_models, facility_models, rbac_models, appointment_models,
      encounter_models, clinical_models, laboratory_models, pharmacy_models, billing_models,
      claims_models, integration_models, audit_models, referral_models, notification_models,
-     auth_models, benefit_models, admission_models)
+     auth_models, benefit_models, admission_models, preauthorization_models)
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, description="AfyaSync healthcare platform API")
 
@@ -66,14 +68,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature"],
-    )
-
+    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True,
+                       allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+                       allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature"])
 app.add_middleware(SecurityHeadersMiddleware)
 
 
@@ -93,6 +90,7 @@ app.include_router(patients_router)
 app.include_router(coverage_router)
 app.include_router(benefits_router)
 app.include_router(admissions_router)
+app.include_router(preauthorizations_router)
 app.include_router(facilities_router)
 app.include_router(appointments_router)
 app.include_router(encounters_router)
@@ -110,11 +108,7 @@ app.include_router(reports_router)
 
 @app.get("/health", tags=["System"])
 def health_check() -> dict[str, object]:
-    return {
-        "success": True,
-        "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version},
-        "message": "AfyaSync API is running",
-    }
+    return {"success": True, "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version}, "message": "AfyaSync API is running"}
 
 
 @app.get("/ready", tags=["System"])
