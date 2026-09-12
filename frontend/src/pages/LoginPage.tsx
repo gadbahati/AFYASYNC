@@ -40,6 +40,11 @@ export function LoginPage() {
     }
   }
 
+  function onDemoBypass() {
+    auth.enterDemoMode();
+    navigate("/");
+  }
+
   return (
     <div className="auth-page">
       <form className="card auth-card" onSubmit={onSubmit}>
@@ -79,8 +84,15 @@ export function LoginPage() {
         </label>
         {error && <div className="error">{error}</div>}
         <button type="submit" disabled={submitting}>{submitting ? "Signing in…" : "Sign in"}</button>
+
+        {/* TEMPORARY: remove before production go-live */}
+        <button type="button" className="button secondary bypass-btn" onClick={onDemoBypass}>
+          Enter demo mode (no login)
+        </button>
+
         <p className="muted small auth-note">
-          Demo account (after API is online): <strong>afyasync.admin</strong> / <strong>Kenya@Health2026</strong>
+          Demo mode uses offline sample data so you can review the UI while the API is offline.
+          Remove this bypass before live deployment. Real account when API is up: <strong>afyasync.admin</strong> / <strong>Kenya@Health2026</strong>
         </p>
       </form>
     </div>
