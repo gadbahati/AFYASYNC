@@ -12,9 +12,7 @@ def test_get_patient_for_facility_uses_patient_facility_scope() -> None:
     patient = SimpleNamespace(id=uuid4())
     db.scalar.return_value = patient
     facility_id = uuid4()
-
     result = patient_service.get_patient_for_facility(db, patient.id, facility_id)
-
     assert result is patient
     db.scalar.assert_called_once()
 
@@ -22,10 +20,8 @@ def test_get_patient_for_facility_uses_patient_facility_scope() -> None:
 def test_create_patient_requires_facility_context() -> None:
     db = Mock()
     payload = SimpleNamespace(phone=None)
-
     with pytest.raises(ValueError, match="FACILITY_CONTEXT_REQUIRED"):
         patient_service.create_patient(db, payload, actor_user_id=uuid4(), facility_id=None)
-
     db.add.assert_not_called()
     db.commit.assert_not_called()
 
@@ -37,8 +33,9 @@ def test_create_patient_links_patient_to_facility(monkeypatch) -> None:
     identity = SimpleNamespace(afya_id="AF-00000007")
     audit_mock = Mock()
     link = SimpleNamespace(patient_id=person.id, facility_id=uuid4())
-
-    monkeypatch.setattr(patient_service, "Person", SimpleNamespace(national_id_hash="national_id_hash"))
+    person_factory = Mock(return_value=person)
+    person_factory.national_id_hash = "national_id_hash"
+    monkeypatch.setattr(patient_service, "Person", person_factory)
     monkeypatch.setattr(patient_service, "AfyaIdentity", lambda **_: identity)
     monkeypatch.setattr(patient_service, "PatientFacility", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
@@ -48,11 +45,7 @@ def test_create_patient_links_patient_to_facility(monkeypatch) -> None:
         phone=None,
         model_dump=lambda: {"first_name": "Test", "last_name": "Patient"},
     )
-
-    result = patient_service.create_patient(
-        db, payload, actor_user_id=uuid4(), facility_id=link.facility_id
-    )
-
+    result = patient_service.create_patient(db, payload, actor_user_id=uuid4(), facility_id=link.facility_id)
     assert result is person
     assert db.add.call_count == 3
     assert db.flush.call_count == 3
