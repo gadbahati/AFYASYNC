@@ -1,4 +1,21 @@
-import type { ApiErrorBody, AuthMe, FacilityOption, FacilityReport, LoginResult, Patient, PatientCreate, PatientListResponse, TokenResponse } from "./types";
+import type {
+  ApiErrorBody,
+  AuthMe,
+  ClinicalTimeline,
+  Consultation,
+  Department,
+  Diagnosis,
+  Encounter,
+  EncounterCreate,
+  FacilityOption,
+  FacilityReport,
+  LoginResult,
+  Patient,
+  PatientCreate,
+  PatientListResponse,
+  TokenResponse,
+  Vital,
+} from "./types";
 import { clearSession, getAccessToken, getRefreshToken, setSession } from "../auth/storage";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -111,5 +128,41 @@ export const api = {
     if (end) q.set("end_date", end);
     const suffix = q.toString() ? `?${q}` : "";
     return request<FacilityReport>(`/api/v1/reports/facility${suffix}`);
+  },
+  listDepartments(facilityId: string) {
+    return request<Department[]>(`/api/v1/facilities/${facilityId}/departments`);
+  },
+  createEncounter(payload: EncounterCreate) {
+    return request<Encounter>("/api/v1/encounters", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  getEncounter(id: string) {
+    return request<Encounter>(`/api/v1/encounters/${id}`);
+  },
+  closeEncounter(id: string) {
+    return request<Encounter>(`/api/v1/encounters/${id}/close`, { method: "POST" });
+  },
+  getClinicalTimeline(encounterId: string) {
+    return request<ClinicalTimeline>(`/api/v1/encounters/${encounterId}/clinical`);
+  },
+  recordVitals(encounterId: string, payload: Record<string, number | null>) {
+    return request<Vital>(`/api/v1/encounters/${encounterId}/vitals`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  saveConsultation(encounterId: string, payload: Record<string, string | null>) {
+    return request<Consultation>(`/api/v1/encounters/${encounterId}/consultation`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  addDiagnosis(encounterId: string, payload: { diagnosis_name: string; diagnosis_code?: string | null; diagnosis_type?: string }) {
+    return request<Diagnosis>(`/api/v1/encounters/${encounterId}/diagnoses`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 };
