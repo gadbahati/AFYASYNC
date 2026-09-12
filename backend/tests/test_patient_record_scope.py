@@ -32,7 +32,7 @@ def test_create_patient_requires_facility_context() -> None:
 
 def test_create_patient_links_patient_to_facility(monkeypatch) -> None:
     db = Mock()
-    db.scalar.return_value = 7
+    db.scalar.side_effect = [None, 7]
     person = SimpleNamespace(id=uuid4(), afya_identity=None)
     identity = SimpleNamespace(afya_id="AF-00000007")
     audit_mock = Mock()
@@ -43,6 +43,7 @@ def test_create_patient_links_patient_to_facility(monkeypatch) -> None:
     monkeypatch.setattr(patient_service, "PatientFacility", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
     payload = SimpleNamespace(
+        national_id_number="12345678",
         phone=None,
         model_dump=lambda: {"first_name": "Test", "last_name": "Patient"},
     )
