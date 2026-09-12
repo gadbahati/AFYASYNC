@@ -73,6 +73,105 @@ export type FacilityReport = {
   claims_paid: string;
 };
 
+export type Department = {
+  id: string;
+  facility_id: string;
+  name: string;
+  code: string;
+  status: string;
+};
+
+export type Encounter = {
+  id: string;
+  encounter_id: string;
+  patient_id: string;
+  facility_id: string;
+  department_id: string;
+  encounter_type: string;
+  reason: string | null;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  created_by: string;
+};
+
+export type EncounterCreate = {
+  patient_id: string;
+  facility_id: string;
+  department_id: string;
+  encounter_type: string;
+  reason?: string | null;
+};
+
+export type Vital = {
+  id: string;
+  encounter_id: string;
+  recorded_by: string;
+  systolic_bp: number | null;
+  diastolic_bp: number | null;
+  pulse: number | null;
+  temperature_c: number | null;
+  respiratory_rate: number | null;
+  oxygen_saturation: number | null;
+  weight_kg: number | null;
+  height_cm: number | null;
+  bmi: number | null;
+  recorded_at: string;
+};
+
+export type Consultation = {
+  id: string;
+  encounter_id: string;
+  doctor_id: string;
+  chief_complaint: string | null;
+  history: string | null;
+  examination: string | null;
+  assessment: string | null;
+  clinical_notes: string | null;
+  treatment_plan: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Diagnosis = {
+  id: string;
+  encounter_id: string;
+  diagnosis_code: string | null;
+  diagnosis_name: string;
+  diagnosis_type: string;
+  status: string;
+  recorded_by: string;
+  created_at: string;
+};
+
+export type LabOrderSummary = {
+  id: string;
+  order_id: string;
+  encounter_id: string;
+  patient_id: string;
+  priority: string;
+  status: string;
+  created_at: string;
+};
+
+export type PrescriptionSummary = {
+  id: string;
+  prescription_id: string;
+  encounter_id: string;
+  patient_id: string;
+  status: string;
+  created_at: string;
+};
+
+export type ClinicalTimeline = {
+  encounter: Encounter;
+  vitals: Vital[];
+  consultation: Consultation | null;
+  diagnoses: Diagnosis[];
+  lab_orders: LabOrderSummary[];
+  prescriptions: PrescriptionSummary[];
+};
+
 export type ApiErrorBody = {
   detail?: string | { code?: string; message?: string };
 };
