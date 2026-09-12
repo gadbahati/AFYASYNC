@@ -6,10 +6,10 @@ import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { BenefitPackagesPage } from "./pages/BenefitPackagesPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ShaCareDemoPage } from "./pages/ShaCareDemoPage";
+import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
 import {
   BillingPage,
   ClaimsPage,
-  LabPage,
   PharmacyPage,
   ReferralsPage,
 } from "./pages/demoPages";
@@ -41,7 +41,7 @@ export default function App() {
               <Route path="/queue" element={<QueuePage />} />
               <Route path="/sha-workflow" element={<ShaCareDemoPage />} />
               <Route path="/benefits" element={<BenefitPackagesPage />} />
-              <Route path="/laboratory" element={<LabPage />} />
+              <Route path="/laboratory" element={<LaboratoryWorkflowPage />} />
               <Route path="/pharmacy" element={<PharmacyPage />} />
               <Route path="/billing" element={<BillingPage />} />
               <Route path="/claims" element={<ClaimsPage />} />
