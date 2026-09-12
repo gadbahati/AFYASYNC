@@ -51,13 +51,11 @@ export function LoginPage() {
         <div className="auth-brand">
           <KenyaFlag />
           <div>
-            <div className="brand-kicker">Republic of Kenya · Health Information</div>
+            <div className="brand-kicker">Republic of Kenya</div>
             <h1>AfyaSync</h1>
           </div>
         </div>
-        <p className="muted">
-          Secure staff console for facility-scoped clinical, billing, and claims operations.
-        </p>
+        <p className="muted">Staff sign-in for facility work.</p>
         <label>
           Username
           <input
@@ -80,19 +78,15 @@ export function LoginPage() {
         </label>
         <label className="remember-row">
           <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-          <span>Remember me on this device</span>
+          <span>Remember me</span>
         </label>
         {error && <div className="error">{error}</div>}
         <button type="submit" disabled={submitting}>{submitting ? "Signing in…" : "Sign in"}</button>
-
-        {/* TEMPORARY: remove before production go-live */}
         <button type="button" className="button secondary bypass-btn" onClick={onDemoBypass}>
           Enter demo mode (no login)
         </button>
-
         <p className="muted small auth-note">
-          Demo mode uses offline sample data so you can review the UI while the API is offline.
-          Remove this bypass before live deployment. Real account when API is up: <strong>afyasync.admin</strong> / <strong>Kenya@Health2026</strong>
+          Demo mode shows all screens with sample data. Live login needs the API online.
         </p>
       </form>
     </div>
