@@ -7,8 +7,10 @@ from pydantic import BaseModel, Field
 class LabTestCreate(BaseModel):
     code: str = Field(min_length=2, max_length=50)
     name: str = Field(min_length=2, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
     category: str | None = None
     sample_type: str | None = None
+    price: float = Field(default=0, ge=0)
 
 
 class LabTestResponse(LabTestCreate):
