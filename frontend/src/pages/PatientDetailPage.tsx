@@ -35,6 +35,11 @@ export function PatientDetailPage() {
           <Link to="/patients" className="muted">← Patients</Link>
           <h1>Patient record</h1>
         </div>
+        {patient && (
+          <Link className="button" to={`/patients/${patient.id}/encounters/new`}>
+            Open encounter
+          </Link>
+        )}
       </header>
 
       {loading && <p>Loading…</p>}
