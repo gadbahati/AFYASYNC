@@ -39,12 +39,7 @@ def test_create_patient_links_patient_to_facility(monkeypatch) -> None:
     monkeypatch.setattr(patient_service, "AfyaIdentity", lambda **_: identity)
     monkeypatch.setattr(patient_service, "PatientFacility", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
-    monkeypatch.setattr(patient_service, "_hash_national_id", lambda value: "hashed-id")
-    payload = SimpleNamespace(
-        national_id_number="12345678",
-        phone=None,
-        model_dump=lambda: {"first_name": "Test", "last_name": "Patient"},
-    )
+    payload = SimpleNamespace(national_id_number="12345678", phone=None, model_dump=lambda: {"first_name": "Test", "last_name": "Patient"})
     result = patient_service.create_patient(db, payload, actor_user_id=uuid4(), facility_id=link.facility_id)
     assert result is person
     assert db.add.call_count == 3
