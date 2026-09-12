@@ -16,7 +16,16 @@ import type {
   TokenResponse,
   Vital,
 } from "./types";
-import { clearSession, getAccessToken, getRefreshToken, setSession } from "../auth/storage";
+import {
+  demoClinicalTimeline,
+  demoCreateEncounter,
+  demoCreatePatient,
+  demoDepartments,
+  demoFacilityReport,
+  demoGetPatient,
+  demoListPatients,
+} from "./demoData";
+import { clearSession, getAccessToken, getRefreshToken, isDemoMode, setSession } from "../auth/storage";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
@@ -101,7 +110,6 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
     } catch {
       body = null;
     }
-    // HTML 404 from Vercel when API base is missing/wrong
     if (!body && (res.status === 404 || res.status === 405)) {
       throw new ApiError(
         res.status,
@@ -133,27 +141,45 @@ export const api = {
     return request<FacilityOption[]>("/api/v1/auth/facilities");
   },
   me() {
+    if (isDemoMode()) {
+      return Promise.resolve({
+        success: true,
+        data: { user_id: "demo", username: "demo.viewer", status: "ACTIVE" },
+        message: "Demo session",
+      } satisfies AuthMe);
+    }
     return request<AuthMe>("/api/v1/auth/me");
   },
   logout(refresh_token: string) {
+    if (isDemoMode()) return Promise.resolve({ success: true });
     return request<{ success: boolean }>("/api/v1/auth/logout", {
       method: "POST",
       body: JSON.stringify({ refresh_token }),
     }, false);
   },
   listPatients(limit = 50, offset = 0) {
+    if (isDemoMode()) return Promise.resolve(demoListPatients(limit, offset));
     return request<PatientListResponse>(`/api/v1/patients?limit=${limit}&offset=${offset}`);
   },
   getPatient(id: string) {
+    if (isDemoMode()) {
+      try {
+        return Promise.resolve(demoGetPatient(id));
+      } catch {
+        return Promise.reject(new ApiError(404, "PATIENT_NOT_FOUND"));
+      }
+    }
     return request<Patient>(`/api/v1/patients/${id}`);
   },
   createPatient(payload: PatientCreate) {
+    if (isDemoMode()) return Promise.resolve(demoCreatePatient(payload));
     return request<Patient>("/api/v1/patients", {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
   facilityReport(start?: string, end?: string) {
+    if (isDemoMode()) return Promise.resolve(demoFacilityReport());
     const q = new URLSearchParams();
     if (start) q.set("start_date", start);
     if (end) q.set("end_date", end);
@@ -161,36 +187,93 @@ export const api = {
     return request<FacilityReport>(`/api/v1/reports/facility${suffix}`);
   },
   listDepartments(facilityId: string) {
+    if (isDemoMode()) return Promise.resolve(demoDepartments());
     return request<Department[]>(`/api/v1/facilities/${facilityId}/departments`);
   },
   createEncounter(payload: EncounterCreate) {
+    if (isDemoMode()) return Promise.resolve(demoCreateEncounter(payload));
     return request<Encounter>("/api/v1/encounters", {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
   getEncounter(id: string) {
+    if (isDemoMode()) {
+      return Promise.resolve(demoClinicalTimeline(id).encounter);
+    }
     return request<Encounter>(`/api/v1/encounters/${id}`);
   },
   closeEncounter(id: string) {
+    if (isDemoMode()) {
+      const e = demoClinicalTimeline(id).encounter;
+      e.status = "CLOSED";
+      e.ended_at = new Date().toISOString();
+      return Promise.resolve(e);
+    }
     return request<Encounter>(`/api/v1/encounters/${id}/close`, { method: "POST" });
   },
   getClinicalTimeline(encounterId: string) {
+    if (isDemoMode()) return Promise.resolve(demoClinicalTimeline(encounterId));
     return request<ClinicalTimeline>(`/api/v1/encounters/${encounterId}/clinical`);
   },
   recordVitals(encounterId: string, payload: Record<string, number | null>) {
+    if (isDemoMode()) {
+      return Promise.resolve({
+        id: crypto.randomUUID(),
+        encounter_id: encounterId,
+        recorded_by: "demo",
+        systolic_bp: payload.systolic_bp ?? null,
+        diastolic_bp: payload.diastolic_bp ?? null,
+        pulse: payload.pulse ?? null,
+        temperature_c: payload.temperature_c ?? null,
+        respiratory_rate: payload.respiratory_rate ?? null,
+        oxygen_saturation: payload.oxygen_saturation ?? null,
+        weight_kg: payload.weight_kg ?? null,
+        height_cm: payload.height_cm ?? null,
+        bmi: null,
+        recorded_at: new Date().toISOString(),
+      } satisfies Vital);
+    }
     return request<Vital>(`/api/v1/encounters/${encounterId}/vitals`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
   saveConsultation(encounterId: string, payload: Record<string, string | null>) {
+    if (isDemoMode()) {
+      const now = new Date().toISOString();
+      return Promise.resolve({
+        id: crypto.randomUUID(),
+        encounter_id: encounterId,
+        doctor_id: "demo",
+        chief_complaint: payload.chief_complaint ?? null,
+        history: payload.history ?? null,
+        examination: payload.examination ?? null,
+        assessment: payload.assessment ?? null,
+        clinical_notes: payload.clinical_notes ?? null,
+        treatment_plan: payload.treatment_plan ?? null,
+        created_at: now,
+        updated_at: now,
+      } satisfies Consultation);
+    }
     return request<Consultation>(`/api/v1/encounters/${encounterId}/consultation`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
   addDiagnosis(encounterId: string, payload: { diagnosis_name: string; diagnosis_code?: string | null; diagnosis_type?: string }) {
+    if (isDemoMode()) {
+      return Promise.resolve({
+        id: crypto.randomUUID(),
+        encounter_id: encounterId,
+        diagnosis_code: payload.diagnosis_code ?? null,
+        diagnosis_name: payload.diagnosis_name,
+        diagnosis_type: payload.diagnosis_type || "PRIMARY",
+        status: "ACTIVE",
+        recorded_by: "demo",
+        created_at: new Date().toISOString(),
+      } satisfies Diagnosis);
+    }
     return request<Diagnosis>(`/api/v1/encounters/${encounterId}/diagnoses`, {
       method: "POST",
       body: JSON.stringify(payload),
