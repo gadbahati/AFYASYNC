@@ -34,6 +34,12 @@ export type Admission = {
   benefit_package_code: string; ward: string; bed: string; diagnosis: string | null; status: string;
   admitted_at: string; discharged_at: string | null;
 };
+export type PreAuthorization = {
+  id: string; authorization_number: string; patient_id: string; benefit_package_code: string;
+  care_setting: "OUTPATIENT" | "INPATIENT"; department: string; requested_services: string[];
+  status: string; requested_amount: number; approved_amount: number; external_reference: string | null;
+  requested_at: string; decided_at: string | null;
+};
 
 export type Department = { id: string; facility_id: string; name: string; code: string; status: string };
 export type Encounter = { id: string; encounter_id: string; patient_id: string; facility_id: string; department_id: string; encounter_type: string; reason: string | null; status: string; started_at: string; ended_at: string | null; created_by: string };
