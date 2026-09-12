@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_facility_context, require_permission
 from app.billing.models import Service
 from app.billing.permissions import BILLING_CHARGE_WRITE, BILLING_INVOICE_WRITE, BILLING_PAYMENT_WRITE, BILLING_SERVICE_WRITE
-from app.billing.schemas import ChargeCreate, ChargeResponse, InvoiceResponse, PaymentCreate, PaymentResponse, ServiceCreate, ServiceResponse
-from app.billing.service import BillingError, create_charge, create_invoice, record_payment
+from app.billing.schemas import ChargeResponse, InvoiceResponse, PaymentCreate, PaymentResponse, ServiceCreate, ServiceResponse
+from app.billing.service import BillingError, create_invoice, record_payment
+from app.billing.standalone_charge import StandaloneChargeCreate, create_standalone_charge
 from app.database import get_db
 from app.rbac.models import User
 
@@ -16,15 +17,16 @@ router = APIRouter(prefix="/api/v1/billing", tags=["Billing"])
 
 
 def _error(exc: BillingError) -> HTTPException:
+    code = str(exc)
     mapping = {
         "ENCOUNTER_NOT_FOUND": 404, "SERVICE_NOT_FOUND": 404, "INVOICE_NOT_FOUND": 404,
         "NO_CHARGES": 409, "INVOICE_ALREADY_EXISTS": 409, "INVOICE_ALREADY_PAID": 409,
         "PAYMENT_EXCEEDS_BALANCE": 409, "INVALID_PAYMENT_AMOUNT": 400, "INVALID_QUANTITY": 400,
-        "FACILITY_ACCESS_DENIED": 403, "IDEMPOTENCY_KEY_REUSED": 409,
+        "INVALID_CHARGE_AMOUNT": 400, "FACILITY_ACCESS_DENIED": 403, "IDEMPOTENCY_KEY_REUSED": 409,
         "COVERAGE_NOT_VERIFIED": 409, "COVERAGE_RULE_NOT_CONFIGURED": 409,
         "PAYMENT_PROVIDER_REQUIRED": 400, "PAYMENT_INTEGRATION_NOT_CONFIGURED": 409,
     }
-    return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
+    return HTTPException(status_code=mapping.get(code, 400), detail=code)
 
 
 @router.post("/services", response_model=ServiceResponse, status_code=201)
@@ -40,9 +42,9 @@ def add_service(payload: ServiceCreate, db: Session = Depends(get_db), facility_
 
 
 @router.post("/charges", response_model=ChargeResponse, status_code=201)
-def add_charge(payload: ChargeCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_CHARGE_WRITE))):
+def add_charge(payload: StandaloneChargeCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_CHARGE_WRITE))):
     try:
-        return create_charge(db, facility_id, payload.model_dump(), actor_user_id=user.id)
+        return create_standalone_charge(db, facility_id, payload.model_dump(), actor_user_id=user.id)
     except BillingError as exc:
         raise _error(exc) from exc
 
