@@ -1,118 +1,90 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { api, ApiError } from "../api/client";
+import { isDemoMode } from "../auth/storage";
+import type { LabOrderDetail, LabTest } from "../api/types";
 import "./lab.css";
 
-type LabTest = { id: string; code: string; name: string; category: string; description: string; specimen: string; price: number };
-type LabRecord = LabTest & { result: string; status: "PENDING" | "PERFORMED" | "RESULTED" };
-
-const DEMO_TESTS: LabTest[] = [
-  { id: "fbc", code: "FBC", name: "Full Blood Count", category: "Haematology", description: "Measures haemoglobin, white cells, platelets and related blood indices.", specimen: "EDTA whole blood", price: 650 },
-  { id: "malaria", code: "MAL-RDT", name: "Malaria Rapid Diagnostic Test", category: "Parasitology", description: "Screens for malaria infection using a rapid diagnostic blood test.", specimen: "Whole blood", price: 350 },
-  { id: "rbs", code: "RBS", name: "Random Blood Sugar", category: "Chemistry", description: "Measures blood glucose at the time the specimen is collected.", specimen: "Fluoride plasma / capillary blood", price: 250 },
-  { id: "urinalysis", code: "UA", name: "Urinalysis", category: "Clinical microscopy", description: "Examines urine for physical, chemical and microscopic findings.", specimen: "Midstream urine", price: 450 },
-  { id: "lft", code: "LFT", name: "Liver Function Tests", category: "Clinical chemistry", description: "Panel assessing liver-related enzymes, proteins and bilirubin.", specimen: "Serum", price: 1500 },
-  { id: "ufb", code: "U&E", name: "Urea & Electrolytes", category: "Clinical chemistry", description: "Assesses urea and key electrolytes used in renal and fluid assessment.", specimen: "Serum / plasma", price: 1200 },
+type DemoTest = LabTest & { specimen: string };
+const DEMO_TESTS: DemoTest[] = [
+  { id: "fbc", code: "FBC", name: "Full Blood Count", category: "Haematology", description: "Measures haemoglobin, white cells, platelets and related blood indices.", sample_type: "EDTA whole blood", specimen: "EDTA whole blood", price: 650, status: "ACTIVE" },
+  { id: "malaria", code: "MAL-RDT", name: "Malaria Rapid Diagnostic Test", category: "Parasitology", description: "Screens for malaria infection using a rapid diagnostic blood test.", sample_type: "Whole blood", specimen: "Whole blood", price: 350, status: "ACTIVE" },
+  { id: "rbs", code: "RBS", name: "Random Blood Sugar", category: "Chemistry", description: "Measures blood glucose at the time the specimen is collected.", sample_type: "Fluoride plasma / capillary blood", specimen: "Fluoride plasma / capillary blood", price: 250, status: "ACTIVE" },
+  { id: "urinalysis", code: "UA", name: "Urinalysis", category: "Clinical microscopy", description: "Examines urine for physical, chemical and microscopic findings.", sample_type: "Midstream urine", specimen: "Midstream urine", price: 450, status: "ACTIVE" },
+  { id: "lft", code: "LFT", name: "Liver Function Tests", category: "Clinical chemistry", description: "Panel assessing liver-related enzymes, proteins and bilirubin.", sample_type: "Serum", specimen: "Serum", price: 1500, status: "ACTIVE" },
+  { id: "ufb", code: "U&E", name: "Urea & Electrolytes", category: "Clinical chemistry", description: "Assesses urea and key electrolytes used in renal and fluid assessment.", sample_type: "Serum / plasma", specimen: "Serum / plasma", price: 1200, status: "ACTIVE" },
 ];
 
+type DemoRecord = { result: string; status: "PENDING" | "PERFORMED" | "RESULTED" };
+
 export function LaboratoryWorkflowPage() {
+  return isDemoMode() ? <DemoLaboratory /> : <LiveLaboratory />;
+}
+
+function DemoLaboratory() {
   const [selected, setSelected] = useState<string[]>(["fbc", "malaria"]);
-  const [records, setRecords] = useState<Record<string, LabRecord>>({
-    fbc: { ...DEMO_TESTS[0], result: "Hb 12.8 g/dL · WBC 7.2 ×10⁹/L · Platelets 286 ×10⁹/L", status: "RESULTED" },
-    malaria: { ...DEMO_TESTS[1], result: "Negative", status: "RESULTED" },
-  });
+  const [records, setRecords] = useState<Record<string, DemoRecord>>({ fbc: { result: "Hb 12.8 g/dL · WBC 7.2 ×10⁹/L · Platelets 286 ×10⁹/L", status: "RESULTED" }, malaria: { result: "Negative", status: "RESULTED" } });
   const [showAdd, setShowAdd] = useState(false);
-  const [customTests, setCustomTests] = useState<LabTest[]>([]);
+  const [customTests, setCustomTests] = useState<DemoTest[]>([]);
   const [newTest, setNewTest] = useState({ name: "", code: "", description: "", specimen: "", price: "" });
   const [forwarded, setForwarded] = useState(false);
-  const [message, setMessage] = useState("Select tests, record each result, then forward the completed laboratory findings to prescription review.");
-
   const allTests = useMemo(() => [...DEMO_TESTS, ...customTests], [customTests]);
   const selectedTests = allTests.filter((test) => selected.includes(test.id));
   const total = selectedTests.reduce((sum, test) => sum + test.price, 0);
   const completed = selectedTests.filter((test) => records[test.id]?.status === "RESULTED" && records[test.id]?.result.trim()).length;
-
-  function toggle(id: string) {
-    setSelected((current) => current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
-    setForwarded(false);
-  }
-
-  function recordResult(test: LabTest, result: string) {
-    setRecords((current) => ({ ...current, [test.id]: { ...test, result, status: result.trim() ? "RESULTED" : "PENDING" } }));
-    setForwarded(false);
-  }
-
-  function markPerformed(test: LabTest) {
-    setRecords((current) => ({ ...current, [test.id]: { ...(current[test.id] ?? test), result: current[test.id]?.result ?? "", status: "PERFORMED" } }));
-    setMessage(`${test.name} marked as performed. Enter the result before forwarding.`);
-  }
-
-  function addTest() {
-    const price = Number(newTest.price);
-    if (!newTest.name.trim() || !newTest.code.trim() || !newTest.description.trim() || !newTest.specimen.trim() || !Number.isFinite(price) || price <= 0) return;
-    const test: LabTest = { id: `custom-${Date.now()}`, code: newTest.code.trim().toUpperCase(), name: newTest.name.trim(), category: "Custom laboratory", description: newTest.description.trim(), specimen: newTest.specimen.trim(), price };
-    setCustomTests((current) => [...current, test]);
-    setSelected((current) => [...current, test.id]);
-    setNewTest({ name: "", code: "", description: "", specimen: "", price: "" });
-    setShowAdd(false);
-    setMessage(`${test.name} added to this laboratory order at KES ${price.toLocaleString()}.`);
-  }
-
-  return (
-    <section className="page-stack">
-      <header className="page-heading">
-        <div>
-          <p className="eyebrow">Clinical laboratory information system</p>
-          <h1>Laboratory</h1>
-          <p className="muted">Order tests, track each examination, capture individual results, calculate test-level charges and forward completed findings to the clinician.</p>
-        </div>
-        <div className="form-actions"><span className="status-pill">DEMO WORKFLOW</span><button onClick={() => setShowAdd((value) => !value)}>{showAdd ? "Close add test" : "+ Add test"}</button></div>
-      </header>
-
-      <div className="success-box"><strong>Laboratory demo is active.</strong> This is the laboratory stage that connects testing → results → prescription review → pharmacy.</div>
-
-      <article className="card">
-        <div className="row-between"><div><h2>Laboratory workflow</h2><p className="muted">A real-world style sequence for an encounter. Each test is handled as its own clinical and billing item.</p></div><span className="badge">{completed}/{selectedTests.length} RESULTS READY</span></div>
-        <div className="lab-workflow-strip">
-          {["Order test", "Collect specimen", "Perform test", "Record result", "Bill test", "Forward to clinician"].map((step, index) => <div className="lab-workflow-step" key={step}><span>{index + 1}</span><strong>{step}</strong></div>)}
-        </div>
-      </article>
-
-      {showAdd && <article className="card">
-        <div className="row-between"><div><h2>+ Add laboratory test</h2><p className="muted">Every new test gets its own code, description, specimen requirement and standalone price.</p></div><span className="badge">TEST CATALOGUE</span></div>
-        <div className="lab-add-grid">
-          <label>Test name<input value={newTest.name} placeholder="e.g. Kidney Function Test" onChange={(e) => setNewTest({ ...newTest, name: e.target.value })} /></label>
-          <label>Test code<input value={newTest.code} placeholder="e.g. KFT" onChange={(e) => setNewTest({ ...newTest, code: e.target.value })} /></label>
-          <label>Specimen / sample<input value={newTest.specimen} placeholder="e.g. Serum" onChange={(e) => setNewTest({ ...newTest, specimen: e.target.value })} /></label>
-          <label>Price (KES)<input type="number" min="1" value={newTest.price} placeholder="e.g. 1200" onChange={(e) => setNewTest({ ...newTest, price: e.target.value })} /></label>
-          <label className="lab-add-wide">Description<textarea value={newTest.description} placeholder="What this examination measures or helps assess" onChange={(e) => setNewTest({ ...newTest, description: e.target.value })} /></label>
-        </div>
-        <div className="form-actions"><button disabled={!newTest.name.trim() || !newTest.code.trim() || !newTest.description.trim() || !newTest.specimen.trim() || Number(newTest.price) <= 0} onClick={addTest}>Add test to order</button><button className="button secondary" onClick={() => setShowAdd(false)}>Cancel</button></div>
-      </article>}
-
-      <article className="card">
-        <div className="row-between"><div><h2>1. Add / select tests</h2><p className="muted">Choose the examinations requested by the clinician. Each test has its own description, specimen and price.</p></div><div className="lab-total-card"><small>Current laboratory total</small><strong>KES {total.toLocaleString()}</strong></div></div>
-        <div className="lab-test-grid">{allTests.map((test) => <label key={test.id} className={selected.includes(test.id) ? "lab-test-card selected" : "lab-test-card"}><input type="checkbox" checked={selected.includes(test.id)} onChange={() => toggle(test.id)} /><div><div className="row-between"><strong>{test.name}</strong><strong>KES {test.price.toLocaleString()}</strong></div><p className="muted">{test.code} · {test.category}</p><p>{test.description}</p><small>Specimen: {test.specimen}</small></div></label>)}</div>
-      </article>
-
-      <article className="card">
-        <div className="row-between"><div><h2>2. Individual test records</h2><p className="muted">Every examination is written down separately. Enter the observation/result and its workflow status.</p></div><span className="status-pill">{completed} OF {selectedTests.length} COMPLETE</span></div>
-        <div className="table-wrap"><table><thead><tr><th>Test</th><th>Description</th><th>Specimen</th><th>Price</th><th>Result / observation</th><th>Status</th></tr></thead><tbody>{selectedTests.map((test) => { const record = records[test.id]; return <tr key={test.id}><td><strong>{test.name}</strong><br /><small>{test.code}</small></td><td>{test.description}</td><td>{test.specimen}</td><td><strong>KES {test.price.toLocaleString()}</strong></td><td><input value={record?.result ?? ""} placeholder="Enter laboratory result" onChange={(e) => recordResult(test, e.target.value)} /></td><td>{record?.status === "RESULTED" ? <span className="status-pill">RESULTED</span> : record?.status === "PERFORMED" ? <span className="badge">PERFORMED</span> : <button className="button secondary" onClick={() => markPerformed(test)}>Mark performed</button>}</td></tr>; })}</tbody></table></div>
-      </article>
-
-      <article className="card">
-        <div className="row-between"><div><h2>3. Test-by-test billing</h2><p className="muted">Laboratory charges are separate line items. The total is calculated from the individual test prices.</p></div><strong>KES {total.toLocaleString()}</strong></div>
-        <div className="lab-summary">{selectedTests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{test.code} · {records[test.id]?.status === "RESULTED" ? "Resulted" : "Pending"}</p></div><span>1 ×</span><strong>KES {test.price.toLocaleString()}</strong></div>)}</div>
-        <div className="billing-total">Laboratory total: KES {total.toLocaleString()}</div>
-      </article>
-
-      <article className="card">
-        <div className="row-between"><div><h2>4. Forward completed results to prescription review</h2><p className="muted">Results go to the authorized clinician for interpretation and prescription decisions. The laboratory does not automatically prescribe medicine.</p></div><span className={completed === selectedTests.length && selectedTests.length > 0 ? "status-pill" : "badge"}>{completed === selectedTests.length && selectedTests.length > 0 ? "READY TO FORWARD" : "WAITING"}</span></div>
-        <div className="lab-summary">{selectedTests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{records[test.id]?.result || "Result pending"}</p></div><span className={records[test.id]?.status === "RESULTED" ? "status-pill" : "badge"}>{records[test.id]?.status === "RESULTED" ? "READY" : "PENDING"}</span></div>)}</div>
-        <div className="form-actions"><button disabled={selectedTests.length === 0 || completed !== selectedTests.length} onClick={() => { setForwarded(true); setMessage("All laboratory tests are recorded. Results have been forwarded to prescription review."); }}>{forwarded ? "✓ Results forwarded" : "Forward results to prescription review"}</button></div>
-        {forwarded && <div className="success-box"><strong>LABORATORY COMPLETE</strong> · Individual results recorded · Test charges KES {total.toLocaleString()} · Results forwarded to clinician · Prescription review is now available.</div>}
-      </article>
-
-      <div className="info-box"><strong>Demo hand-off:</strong> after forwarding, continue to <strong>Prescription</strong> → <strong>Pharmacy stock</strong> → <strong>Dispensing</strong> → <strong>Billing</strong> → <strong>SHA claim</strong>.</div>
-      <div className="muted small">{message}</div>
-    </section>
-  );
+  function addTest() { const price = Number(newTest.price); if (!newTest.name.trim() || !newTest.code.trim() || !newTest.description.trim() || !newTest.specimen.trim() || !Number.isFinite(price) || price <= 0) return; const test: DemoTest = { id: `custom-${Date.now()}`, code: newTest.code.trim().toUpperCase(), name: newTest.name.trim(), category: "Custom laboratory", description: newTest.description.trim(), sample_type: newTest.specimen.trim(), specimen: newTest.specimen.trim(), price, status: "ACTIVE" }; setCustomTests((current) => [...current, test]); setSelected((current) => [...current, test.id]); setNewTest({ name: "", code: "", description: "", specimen: "", price: "" }); setShowAdd(false); }
+  return <section className="page-stack"><LabHeader demo onAdd={() => setShowAdd((v) => !v)} />
+    <div className="success-box"><strong>Demo presentation mode.</strong> This screen mirrors the real laboratory workflow without writing demo data into the live database.</div>
+    {showAdd && <AddTestCard value={newTest} setValue={setNewTest} onAdd={addTest} onCancel={() => setShowAdd(false)} />}
+    <WorkflowSteps />
+    <article className="card"><div className="row-between"><div><h2>1. Add / select tests</h2><p className="muted">Each examination has its own description, specimen and standalone price.</p></div><div className="lab-total-card"><small>Laboratory total</small><strong>KES {total.toLocaleString()}</strong></div></div><div className="lab-test-grid">{allTests.map((test) => <label key={test.id} className={selected.includes(test.id) ? "lab-test-card selected" : "lab-test-card"}><input type="checkbox" checked={selected.includes(test.id)} onChange={() => { setSelected((c) => c.includes(test.id) ? c.filter((x) => x !== test.id) : [...c, test.id]); setForwarded(false); }} /><div><div className="row-between"><strong>{test.name}</strong><strong>KES {test.price.toLocaleString()}</strong></div><p className="muted">{test.code} · {test.category}</p><p>{test.description}</p><small>Specimen: {test.specimen}</small></div></label>)}</div></article>
+    <TestRecords tests={selectedTests} records={records} setRecords={setRecords} demo />
+    <BillingCard tests={selectedTests} />
+    <ForwardCard tests={selectedTests} records={records} ready={completed === selectedTests.length && selectedTests.length > 0} forwarded={forwarded} onForward={() => setForwarded(true)} />
+  </section>;
 }
+
+function LiveLaboratory() {
+  const [catalogue, setCatalogue] = useState<LabTest[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [order, setOrder] = useState<LabOrderDetail | null>(null);
+  const [encounterId, setEncounterId] = useState("");
+  const [priority, setPriority] = useState<"NORMAL" | "URGENT" | "EMERGENCY">("NORMAL");
+  const [resultInputs, setResultInputs] = useState<Record<string, string>>({});
+  const [samples, setSamples] = useState<Record<string, string>>({});
+  const [showAdd, setShowAdd] = useState(false);
+  const [newTest, setNewTest] = useState({ name: "", code: "", description: "", specimen: "", price: "" });
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => { api.listLabTests().then(setCatalogue).catch((e) => setError(e instanceof ApiError ? e.code : "LAB_CATALOGUE_FAILED")); }, []);
+  const selectedTests = catalogue.filter((test) => selected.includes(test.id));
+  const total = selectedTests.reduce((sum, test) => sum + Number(test.price), 0);
+  async function refresh(orderId: string) { const next = await api.getLabOrder(orderId); setOrder(next); }
+  async function createOrder() { setError(""); if (!encounterId.trim() || selected.length === 0) return; try { const created = await api.createLabOrder({ encounter_id: encounterId.trim(), priority, items: selected.map((test_id) => ({ test_id })) }); await refresh(created.id); setMessage("Laboratory order created. Collect each specimen to continue."); } catch (e) { setError(e instanceof ApiError ? e.code : "LAB_ORDER_FAILED"); } }
+  async function collect(itemId: string) { try { const sample = await api.collectLabSample(itemId); setSamples((c) => ({ ...c, [itemId]: sample.id })); if (order) await refresh(order.id); } catch (e) { setError(e instanceof ApiError ? e.code : "SAMPLE_COLLECTION_FAILED"); } }
+  async function receive(itemId: string) { const sampleId = samples[itemId]; if (!sampleId || !order) return; try { await api.receiveLabSample(sampleId); await refresh(order.id); } catch (e) { setError(e instanceof ApiError ? e.code : "SAMPLE_RECEIVE_FAILED"); } }
+  async function enter(itemId: string) { const sampleId = samples[itemId]; const value = resultInputs[itemId]?.trim(); if (!sampleId || !value || !order) return; try { await api.enterLabResult({ lab_order_item_id: itemId, sample_id: sampleId, result: value }); await refresh(order.id); setMessage("Result entered. Verify it to complete the test and create its charge."); } catch (e) { setError(e instanceof ApiError ? e.code : "RESULT_ENTRY_FAILED"); } }
+  async function verify(resultId: string) { if (!order) return; try { await api.verifyLabResult(resultId); await refresh(order.id); } catch (e) { setError(e instanceof ApiError ? e.code : "RESULT_VERIFY_FAILED"); } }
+  async function forward() { if (!order) return; try { const response = await api.forwardLabOrder(order.id); await refresh(order.id); setMessage(response.message); } catch (e) { setError(e instanceof ApiError ? e.code : "LAB_FORWARD_FAILED"); } }
+  async function addTest() { const price = Number(newTest.price); if (!newTest.name.trim() || !newTest.code.trim() || !newTest.description.trim() || !newTest.specimen.trim() || !Number.isFinite(price) || price <= 0) return; try { const created = await api.addLabTest({ code: newTest.code, name: newTest.name, description: newTest.description, category: "Laboratory", sample_type: newTest.specimen, price }); setCatalogue((c) => [...c, created]); setSelected((c) => [...c, created.id]); setNewTest({ name: "", code: "", description: "", specimen: "", price: "" }); setShowAdd(false); setMessage(`${created.name} added to the real laboratory catalogue.`); } catch (e) { setError(e instanceof ApiError ? e.code : "LAB_TEST_CREATE_FAILED"); } }
+  return <section className="page-stack"><LabHeader live onAdd={() => setShowAdd((v) => !v)} />
+    {error && <div className="error">{error}</div>}{message && <div className="success-box">{message}</div>}
+    {showAdd && <AddTestCard value={newTest} setValue={setNewTest} onAdd={addTest} onCancel={() => setShowAdd(false)} />}
+    <WorkflowSteps />
+    <article className="card"><div className="row-between"><div><h2>1. Order laboratory tests</h2><p className="muted">Select tests for an open encounter. The selected tests become real laboratory order items.</p></div><div className="lab-total-card"><small>Order total</small><strong>KES {total.toLocaleString()}</strong></div></div><div className="lab-add-grid"><label>Open encounter ID<input value={encounterId} placeholder="Paste encounter UUID" onChange={(e) => setEncounterId(e.target.value)} /></label><label>Priority<select value={priority} onChange={(e) => setPriority(e.target.value as typeof priority)}><option>NORMAL</option><option>URGENT</option><option>EMERGENCY</option></select></label></div><div className="lab-test-grid">{catalogue.map((test) => <label key={test.id} className={selected.includes(test.id) ? "lab-test-card selected" : "lab-test-card"}><input type="checkbox" checked={selected.includes(test.id)} disabled={!!order} onChange={() => setSelected((c) => c.includes(test.id) ? c.filter((x) => x !== test.id) : [...c, test.id])} /><div><div className="row-between"><strong>{test.name}</strong><strong>KES {Number(test.price).toLocaleString()}</strong></div><p className="muted">{test.code} · {test.category || "Laboratory"}</p><p>{test.description}</p><small>Specimen: {test.sample_type || "Not specified"}</small></div></label>)}</div><div className="form-actions"><button disabled={!!order || !encounterId.trim() || selected.length === 0} onClick={createOrder}>{order ? `Order ${order.order_id}` : "Create laboratory order"}</button></div></article>
+    {order && <><article className="card"><div className="row-between"><div><h2>2. Individual test records</h2><p className="muted">Order {order.order_id} · every examination is tracked separately from specimen collection through verified result.</p></div><span className="status-pill">{order.status}</span></div><div className="table-wrap"><table><thead><tr><th>Test</th><th>Specimen / status</th><th>Result</th><th>Price</th><th>Action</th></tr></thead><tbody>{order.items.map((item) => <tr key={item.id}><td><strong>{item.test_name}</strong><br /><small>{item.test_code}</small><p className="muted">{item.description}</p></td><td><strong>{item.sample_type || "—"}</strong><br /><span className="badge">{item.status}</span></td><td>{item.result ? <><strong>{item.result.result}</strong><br /><small>{item.result.status}</small></> : <input value={resultInputs[item.id] || ""} placeholder="Enter result after sample received" onChange={(e) => setResultInputs((c) => ({ ...c, [item.id]: e.target.value }))} disabled={item.status !== "SAMPLE_RECEIVED"} />}</td><td><strong>KES {Number(item.price).toLocaleString()}</strong>{item.charge_id && <><br /><small>Charged</small></>}</td><td>{item.status === "ORDERED" && <button onClick={() => collect(item.id)}>Collect specimen</button>}{item.status === "SAMPLE_COLLECTED" && <button onClick={() => receive(item.id)}>Receive specimen</button>}{item.status === "SAMPLE_RECEIVED" && <button onClick={() => enter(item.id)} disabled={!resultInputs[item.id]?.trim()}>Record result</button>}{item.status === "RESULT_ENTERED" && item.result && <button onClick={() => verify(item.result!.id)}>Verify result</button>}{item.status === "RESULT_VERIFIED" && <span className="status-pill">VERIFIED + BILLED</span>}</td></tr>)}</tbody></table></div></article>
+      <article className="card"><h2>3. Test-by-test billing</h2><p className="muted">Verified tests create real encounter charges using the individual catalogue price.</p><div className="lab-summary">{order.items.map((item) => <div className="billing-line" key={item.id}><div><strong>{item.test_name}</strong><p className="muted">{item.charge_id ? "Verified and billed" : "Not yet billed"}</p></div><span>1 ×</span><strong>KES {Number(item.price).toLocaleString()}</strong></div>)}</div><div className="billing-total">Laboratory order total: KES {Number(order.total_amount).toLocaleString()}</div></article>
+      <article className="card"><div className="row-between"><div><h2>4. Forward verified results to prescription review</h2><p className="muted">All tests must be verified. The hand-off records the action on the real laboratory order; it does not prescribe automatically.</p></div><span className={order.forwarded_at ? "status-pill" : "badge"}>{order.forwarded_at ? "FORWARDED" : "PENDING"}</span></div><div className="form-actions"><button disabled={order.status !== "COMPLETED" || !!order.forwarded_at} onClick={forward}>{order.forwarded_at ? "Results forwarded" : "Forward to prescription review"}</button></div></article></>}
+  </section>;
+}
+
+function LabHeader({ demo = false, live = false, onAdd }: { demo?: boolean; live?: boolean; onAdd: () => void }) { return <header className="page-heading"><div><p className="eyebrow">Clinical laboratory information system</p><h1>Laboratory</h1><p className="muted">Order tests, track specimens, record individual results, bill each test and hand verified findings to prescription review.</p></div><div className="form-actions"><span className="status-pill">{demo ? "DEMO WORKFLOW" : live ? "LIVE SYSTEM" : "LABORATORY"}</span><button onClick={onAdd}>+ Add test</button></div></header>; }
+
+function WorkflowSteps() { return <article className="card"><div className="row-between"><div><h2>Laboratory workflow</h2><p className="muted">A complete clinical sequence from request to clinician hand-off.</p></div></div><div className="lab-workflow-strip">{["Order test", "Collect specimen", "Perform test", "Record result", "Bill test", "Forward to clinician"].map((step, index) => <div className="lab-workflow-step" key={step}><span>{index + 1}</span><strong>{step}</strong></div>)}</div></article>; }
+
+function AddTestCard({ value, setValue, onAdd, onCancel }: { value: { name: string; code: string; description: string; specimen: string; price: string }; setValue: (value: typeof value) => void; onAdd: () => void; onCancel: () => void }) { return <article className="card"><div className="row-between"><div><h2>+ Add laboratory test</h2><p className="muted">Create a test with its own code, clinical description, specimen requirement and standalone price.</p></div><span className="badge">TEST CATALOGUE</span></div><div className="lab-add-grid"><label>Test name<input value={value.name} placeholder="e.g. Kidney Function Test" onChange={(e) => setValue({ ...value, name: e.target.value })} /></label><label>Test code<input value={value.code} placeholder="e.g. KFT" onChange={(e) => setValue({ ...value, code: e.target.value })} /></label><label>Specimen / sample<input value={value.specimen} placeholder="e.g. Serum" onChange={(e) => setValue({ ...value, specimen: e.target.value })} /></label><label>Price (KES)<input type="number" min="1" value={value.price} placeholder="e.g. 1200" onChange={(e) => setValue({ ...value, price: e.target.value })} /></label><label className="lab-add-wide">Description<textarea value={value.description} placeholder="What this examination measures or helps assess" onChange={(e) => setValue({ ...value, description: e.target.value })} /></label></div><div className="form-actions"><button disabled={!value.name.trim() || !value.code.trim() || !value.description.trim() || !value.specimen.trim() || Number(value.price) <= 0} onClick={onAdd}>Add test</button><button className="button secondary" onClick={onCancel}>Cancel</button></div></article>; }
+
+function TestRecords({ tests, records, setRecords, demo }: { tests: DemoTest[]; records: Record<string, DemoRecord>; setRecords: React.Dispatch<React.SetStateAction<Record<string, DemoRecord>>>; demo: boolean }) { const completed = tests.filter((t) => records[t.id]?.status === "RESULTED" && records[t.id]?.result.trim()).length; return <article className="card"><div className="row-between"><div><h2>2. Individual test records</h2><p className="muted">Every examination is recorded separately with its own result and status.</p></div><span className="status-pill">{completed} OF {tests.length} COMPLETE</span></div><div className="table-wrap"><table><thead><tr><th>Test</th><th>Description</th><th>Specimen</th><th>Price</th><th>Result / observation</th><th>Status</th></tr></thead><tbody>{tests.map((test) => { const record = records[test.id] ?? { result: "", status: "PENDING" as const }; return <tr key={test.id}><td><strong>{test.name}</strong><br /><small>{test.code}</small></td><td>{test.description}</td><td>{test.specimen}</td><td><strong>KES {test.price.toLocaleString()}</strong></td><td><input value={record.result} placeholder="Enter laboratory result" onChange={(e) => { setRecords((c) => ({ ...c, [test.id]: { result: e.target.value, status: e.target.value.trim() ? "RESULTED" : "PENDING" } })); }} /></td><td>{record.status === "RESULTED" ? <span className="status-pill">RESULTED</span> : <button className="button secondary" onClick={() => setRecords((c) => ({ ...c, [test.id]: { ...record, status: "PERFORMED" } }))}>Mark performed</button>}</td></tr>; })}</tbody></table></div></article>; }
+
+function BillingCard({ tests }: { tests: LabTest[] }) { const total = tests.reduce((sum, test) => sum + Number(test.price), 0); return <article className="card"><h2>3. Test-by-test billing</h2><p className="muted">Every laboratory test has its own standalone charge.</p><div className="lab-summary">{tests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{test.code}</p></div><span>1 ×</span><strong>KES {Number(test.price).toLocaleString()}</strong></div>)}</div><div className="billing-total">Laboratory total: KES {total.toLocaleString()}</div></article>; }
+
+function ForwardCard({ tests, records, ready, forwarded, onForward }: { tests: DemoTest[]; records: Record<string, DemoRecord>; ready: boolean; forwarded: boolean; onForward: () => void }) { return <article className="card"><div className="row-between"><div><h2>4. Forward completed results to prescription review</h2><p className="muted">The authorized clinician reviews laboratory findings and decides whether medication is appropriate.</p></div><span className={ready ? "status-pill" : "badge"}>{ready ? "READY TO FORWARD" : "WAITING"}</span></div><div className="lab-summary">{tests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{records[test.id]?.result || "Result pending"}</p></div><span className={records[test.id]?.status === "RESULTED" ? "status-pill" : "badge"}>{records[test.id]?.status === "RESULTED" ? "READY" : "PENDING"}</span></div>)}</div><div className="form-actions"><button disabled={!ready} onClick={onForward}>{forwarded ? "✓ Results forwarded" : "Forward results to prescription review"}</button></div>{forwarded && <div className="success-box"><strong>LABORATORY COMPLETE</strong> · Results recorded · Charges calculated · Findings forwarded to prescription review.</div>}</article>; }
