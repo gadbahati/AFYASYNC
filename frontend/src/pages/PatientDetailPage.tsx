@@ -1,71 +1,182 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import type { Patient } from "../api/types";
+import type { PatientRecord } from "../api/types";
+import "./patient-record.css";
+
+const money = (value: number | string | null | undefined) => `KES ${Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const dateTime = (value: string | null | undefined) => value ? new Date(value).toLocaleString() : "—";
+const dateOnly = (value: string | null | undefined) => value ? new Date(value).toLocaleDateString() : "—";
 
 export function PatientDetailPage() {
   const { patientId } = useParams();
-  const [patient, setPatient] = useState<Patient | null>(null);
+  const [record, setRecord] = useState<PatientRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!patientId) return;
     let cancelled = false;
-    api
-      .getPatient(patientId)
-      .then((data) => {
-        if (!cancelled) setPatient(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.code : "PATIENT_LOAD_FAILED");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    setLoading(true);
+    setError(null);
+    api.getPatientRecord(patientId)
+      .then((data) => { if (!cancelled) setRecord(data); })
+      .catch((err) => { if (!cancelled) setError(err instanceof ApiError ? err.code : "PATIENT_RECORD_LOAD_FAILED"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [patientId]);
 
+  const stats = useMemo(() => {
+    if (!record) return null;
+    const charges = record.billing.charges.reduce((sum, x) => sum + Number(x.total_amount || 0), 0);
+    const paid = record.billing.payments.filter((x) => x.status === "CONFIRMED").reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    return {
+      encounters: record.encounters.length,
+      prescriptions: record.prescriptions.length,
+      labTests: record.laboratory.reduce((sum, x) => sum + x.items.length, 0),
+      admissions: record.admissions.length,
+      appointments: record.appointments.length,
+      referrals: record.referrals.length + record.transfers.length,
+      charges,
+      paid,
+    };
+  }, [record]);
+
   return (
-    <div>
+    <section className="patient-record-page">
       <header className="page-header">
         <div>
           <Link to="/patients" className="muted">← Patients</Link>
           <h1>Patient record</h1>
+          <p className="muted">Complete longitudinal record for this patient at the current facility</p>
         </div>
-        {patient && (
-          <Link className="button" to={`/patients/${patient.id}/encounters/new`}>
-            Open encounter
-          </Link>
-        )}
+        {record && <Link className="button" to={`/patients/${record.patient.id}/encounters/new`}>Open encounter</Link>}
       </header>
 
-      {loading && <p>Loading…</p>}
-      {error && <div className="error">{error}</div>}
+      {loading && <p>Loading complete patient record…</p>}
+      {error && <div className="error">Unable to load patient record: {error}</div>}
 
-      {patient && (
-        <div className="card detail-grid">
-          <Field label="Afya ID" value={patient.afya_id} />
-          <Field label="Name" value={[patient.first_name, patient.middle_name, patient.last_name].filter(Boolean).join(" ")} />
-          <Field label="Date of birth" value={patient.date_of_birth || "—"} />
-          <Field label="Sex" value={patient.sex || "—"} />
-          <Field label="Phone" value={patient.phone || "—"} />
-          <Field label="Email" value={patient.email || "—"} />
-          <Field label="Address" value={patient.address || "—"} />
-          <Field label="Status" value={patient.status} />
-        </div>
+      {record && stats && (
+        <>
+          <section className="patient-hero card">
+            <div className="patient-avatar">{record.patient.first_name.charAt(0)}{record.patient.last_name.charAt(0)}</div>
+            <div className="patient-hero-main">
+              <div className="row-between">
+                <div>
+                  <h2>{[record.patient.first_name, record.patient.middle_name, record.patient.last_name].filter(Boolean).join(" ")}</h2>
+                  <p className="muted">Afya ID <strong>{record.patient.afya_id}</strong> · Registered {dateTime(record.patient.registered_at)}</p>
+                </div>
+                <span className="status-pill">{record.patient.status}</span>
+              </div>
+              <div className="patient-facts">
+                <Fact label="Date of birth" value={dateOnly(record.patient.date_of_birth)} />
+                <Fact label="Sex" value={record.patient.sex || "—"} />
+                <Fact label="Phone" value={record.patient.phone || "—"} />
+                <Fact label="Email" value={record.patient.email || "—"} />
+                <Fact label="Address" value={record.patient.address || "—"} />
+                <Fact label="Enrollment" value={record.patient.enrollment_status} />
+              </div>
+            </div>
+          </section>
+
+          <div className="patient-stat-grid">
+            <Stat label="Visits / encounters" value={stats.encounters} />
+            <Stat label="Prescriptions" value={stats.prescriptions} />
+            <Stat label="Lab tests" value={stats.labTests} />
+            <Stat label="Admissions" value={stats.admissions} />
+            <Stat label="Appointments" value={stats.appointments} />
+            <Stat label="Referrals / transfers" value={stats.referrals} />
+            <Stat label="Charges" value={money(stats.charges)} />
+            <Stat label="Confirmed payments" value={money(stats.paid)} />
+          </div>
+
+          <RecordSection title="Personal & emergency information" count={null}>
+            <div className="record-grid">
+              <Fact label="Emergency contact" value={record.patient.emergency_contact_name || "—"} />
+              <Fact label="Emergency phone" value={record.patient.emergency_contact_phone || "—"} />
+              <Fact label="Next of kin" value={record.patient.next_of_kin_name || "—"} />
+              <Fact label="Next of kin phone" value={record.patient.next_of_kin_phone || "—"} />
+            </div>
+          </RecordSection>
+
+          <RecordSection title="SHA / coverage" count={record.coverage.length}>
+            {record.coverage.length === 0 ? <Empty text="No coverage record is attached to this patient." /> : record.coverage.map((c) => (
+              <div className="record-row" key={c.id}>
+                <div><strong>{c.payer_name}</strong><div className="muted">{c.plan_name || c.payer_code} · Membership {c.membership_number || "—"}</div></div>
+                <div><span className="badge">{c.verification_status}</span><div className="muted small">{c.start_date || "—"} → {c.end_date || "Open"}</div></div>
+              </div>
+            ))}
+          </RecordSection>
+
+          <RecordSection title="Visits & clinical history" count={record.encounters.length}>
+            {record.encounters.length === 0 ? <Empty text="No visits or encounters recorded at this facility." /> : record.encounters.map((e) => (
+              <article className="timeline-card" key={e.id}>
+                <div className="timeline-dot" />
+                <div className="timeline-content">
+                  <div className="row-between"><div><strong>{e.type} · {e.department_name || "Department"}</strong><div className="muted">{e.encounter_id} · {dateTime(e.started_at)}</div></div><span className="badge">{e.status}</span></div>
+                  {e.reason && <p><strong>Reason:</strong> {e.reason}</p>}
+                  {e.diagnoses.length > 0 && <div className="subsection"><strong>Diagnoses</strong><ul>{e.diagnoses.map((d) => <li key={d.id}>{d.diagnosis_name}{d.diagnosis_code ? ` (${d.diagnosis_code})` : ""}</li>)}</ul></div>}
+                  {e.consultation && <div className="subsection"><strong>Doctor consultation</strong><div className="clinical-fields"><Field label="Chief complaint" value={e.consultation.chief_complaint} /><Field label="History" value={e.consultation.history} /><Field label="Examination" value={e.consultation.examination} /><Field label="Assessment" value={e.consultation.assessment} /><Field label="Clinical notes" value={e.consultation.clinical_notes} /><Field label="Treatment plan" value={e.consultation.treatment_plan} /></div></div>}
+                  {e.vitals.length > 0 && <div className="subsection"><strong>Vitals</strong><div className="vitals-grid">{e.vitals.slice(0, 3).map((v) => <div key={v.id} className="mini-card"><div className="muted small">{dateTime(v.recorded_at)}</div><div>BP {v.systolic_bp ?? "—"}/{v.diastolic_bp ?? "—"}</div><div>Pulse {v.pulse ?? "—"} · Temp {v.temperature_c ?? "—"} °C</div><div>SpO₂ {v.oxygen_saturation ?? "—"}% · Weight {v.weight_kg ?? "—"} kg</div></div>)}</div></div>}
+                </div>
+              </article>
+            ))}
+          </RecordSection>
+
+          <RecordSection title="Laboratory" count={stats.labTests}>
+            {record.laboratory.length === 0 ? <Empty text="No laboratory orders recorded." /> : record.laboratory.map((order) => (
+              <article className="record-block" key={order.id}>
+                <div className="row-between"><div><strong>{order.order_id}</strong><div className="muted">Encounter {order.encounter_id} · {dateTime(order.created_at)}</div></div><span className="badge">{order.status}</span></div>
+                <div className="table-wrap"><table><thead><tr><th>Test</th><th>Specimen</th><th>Result</th><th>Price</th><th>Status</th></tr></thead><tbody>{order.items.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><div className="muted small">{item.code}</div></td><td>{item.sample_type || "—"}</td><td>{item.result ? <><strong>{item.result.result}</strong><div className="muted small">{item.result.unit || ""} {item.result.reference_range ? `· Ref ${item.result.reference_range}` : ""}</div>{item.result.comments && <div className="muted small">{item.result.comments}</div>}</> : "Pending"}</td><td>{money(item.price)}</td><td>{item.result?.status || item.status}</td></tr>)}</tbody></table></div>
+              </article>
+            ))}
+          </RecordSection>
+
+          <RecordSection title="Prescriptions & medicines" count={record.prescriptions.length}>
+            {record.prescriptions.length === 0 ? <Empty text="No prescriptions recorded." /> : record.prescriptions.map((p) => (
+              <article className="record-block" key={p.id}><div className="row-between"><div><strong>{p.prescription_id}</strong><div className="muted">Encounter {p.encounter_id} · {dateTime(p.created_at)}</div></div><span className="badge">{p.status}</span></div><div className="medicine-list">{p.items.map((m) => <div className="record-row" key={m.id}><div><strong>{m.name} {m.strength || ""}</strong><div className="muted">{m.dose} · {m.frequency} · {m.duration} · {m.route || "Route not recorded"}</div></div><div className="right"><strong>Qty {m.quantity}</strong><div className="muted small">{m.instructions || "—"}</div></div></div>)}</div></article>
+            ))}
+            {record.medication_actions.length > 0 && <div className="subsection"><strong>Pharmacy / medication actions</strong>{record.medication_actions.map((a) => <div className="record-row" key={a.id}><div><strong>{a.medication_name}</strong><div className="muted">{a.action_type} · Encounter {a.encounter_id}</div></div><div className="right">Qty {a.quantity}<div className="muted small">{dateTime(a.performed_at)}</div></div></div>)}</div>}
+          </RecordSection>
+
+          <RecordSection title="Admissions & pre-authorisations" count={record.admissions.length + record.preauthorizations.length}>
+            {record.admissions.map((a) => <div className="record-row" key={a.id}><div><strong>{a.admission_number}</strong><div className="muted">{a.ward} · Bed {a.bed} · {a.benefit_package_code}</div><div>{a.diagnosis || "No admission diagnosis recorded"}</div></div><div className="right"><span className="badge">{a.status}</span><div className="muted small">Admitted {dateTime(a.admitted_at)}{a.discharged_at ? ` · Discharged ${dateTime(a.discharged_at)}` : ""}</div></div></div>)}
+            {record.preauthorizations.map((a) => <div className="record-row" key={a.id}><div><strong>{a.authorization_number}</strong><div className="muted">{a.payer_name} · {a.benefit_package_code} · {a.care_setting}</div><div className="muted">Services: {a.requested_services.join(", ") || "—"}</div></div><div className="right"><span className="badge">{a.status}</span><div>Requested {money(a.requested_amount)} · Approved {money(a.approved_amount)}</div></div></div>)}
+            {record.admissions.length === 0 && record.preauthorizations.length === 0 && <Empty text="No admissions or pre-authorisations recorded." />}
+          </RecordSection>
+
+          <RecordSection title="Billing, invoices & payments" count={record.billing.charges.length + record.billing.invoices.length + record.billing.payments.length}>
+            <div className="billing-summary"><div><span className="muted">Charges</span><strong>{money(stats.charges)}</strong></div><div><span className="muted">Confirmed payments</span><strong>{money(stats.paid)}</strong></div><div><span className="muted">Outstanding (recorded)</span><strong>{money(Math.max(0, stats.charges - stats.paid))}</strong></div></div>
+            {record.billing.charges.length > 0 && <div className="subsection"><h3>Charges</h3><div className="table-wrap"><table><thead><tr><th>Service</th><th>Source</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead><tbody>{record.billing.charges.map((c) => <tr key={c.id}><td><strong>{c.service_name}</strong><div className="muted small">{c.service_code}</div></td><td>{c.source_type}</td><td>{c.quantity}</td><td>{money(c.unit_price)}</td><td>{money(c.total_amount)}</td></tr>)}</tbody></table></div></div>}
+            {record.billing.invoices.map((i) => <div className="record-block" key={i.id}><div className="row-between"><div><strong>{i.invoice_id}</strong><div className="muted">{dateTime(i.created_at)}</div></div><div className="right"><span className="badge">{i.status}</span><strong>{money(i.total_amount)}</strong></div></div>{i.items.map((ii) => <div className="invoice-line" key={ii.id}><span>{ii.description} × {ii.quantity}</span><span>{money(ii.amount)}</span></div>)}</div>)}
+            {record.billing.payments.length > 0 && <div className="subsection"><h3>Payments</h3>{record.billing.payments.map((p) => <div className="record-row" key={p.id}><div><strong>{p.transaction_id}</strong><div className="muted">{p.payment_method}{p.provider ? ` · ${p.provider}` : ""} · {dateTime(p.created_at)}</div></div><div className="right"><strong>{money(p.amount)}</strong><div className="muted small">{p.status}</div></div></div>)}</div>}
+          </RecordSection>
+
+          <RecordSection title="Claims & reconciliation" count={record.claims.length}>
+            {record.claims.length === 0 ? <Empty text="No claims recorded for this patient." /> : record.claims.map((c) => <article className="record-block" key={c.id}><div className="row-between"><div><strong>{c.claim_id}</strong><div className="muted">{c.payer_name} · Encounter {c.encounter_id}</div></div><span className="badge">{c.status}</span></div><div className="claims-grid"><Fact label="Claimed" value={money(c.claim_amount)} /><Fact label="Approved" value={money(c.approved_amount)} /><Fact label="Paid" value={money(c.paid_amount)} /><Fact label="Submitted" value={dateTime(c.submitted_at)} /></div>{c.responses.map((r) => <div className="notice" key={r.id}><strong>Payer response: {r.status}</strong><div>{r.response_message || "No response message"} · {dateTime(r.received_at)}</div></div>)}{c.reconciliation && <div className="notice"><strong>Reconciliation: {c.reconciliation.status}</strong><div>Expected {money(c.reconciliation.expected_amount)} · Received {money(c.reconciliation.received_amount)} · Difference {money(c.reconciliation.difference)}</div></div>}</article>)}
+          </RecordSection>
+
+          <RecordSection title="Appointments & queue history" count={record.appointments.length + record.queue_history.length}>
+            {record.appointments.map((a) => <div className="record-row" key={a.id}><div><strong>Appointment</strong><div className="muted">Department {a.department_id} · Provider {a.provider_id || "Not assigned"}</div><div>{a.reason || "General visit"}</div></div><div className="right"><span className="badge">{a.status}</span><div>{dateTime(a.appointment_at)}</div></div></div>)}
+            {record.queue_history.map((q) => <div className="record-row" key={q.id}><div><strong>{q.queue_name}</strong><div className="muted">Priority {q.priority} · {q.encounter_id || "No encounter linked"}</div></div><div className="right"><span className="badge">{q.status}</span><div className="muted small">Queued {dateTime(q.queued_at)}</div></div></div>)}
+            {record.appointments.length === 0 && record.queue_history.length === 0 && <Empty text="No appointments or queue history." />}
+          </RecordSection>
+
+          <RecordSection title="Referrals & transfers" count={record.referrals.length + record.transfers.length}>
+            {record.referrals.map((r) => <div className="record-row" key={r.id}><div><strong>{r.referral_id}</strong><div className="muted">{r.source_facility_name} → {r.destination_facility_name}</div><div>{r.reason}</div>{r.clinical_summary && <div className="muted">{r.clinical_summary}</div>}</div><div className="right"><span className="badge">{r.status}</span><div className="muted small">{dateTime(r.created_at)}</div></div></div>)}
+            {record.transfers.map((t) => <div className="record-row" key={t.id}><div><strong>{t.transfer_id}</strong><div className="muted">{t.source_facility_name} → {t.destination_facility_name}</div><div>{t.reason}</div></div><div className="right"><span className="badge">{t.status}</span><div className="muted small">{dateTime(t.created_at)}</div></div></div>)}
+            {record.referrals.length === 0 && record.transfers.length === 0 && <Empty text="No referrals or transfers recorded." />}
+          </RecordSection>
+        </>
       )}
-    </div>
+    </section>
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="muted small">{label}</div>
-      <div>{value}</div>
-    </div>
-  );
+function RecordSection({ title, count, children }: { title: string; count: number | null; children: React.ReactNode }) {
+  return <section className="record-section card"><div className="section-heading"><h2>{title}</h2>{count !== null && <span className="section-count">{count}</span>}</div>{children}</section>;
 }
+function Fact({ label, value }: { label: string; value: string | number }) { return <div><div className="muted small">{label}</div><div className="fact-value">{value}</div></div>; }
+function Field({ label, value }: { label: string | undefined; value: string | null | undefined }) { if (!value) return null; return <div><div className="muted small">{label}</div><div>{value}</div></div>; }
+function Stat({ label, value }: { label: string; value: string | number }) { return <div className="patient-stat card"><span className="muted">{label}</span><strong>{value}</strong></div>; }
+function Empty({ text }: { text: string }) { return <div className="empty-record">{text}</div>; }
