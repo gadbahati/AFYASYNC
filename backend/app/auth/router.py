@@ -4,7 +4,14 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.auth.dependencies import get_current_user
-from app.auth.schemas import FacilityOption, FacilitySelectionRequest, LoginRequest, RefreshTokenRequest, TokenResponse
+from app.auth.schemas import (
+    FacilityOption,
+    FacilitySelectionRequest,
+    FacilitySelectionRequired,
+    LoginRequest,
+    RefreshTokenRequest,
+    TokenResponse,
+)
 from app.auth.service import authenticate_user, issue_access_token, issue_refresh_token, revoke_refresh_token, rotate_tokens_from_refresh
 from app.config import settings
 from app.database import get_db
@@ -26,8 +33,8 @@ def _token_response(db: Session, user: User, facility_id) -> TokenResponse:
     )
 
 
-@router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+@router.post("/login", response_model=TokenResponse | FacilitySelectionRequired)
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse | FacilitySelectionRequired:
     result = authenticate_user(db, payload.username, payload.password)
     if result is None:
         record_audit(
@@ -44,7 +51,33 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             headers={"WWW-Authenticate": "Bearer"},
         )
     user, staff = result
+    if len(staff) == 0:
+        record_audit(
+            db,
+            action="AUTH_LOGIN",
+            resource_type="USER",
+            result="NO_ACTIVE_FACILITY_ASSIGNMENT",
+            user_id=user.id,
+            ip_address=_client_ip(request),
+        )
+        raise HTTPException(status_code=403, detail="NO_ACTIVE_FACILITY_ASSIGNMENT")
     if len(staff) != 1:
+        # More than one active facility: issue a facility-scope-less access
+        # token (valid for get_current_user, rejected by get_facility_context
+        # on every facility-scoped endpoint) so the client can call
+        # /auth/select-facility to exchange it for a fully scoped
+        # TokenResponse. No refresh token yet — a refresh session is only
+        # created once a facility is actually selected.
+        rows = db.execute(
+            select(Facility.id, Facility.name)
+            .join(Staff, Staff.facility_id == Facility.id)
+            .where(
+                Staff.person_id == user.person_id,
+                Staff.status == "ACTIVE",
+                Facility.status == "ACTIVE",
+            )
+            .distinct()
+        ).all()
         record_audit(
             db,
             action="AUTH_LOGIN",
@@ -53,7 +86,10 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             user_id=user.id,
             ip_address=_client_ip(request),
         )
-        raise HTTPException(status_code=409, detail="FACILITY_SELECTION_REQUIRED")
+        return FacilitySelectionRequired(
+            access_token=issue_access_token(user, None),
+            facilities=[FacilityOption(facility_id=row[0], facility_name=row[1]) for row in rows],
+        )
     facility_id = staff[0].facility_id
     record_audit(
         db,
