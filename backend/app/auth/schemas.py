@@ -26,3 +26,20 @@ class FacilityOption(BaseModel):
 
 class FacilitySelectionRequest(BaseModel):
     facility_id: UUID
+
+
+class FacilitySelectionRequired(BaseModel):
+    """Returned by /login instead of TokenResponse when the user has active
+    staff records at more than one facility.
+
+    `access_token` here carries no facility_id, so it authenticates
+    get_current_user (enough for /auth/me, /auth/facilities,
+    /auth/select-facility, /auth/logout) but is rejected by
+    get_facility_context / require_permission on every other endpoint until
+    the client calls /select-facility to exchange it for a fully scoped
+    TokenResponse (with a refresh token).
+    """
+
+    requires_facility_selection: bool = True
+    access_token: str
+    facilities: list[FacilityOption]
