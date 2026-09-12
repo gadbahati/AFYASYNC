@@ -172,6 +172,38 @@ export type ClinicalTimeline = {
   prescriptions: PrescriptionSummary[];
 };
 
+export type Appointment = {
+  id: string;
+  patient_id: string;
+  facility_id: string;
+  department_id: string;
+  provider_id: string | null;
+  appointment_at: string;
+  reason: string | null;
+  status: string;
+};
+
+export type Queue = {
+  id: string;
+  facility_id: string;
+  department_id: string;
+  name: string;
+  status: string;
+};
+
+export type QueueEntry = {
+  id: string;
+  queue_id: string;
+  patient_id: string;
+  appointment_id: string | null;
+  encounter_id: string | null;
+  priority: string;
+  status: string;
+  queued_at: string;
+  called_at: string | null;
+  completed_at: string | null;
+};
+
 export type ApiErrorBody = {
   detail?: string | { code?: string; message?: string };
 };
