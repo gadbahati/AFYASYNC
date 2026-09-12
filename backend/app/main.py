@@ -4,6 +4,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from sqlalchemy import text
 
+from app.admissions import models as admission_models
+from app.admissions.router import router as admissions_router
 from app.appointments import models as appointment_models
 from app.appointments.router import router as appointments_router
 from app.audit import models as audit_models
@@ -45,7 +47,7 @@ from app.reports.router import router as reports_router
 _ = (patient_models, coverage_models, facility_models, rbac_models, appointment_models,
      encounter_models, clinical_models, laboratory_models, pharmacy_models, billing_models,
      claims_models, integration_models, audit_models, referral_models, notification_models,
-     auth_models, benefit_models)
+     auth_models, benefit_models, admission_models)
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, description="AfyaSync healthcare platform API")
 
@@ -83,7 +85,6 @@ def initialize_database() -> None:
             try:
                 ensure_demo_admin(db)
             except Exception:
-                # Bootstrap must not crash the API process; operators can re-run seed.
                 db.rollback()
 
 
@@ -91,6 +92,7 @@ app.include_router(auth_router.router)
 app.include_router(patients_router)
 app.include_router(coverage_router)
 app.include_router(benefits_router)
+app.include_router(admissions_router)
 app.include_router(facilities_router)
 app.include_router(appointments_router)
 app.include_router(encounters_router)
@@ -108,22 +110,15 @@ app.include_router(reports_router)
 
 @app.get("/health", tags=["System"])
 def health_check() -> dict[str, object]:
-    """Liveness: process is up. Does not check dependencies."""
     return {
         "success": True,
-        "data": {
-            "service": "afasync-api",
-            "status": "healthy",
-            "environment": settings.environment,
-            "version": settings.app_version,
-        },
+        "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version},
         "message": "AfyaSync API is running",
     }
 
 
 @app.get("/ready", tags=["System"])
 def readiness_check(response: Response) -> dict[str, object]:
-    """Readiness: database is reachable. Safe for orchestrators."""
     db_ok = False
     try:
         with SessionLocal() as db:
@@ -131,26 +126,12 @@ def readiness_check(response: Response) -> dict[str, object]:
             db_ok = True
     except Exception:
         db_ok = False
-
     if not db_ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        return {
-            "success": False,
-            "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"},
-            "message": "AfyaSync API is not ready",
-        }
-
-    return {
-        "success": True,
-        "data": {"service": "afasync-api", "status": "ready", "database": "ok"},
-        "message": "AfyaSync API is ready",
-    }
+        return {"success": False, "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"}, "message": "AfyaSync API is not ready"}
+    return {"success": True, "data": {"service": "afasync-api", "status": "ready", "database": "ok"}, "message": "AfyaSync API is ready"}
 
 
 @app.get("/api/v1", tags=["System"])
 def api_root() -> dict[str, object]:
-    return {
-        "success": True,
-        "data": {"name": settings.app_name, "version": settings.app_version},
-        "message": "AfyaSync API v1",
-    }
+    return {"success": True, "data": {"name": settings.app_name, "version": settings.app_version}, "message": "AfyaSync API v1"}
