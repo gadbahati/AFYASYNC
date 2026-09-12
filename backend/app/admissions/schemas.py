@@ -12,6 +12,8 @@ class SHAMemberLookupResponse(BaseModel):
     date_of_birth: str | None
     sex: str | None
     coverage_status: str
+    coverage_id: UUID
+    payer_id: UUID
     benefit_package_codes: list[str]
 
 
