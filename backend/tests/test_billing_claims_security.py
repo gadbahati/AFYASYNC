@@ -60,8 +60,8 @@ def test_claim_submission_never_marks_invoice_paid() -> None:
     claim = SimpleNamespace(id=uuid4(), claim_id="CLM-TEST", invoice_id=invoice.id, patient_id=uuid4(), payer_id=payer_id, status="READY", submitted_at=None)
     integration = SimpleNamespace(id=uuid4(), status="ACTIVE")
     db = MagicMock()
-    db.get.side_effect = [claim, invoice, payer]
-    db.scalar.return_value = integration
+    db.scalar.side_effect = [claim, integration]
+    db.get.side_effect = [invoice, payer]
     with patch("app.claims.service.queue_transaction") as queue_transaction, patch("app.claims.service.record_audit"), patch("app.claims.service.notify_patient_event"):
         result = submit_claim(db, claim.id, facility_id, actor_user_id=uuid4())
     assert result.status == "SUBMITTED"
@@ -78,8 +78,8 @@ def test_claim_submission_requires_authorised_payer_integration() -> None:
     payer = SimpleNamespace(id=payer_id, status="ACTIVE", code="NO_INTEGRATION")
     claim = SimpleNamespace(id=uuid4(), claim_id="CLM-NO-INTEGRATION", invoice_id=invoice.id, patient_id=uuid4(), payer_id=payer_id, status="READY", submitted_at=None)
     db = MagicMock()
-    db.get.side_effect = [claim, invoice, payer]
-    db.scalar.return_value = None
+    db.scalar.side_effect = [claim, None]
+    db.get.side_effect = [invoice, payer]
     with pytest.raises(ClaimsError, match="PAYER_INTEGRATION_NOT_CONFIGURED"):
         submit_claim(db, claim.id, facility_id)
     assert claim.status == "READY"
@@ -92,7 +92,8 @@ def test_claim_response_is_facility_scoped() -> None:
     claim = SimpleNamespace(id=uuid4(), invoice_id=uuid4(), patient_id=uuid4())
     invoice = SimpleNamespace(facility_id=facility_b)
     db = MagicMock()
-    db.get.side_effect = [claim, invoice]
+    db.scalar.return_value = claim
+    db.get.return_value = invoice
     with pytest.raises(ClaimsError, match="FACILITY_ACCESS_DENIED"):
         record_payer_response(db, claim.id, facility_a, "ACCEPTED", None, None, None, None)
     db.commit.assert_not_called()
