@@ -18,7 +18,7 @@ import type {
 } from "./types";
 import { clearSession, getAccessToken, getRefreshToken, setSession } from "../auth/storage";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
 export class ApiError extends Error {
   status: number;
@@ -42,21 +42,34 @@ let refreshPromise: Promise<boolean> | null = null;
 async function tryRefresh(): Promise<boolean> {
   const refresh = getRefreshToken();
   if (!refresh) return false;
-  const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refresh }),
-  });
-  if (!res.ok) {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) {
+      clearSession();
+      return false;
+    }
+    const data = (await res.json()) as TokenResponse;
+    setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+    return true;
+  } catch {
     clearSession();
     return false;
   }
-  const data = (await res.json()) as TokenResponse;
-  setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
-  return true;
 }
 
 async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  if (!API_BASE && import.meta.env.PROD) {
+    throw new ApiError(
+      0,
+      "API_NOT_CONFIGURED",
+      "VITE_API_BASE_URL is not set on this deployment. Point it at your AfyaSync API host.",
+    );
+  }
+
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type") && init.body) {
     headers.set("Content-Type", "application/json");
@@ -64,7 +77,17 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   const token = getAccessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  } catch {
+    throw new ApiError(
+      0,
+      "API_UNREACHABLE",
+      "Cannot reach the AfyaSync API. Check that the backend is running and VITE_API_BASE_URL is correct.",
+    );
+  }
+
   if (res.status === 401 && retry) {
     if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null; });
     const ok = await refreshPromise;
@@ -77,6 +100,14 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
       body = (await res.json()) as ApiErrorBody;
     } catch {
       body = null;
+    }
+    // HTML 404 from Vercel when API base is missing/wrong
+    if (!body && (res.status === 404 || res.status === 405)) {
+      throw new ApiError(
+        res.status,
+        "API_UNREACHABLE",
+        "API route not found. Set VITE_API_BASE_URL to your backend origin (not the Vercel frontend URL).",
+      );
     }
     throw new ApiError(res.status, parseDetail(body));
   }
