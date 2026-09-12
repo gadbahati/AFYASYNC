@@ -30,7 +30,11 @@ export function LoginPage() {
       const result = await auth.login(username.trim(), password);
       navigate(result === "select_facility" ? "/select-facility" : "/");
     } catch (err) {
-      setError(err instanceof ApiError ? err.code : "LOGIN_FAILED");
+      if (err instanceof ApiError) {
+        setError(err.message || err.code);
+      } else {
+        setError("LOGIN_FAILED");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -76,7 +80,7 @@ export function LoginPage() {
         {error && <div className="error">{error}</div>}
         <button type="submit" disabled={submitting}>{submitting ? "Signing in…" : "Sign in"}</button>
         <p className="muted small auth-note">
-          Demo monitor account is provisioned on the API host after bootstrap. Use your facility credentials in production.
+          Demo account (after API is online): <strong>afyasync.admin</strong> / <strong>Kenya@Health2026</strong>
         </p>
       </form>
     </div>
