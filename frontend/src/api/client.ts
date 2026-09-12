@@ -1,5 +1,6 @@
 import type {
   ApiErrorBody,
+  Appointment,
   AuthMe,
   ClinicalTimeline,
   Consultation,
@@ -13,6 +14,8 @@ import type {
   Patient,
   PatientCreate,
   PatientListResponse,
+  Queue,
+  QueueEntry,
   TokenResponse,
   Vital,
 } from "./types";
@@ -123,6 +126,34 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
+
+const DEMO_APPOINTMENTS: Appointment[] = [
+  {
+    id: "a1",
+    patient_id: "p1",
+    facility_id: "f1",
+    department_id: "d1",
+    provider_id: null,
+    appointment_at: new Date().toISOString(),
+    reason: "Follow-up",
+    status: "BOOKED",
+  },
+];
+
+const DEMO_QUEUE_ENTRIES: QueueEntry[] = [
+  {
+    id: "q1",
+    queue_id: "queue1",
+    patient_id: "p1",
+    appointment_id: null,
+    encounter_id: null,
+    priority: "NORMAL",
+    status: "WAITING",
+    queued_at: new Date().toISOString(),
+    called_at: null,
+    completed_at: null,
+  },
+];
 
 export const api = {
   login(username: string, password: string) {
@@ -277,6 +308,40 @@ export const api = {
     return request<Diagnosis>(`/api/v1/encounters/${encounterId}/diagnoses`, {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+  listAppointments() {
+    if (isDemoMode()) return Promise.resolve(DEMO_APPOINTMENTS);
+    return request<Appointment[]>("/api/v1/appointments");
+  },
+  listQueues() {
+    if (isDemoMode()) {
+      return Promise.resolve([
+        {
+          id: "queue1",
+          facility_id: "f1",
+          department_id: "d1",
+          name: "OPD queue",
+          status: "ACTIVE",
+        } satisfies Queue,
+      ]);
+    }
+    return request<Queue[]>("/api/v1/appointments/queues");
+  },
+  listQueueEntries(queueId?: string) {
+    if (isDemoMode()) return Promise.resolve(DEMO_QUEUE_ENTRIES);
+    const q = queueId ? `?queue_id=${queueId}` : "";
+    return request<QueueEntry[]>(`/api/v1/appointments/queues/entries${q}`);
+  },
+  updateQueueEntryStatus(entryId: string, newStatus: string) {
+    if (isDemoMode()) {
+      const entry = DEMO_QUEUE_ENTRIES.find((e) => e.id === entryId);
+      if (!entry) return Promise.reject(new ApiError(404, "QUEUE_ENTRY_NOT_FOUND"));
+      entry.status = newStatus;
+      return Promise.resolve(entry);
+    }
+    return request<QueueEntry>(`/api/v1/appointments/queues/entries/${entryId}/${newStatus}`, {
+      method: "PATCH",
     });
   },
 };
