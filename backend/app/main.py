@@ -1,4 +1,7 @@
 from fastapi import FastAPI, Response, status
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 from sqlalchemy import text
 
 from app.appointments import models as appointment_models
@@ -42,6 +45,31 @@ _ = (patient_models, coverage_models, facility_models, rbac_models, appointment_
      auth_models)
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, description="AfyaSync healthcare platform API")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        if settings.environment == "production":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
+
+_cors_origins = settings.cors_origin_list()
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature"],
+    )
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 @app.on_event("startup")
