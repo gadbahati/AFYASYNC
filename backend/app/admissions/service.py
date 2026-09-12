@@ -10,6 +10,7 @@ from app.coverage.models import Coverage, Payer
 from app.encounters.service import create_encounter
 from app.patients.models import AfyaIdentity, Person, PatientFacility
 from app.admissions.models import Admission
+from app.preauthorizations.models import PreAuthorization
 
 
 def _verified_sha_coverage(db: Session, patient_id: UUID) -> Coverage:
@@ -71,7 +72,7 @@ def lookup_sha_member(db: Session, *, membership_number: str, facility_id: UUID)
     }
 
 
-def start_admission(db: Session, *, patient_id: UUID, facility_id: UUID, department_id: UUID, benefit_package_code: str, ward: str, bed: str, diagnosis: str | None, created_by: UUID, actor_user_id: UUID) -> Admission:
+def start_admission(db: Session, *, patient_id: UUID, facility_id: UUID, department_id: UUID, benefit_package_code: str, ward: str, bed: str, diagnosis: str | None, created_by: UUID, actor_user_id: UUID, preauthorization_id: UUID | None = None) -> Admission:
     membership = db.scalar(select(PatientFacility.id).where(PatientFacility.patient_id == patient_id, PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE"))
     if membership is None:
         raise ValueError("PATIENT_NOT_IN_FACILITY")
@@ -81,6 +82,27 @@ def start_admission(db: Session, *, patient_id: UUID, facility_id: UUID, departm
         raise ValueError("BENEFIT_PACKAGE_NOT_FOUND")
     if benefit_package_code not in {"SHA-07", "SHA-08"}:
         raise ValueError("INPATIENT_SHA_PACKAGE_REQUIRED")
+
+    if preauthorization_id is None:
+        raise ValueError("PREAUTHORIZATION_REQUIRED")
+    authorization = db.scalar(
+        select(PreAuthorization).where(
+            PreAuthorization.id == preauthorization_id,
+            PreAuthorization.patient_id == patient_id,
+            PreAuthorization.facility_id == facility_id,
+            PreAuthorization.coverage_id == coverage.id,
+            PreAuthorization.payer_id == coverage.payer_id,
+            PreAuthorization.benefit_package_code == benefit_package_code,
+            PreAuthorization.care_setting == "INPATIENT",
+        ).with_for_update()
+    )
+    if authorization is None:
+        raise ValueError("PREAUTH_NOT_FOUND")
+    if authorization.status != "AUTHORIZED":
+        raise ValueError("PREAUTHORIZATION_NOT_AUTHORIZED")
+    if authorization.approved_amount is None or float(authorization.approved_amount) <= 0:
+        raise ValueError("PREAUTHORIZATION_AMOUNT_REQUIRED")
+
     existing = db.scalar(select(Admission.id).where(Admission.patient_id == patient_id, Admission.facility_id == facility_id, Admission.status == "ADMITTED"))
     if existing is not None:
         raise ValueError("PATIENT_ALREADY_ADMITTED")
@@ -88,7 +110,7 @@ def start_admission(db: Session, *, patient_id: UUID, facility_id: UUID, departm
     admission = Admission(admission_number=f"ADM-{uuid4().hex[:12].upper()}", patient_id=patient_id, facility_id=facility_id, encounter_id=encounter.id, benefit_package_code=benefit_package_code, ward=ward, bed=bed, diagnosis=diagnosis)
     db.add(admission)
     db.flush()
-    record_audit(db, action="ADMISSION_STARTED", resource_type="ADMISSION", resource_id=str(admission.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=patient_id, metadata={"admission_number": admission.admission_number, "benefit_package_code": benefit_package_code, "sha_coverage_id": str(coverage.id), "ward": ward, "bed": bed}, commit=False)
+    record_audit(db, action="ADMISSION_STARTED", resource_type="ADMISSION", resource_id=str(admission.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=patient_id, metadata={"admission_number": admission.admission_number, "benefit_package_code": benefit_package_code, "sha_coverage_id": str(coverage.id), "preauthorization_id": str(authorization.id), "ward": ward, "bed": bed}, commit=False)
     db.commit()
     db.refresh(admission)
     return admission
