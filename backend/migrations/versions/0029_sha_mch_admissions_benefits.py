@@ -1,7 +1,7 @@
 """add SHA MCH and inpatient admissions benefit packages
 
 Revision ID: 0029_sha_mch_admissions_benefits
-Revises: 0028_reports_permission
+Revises: 0029_merge_0028_heads
 """
 
 from uuid import uuid4
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "0029_sha_mch_admissions_benefits"
-down_revision = "0028_reports_permission"
+down_revision = "0029_merge_0028_heads"
 branch_labels = None
 depends_on = None
 
@@ -45,36 +45,16 @@ def upgrade() -> None:
     bind = op.get_bind()
     table = sa.table(
         "benefit_packages",
-        sa.column("id"),
-        sa.column("payer_code"),
-        sa.column("package_code"),
-        sa.column("name"),
-        sa.column("description"),
-        sa.column("status"),
+        sa.column("id"), sa.column("payer_code"), sa.column("package_code"),
+        sa.column("name"), sa.column("description"), sa.column("status"),
     )
-
     for package in PACKAGES:
-        exists = bind.execute(
-            sa.select(table.c.id).where(table.c.package_code == package["package_code"])
-        ).scalar()
+        exists = bind.execute(sa.select(table.c.id).where(table.c.package_code == package["package_code"])).scalar()
         if exists is None:
-            bind.execute(
-                sa.insert(table).values(
-                    id=uuid4(),
-                    payer_code=package["payer_code"],
-                    package_code=package["package_code"],
-                    name=package["name"],
-                    description=package["description"],
-                    status="ACTIVE",
-                )
-            )
+            bind.execute(sa.insert(table).values(id=uuid4(), **package, status="ACTIVE"))
 
 
 def downgrade() -> None:
     bind = op.get_bind()
     table = sa.table("benefit_packages", sa.column("package_code"))
-    bind.execute(
-        sa.delete(table).where(
-            table.c.package_code.in_([package["package_code"] for package in PACKAGES])
-        )
-    )
+    bind.execute(sa.delete(table).where(table.c.package_code.in_([p["package_code"] for p in PACKAGES])))
