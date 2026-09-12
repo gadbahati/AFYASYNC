@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = 15
     refresh_token_days: int = 30
     # Comma-separated browser origins allowed to call the API (empty = no CORS)
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,https://afyasync-swart.vercel.app"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -29,6 +29,17 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_environment(cls, value: str) -> str:
         return value.strip().lower()
+
+    @field_validator("database_url")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        url = value.strip()
+        # Render/Heroku style URLs → SQLAlchemy psycopg3 driver
+        if url.startswith("postgres://"):
+            url = "postgresql+psycopg://" + url[len("postgres://"):]
+        elif url.startswith("postgresql://") and "+psycopg" not in url:
+            url = "postgresql+psycopg://" + url[len("postgresql://"):]
+        return url
 
     @field_validator("access_token_minutes", "refresh_token_days")
     @classmethod
