@@ -19,7 +19,7 @@ export function DashboardPage() {
         if (!cancelled) setReport(data);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.code : "REPORT_LOAD_FAILED");
+        if (!cancelled) setError(err instanceof ApiError ? err.message || err.code : "REPORT_LOAD_FAILED");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -35,56 +35,62 @@ export function DashboardPage() {
         <div className="hero-left">
           <KenyaFlag className="kenya-flag large" />
           <div>
-            <div className="brand-kicker">Ministry of Health aligned · National digital health</div>
-            <h1>Facility operations dashboard</h1>
-            <p className="muted">
-              {auth.facilityName || "Selected facility"} · Performance overview (last 30 days)
-            </p>
+            <div className="brand-kicker">Republic of Kenya</div>
+            <h1>Facility dashboard</h1>
+            <p className="muted">{auth.facilityName || "Facility"} · last 30 days</p>
           </div>
         </div>
         <div className="hero-actions">
-          <Link className="button" to="/patients">Patient register</Link>
-          <Link className="button secondary" to="/patients/new">Register patient</Link>
+          <Link className="button" to="/patients">Patients</Link>
+          <Link className="button secondary" to="/appointments">Appointments</Link>
         </div>
       </section>
 
-      {loading && <p>Loading facility metrics…</p>}
-      {error && (
-        <div className="error">
-          {error}
-          {error === "REQUEST_FAILED" || error.includes("Failed")
-            ? " — API may be offline. Deploy the backend and set VITE_API_BASE_URL."
-            : null}
-        </div>
-      )}
+      {loading && <p>Loading…</p>}
+      {error && <div className="error">{error}</div>}
 
       {report && (
         <>
-          <h2 className="section-title">Service activity</h2>
+          <h2 className="section-title">Service</h2>
           <div className="stat-grid">
-            <Stat label="Active patient activity" value={report.patients} tone="primary" />
-            <Stat label="Encounters" value={report.encounters} tone="primary" />
-            <Stat label="Claims submitted" value={report.claims} />
+            <Stat label="Patients" value={report.patients} />
+            <Stat label="Encounters" value={report.encounters} />
+            <Stat label="Claims" value={report.claims} />
           </div>
 
-          <h2 className="section-title">Financial integrity</h2>
+          <h2 className="section-title">Money (KES)</h2>
           <div className="stat-grid">
-            <Stat label="Charges total" value={formatMoney(report.charges_total)} />
-            <Stat label="Invoices total" value={formatMoney(report.invoices_total)} />
+            <Stat label="Charges" value={formatMoney(report.charges_total)} />
+            <Stat label="Invoices" value={formatMoney(report.invoices_total)} />
             <Stat label="Payer billed" value={formatMoney(report.payer_billed)} />
             <Stat label="Patient billed" value={formatMoney(report.patient_billed)} />
-            <Stat label="Confirmed payments" value={formatMoney(report.confirmed_payments)} tone="success" />
+            <Stat label="Payments confirmed" value={formatMoney(report.confirmed_payments)} />
             <Stat label="Claims amount" value={formatMoney(report.claims_amount)} />
             <Stat label="Claims approved" value={formatMoney(report.claims_approved)} />
-            <Stat label="Claims paid" value={formatMoney(report.claims_paid)} tone="success" />
+            <Stat label="Claims paid" value={formatMoney(report.claims_paid)} />
           </div>
 
           <section className="card monitor-panel">
-            <h3>System monitoring</h3>
-            <p className="muted">
-              Signed in as <strong>{auth.username}</strong>. Metrics are facility-scoped and drawn from live
-              AfyaSync APIs (encounters, billing, claims). Use this view to track pilot facility throughput
-              and payer reconciliation progress.
+            <h3 style={{ marginTop: 0 }}>Modules</h3>
+            <p className="muted" style={{ marginBottom: 8 }}>
+              Use the left menu to open each area. In demo mode the tables show sample facility work.
+            </p>
+            <p>
+              <Link to="/patients">Patients</Link>
+              {" · "}
+              <Link to="/appointments">Appointments</Link>
+              {" · "}
+              <Link to="/queue">Queue</Link>
+              {" · "}
+              <Link to="/laboratory">Lab</Link>
+              {" · "}
+              <Link to="/pharmacy">Pharmacy</Link>
+              {" · "}
+              <Link to="/billing">Billing</Link>
+              {" · "}
+              <Link to="/claims">Claims</Link>
+              {" · "}
+              <Link to="/referrals">Referrals</Link>
             </p>
           </section>
         </>
@@ -96,12 +102,12 @@ export function DashboardPage() {
 function formatMoney(value: string | number): string {
   const n = typeof value === "number" ? value : Number(value);
   if (Number.isNaN(n)) return String(value);
-  return new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("en-KE").format(n);
 }
 
-function Stat({ label, value, tone }: { label: string; value: string | number; tone?: "primary" | "success" }) {
+function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className={`stat-card ${tone || ""}`}>
+    <div className="stat-card">
       <div className="muted small">{label}</div>
       <div className="stat-value">{value}</div>
     </div>
