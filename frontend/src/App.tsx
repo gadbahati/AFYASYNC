@@ -2,14 +2,13 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import {
-  AppointmentsPage,
   BillingPage,
   ClaimsPage,
   LabPage,
   PharmacyPage,
-  QueuePage,
   ReferralsPage,
 } from "./pages/demoPages";
 import { EncounterDetailPage } from "./pages/EncounterDetailPage";
@@ -19,6 +18,7 @@ import { NewEncounterPage } from "./pages/NewEncounterPage";
 import { NewPatientPage } from "./pages/NewPatientPage";
 import { PatientDetailPage } from "./pages/PatientDetailPage";
 import { PatientsPage } from "./pages/PatientsPage";
+import { QueuePage } from "./pages/QueuePage";
 
 export default function App() {
   return (
