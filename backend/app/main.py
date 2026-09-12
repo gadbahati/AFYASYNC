@@ -11,6 +11,7 @@ from app.auth import models as auth_models
 from app.auth import router as auth_router
 from app.billing import models as billing_models
 from app.billing.router import router as billing_router
+from app.bootstrap import ensure_demo_admin
 from app.claims import models as claims_models
 from app.claims.router import router as claims_router
 from app.clinical import models as clinical_models
@@ -76,6 +77,12 @@ app.add_middleware(SecurityHeadersMiddleware)
 def initialize_database() -> None:
     if settings.environment != "production":
         Base.metadata.create_all(bind=engine)
+        with SessionLocal() as db:
+            try:
+                ensure_demo_admin(db)
+            except Exception:
+                # Bootstrap must not crash the API process; operators can re-run seed.
+                db.rollback()
 
 
 app.include_router(auth_router.router)
