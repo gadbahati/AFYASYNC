@@ -32,7 +32,9 @@ def _verified_current_coverage(db: Session, patient_id: UUID, payer_id: UUID | N
 
 
 def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
-    invoice = db.get(Invoice, invoice_id)
+    # Serialize claim creation per invoice. Without the row lock, two concurrent
+    # requests can both observe no claim and create duplicate claims for one invoice.
+    invoice = db.scalar(select(Invoice).where(Invoice.id == invoice_id).with_for_update())
     if invoice is None:
         raise ClaimsError("INVOICE_NOT_FOUND")
     if invoice.facility_id != facility_id:
@@ -134,7 +136,9 @@ def build_claim_submission_payload(db: Session, claim_id: UUID, facility_id: UUI
 
 
 def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
-    claim = db.get(Claim, claim_id)
+    # Lock the claim through the full queue/status transaction so two workers cannot
+    # both enqueue the same READY claim before either one commits SUBMITTED.
+    claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
     if claim is None:
         raise ClaimsError("CLAIM_NOT_FOUND")
     invoice = db.get(Invoice, claim.invoice_id)
@@ -170,7 +174,7 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
     allowed = {"ACCEPTED", "UNDER_REVIEW", "REJECTED", "PARTIALLY_PAID", "PAID"}
     if status not in allowed:
         raise ClaimsError("INVALID_CLAIM_RESPONSE_STATUS")
-    claim = db.get(Claim, claim_id)
+    claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
     if claim is None:
         raise ClaimsError("CLAIM_NOT_FOUND")
     invoice = db.get(Invoice, claim.invoice_id)
@@ -220,7 +224,7 @@ def process_payer_callback(db: Session, facility_id: UUID, integration_id: UUID,
     if integration.integration_type not in {"PAYER_CLAIMS", "CLAIMS"}:
         raise ClaimsError("INVALID_PAYER_INTEGRATION")
 
-    claim = db.get(Claim, claim_id)
+    claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
     if claim is None:
         raise ClaimsError("CLAIM_NOT_FOUND")
     if claim.payer_id is None:
@@ -261,25 +265,21 @@ def reconcile_claim(db: Session, claim_id: UUID, facility_id: UUID, staff_id: UU
     invoice = db.get(Invoice, claim.invoice_id)
     if invoice is None or invoice.facility_id != facility_id:
         raise ClaimsError("FACILITY_ACCESS_DENIED")
-    if claim.status not in {"ACCEPTED", "PARTIALLY_PAID", "PAID"}:
-        raise ClaimsError("CLAIM_NOT_RECONCILABLE")
-    existing = db.scalar(select(Reconciliation).where(Reconciliation.claim_id == claim.id))
-    if existing:
-        raise ClaimsError("CLAIM_ALREADY_RECONCILED")
     if received_amount < 0:
         raise ClaimsError("INVALID_RECEIVED_AMOUNT")
-    expected = claim.approved_amount if claim.approved_amount > 0 else claim.claim_amount
-    if received_amount > expected:
-        raise ClaimsError("RECEIVED_AMOUNT_EXCEEDS_EXPECTED")
-    difference = received_amount - expected
-    status = "MATCHED" if difference == 0 else "PARTIAL"
-    reconciliation = Reconciliation(claim_id=claim.id, expected_amount=expected, received_amount=received_amount, difference=difference, status=status, reconciled_by=staff_id, reconciled_at=datetime.now(timezone.utc))
-    claim.paid_amount = received_amount
-    claim.status = "PAID" if received_amount == expected else "PARTIALLY_PAID"
+    existing = db.scalar(select(Reconciliation).where(Reconciliation.claim_id == claim.id).limit(1))
+    if existing:
+        raise ClaimsError("CLAIM_ALREADY_RECONCILED")
+    expected = Decimal(str(claim.approved_amount)).quantize(Decimal("0.01"))
+    received = Decimal(str(received_amount)).quantize(Decimal("0.01"))
+    difference = received - expected
+    status = "MATCHED" if difference == 0 else "VARIANCE"
+    reconciliation = Reconciliation(claim_id=claim.id, expected_amount=expected, received_amount=received, difference=difference, status=status, reconciled_by=staff_id, reconciled_at=datetime.now(timezone.utc))
     db.add(reconciliation)
+    if claim.status == "PAID":
+        claim.paid_amount = received
     db.flush()
-    notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", priority="HIGH" if claim.status == "PARTIALLY_PAID" else "NORMAL", metadata={"claim_id": claim.claim_id, "status": claim.status}, actor_user_id=actor_user_id, commit=False)
-    record_audit(db, action="RECONCILE_CLAIM", resource_type="RECONCILIATION", resource_id=str(reconciliation.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "expected": str(expected), "received": str(received_amount), "difference": str(difference), "status": status}, commit=False)
+    record_audit(db, action="RECONCILE_CLAIM", resource_type="RECONCILIATION", resource_id=str(reconciliation.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "expected_amount": str(expected), "received_amount": str(received), "difference": str(difference), "status": status}, commit=False)
     db.commit()
     db.refresh(reconciliation)
     return reconciliation
