@@ -2,6 +2,7 @@ import type {
   ApiErrorBody,
   Appointment,
   AuthMe,
+  BenefitPackage,
   ClinicalTimeline,
   Consultation,
   Department,
@@ -216,6 +217,9 @@ export const api = {
     if (end) q.set("end_date", end);
     const suffix = q.toString() ? `?${q}` : "";
     return request<FacilityReport>(`/api/v1/reports/facility${suffix}`);
+  },
+  listBenefitPackages() {
+    return request<BenefitPackage[]>("/api/v1/benefits/packages");
   },
   listDepartments(facilityId: string) {
     if (isDemoMode()) return Promise.resolve(demoDepartments());
