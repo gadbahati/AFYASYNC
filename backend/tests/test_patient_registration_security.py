@@ -8,7 +8,7 @@ from app.patients.service import create_patient
 
 def test_create_patient_audits_before_commit(monkeypatch) -> None:
     db = Mock()
-    db.scalar.return_value = 42
+    db.scalar.side_effect = [None, 42]
     person = SimpleNamespace(id=uuid4(), afya_identity=None)
     identity = SimpleNamespace(afya_id="AF-00000042")
     audit_mock = Mock()
@@ -19,6 +19,7 @@ def test_create_patient_audits_before_commit(monkeypatch) -> None:
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
 
     payload = SimpleNamespace(
+        national_id_number="87654321",
         phone=None,
         first_name="Test",
         last_name="Patient",
