@@ -17,10 +17,12 @@ def _error(exc: PreAuthorizationError) -> HTTPException:
         "PATIENT_NOT_IN_FACILITY": status.HTTP_404_NOT_FOUND,
         "COVERAGE_NOT_FOUND": status.HTTP_404_NOT_FOUND,
         "PREAUTH_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "ENCOUNTER_NOT_FOUND": status.HTTP_404_NOT_FOUND,
         "FACILITY_ACCESS_DENIED": status.HTTP_403_FORBIDDEN,
         "VERIFIED_COVERAGE_REQUIRED": status.HTTP_409_CONFLICT,
         "COVERAGE_NOT_ACTIVE": status.HTTP_409_CONFLICT,
         "COVERAGE_EXPIRED": status.HTTP_409_CONFLICT,
+        "ENCOUNTER_NOT_OPEN": status.HTTP_409_CONFLICT,
         "SHA_PAYER_REQUIRED": status.HTTP_400_BAD_REQUEST,
         "BENEFIT_PACKAGE_NOT_FOUND": status.HTTP_400_BAD_REQUEST,
         "INPATIENT_SHA_PACKAGE_REQUIRED": status.HTTP_400_BAD_REQUEST,
@@ -53,6 +55,12 @@ def decide(
     facility_id: UUID = Depends(get_facility_context),
 ):
     try:
-        return decide_preauthorization(db, authorization_id=authorization_id, facility_id=facility_id, actor_user_id=user.id, decision=payload)
+        return decide_preauthorization(
+            db,
+            authorization_id=authorization_id,
+            facility_id=facility_id,
+            actor_user_id=user.id,
+            decision=payload,
+        )
     except PreAuthorizationError as exc:
         raise _error(exc) from exc
