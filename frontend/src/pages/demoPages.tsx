@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { FeatureListPage } from "./FeatureListPage";
 import type { LabTest, Referral } from "../api/types";
+import "./lab.css";
 
 export function LabPage() {
   const [catalogue, setCatalogue] = useState<LabTest[]>([]);
