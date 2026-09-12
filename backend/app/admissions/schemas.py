@@ -24,6 +24,7 @@ class AdmissionCreate(BaseModel):
     ward: str = Field(min_length=1, max_length=120)
     bed: str = Field(min_length=1, max_length=50)
     diagnosis: str | None = Field(default=None, max_length=2000)
+    preauthorization_id: UUID | None = None
 
 
 class AdmissionResponse(BaseModel):
