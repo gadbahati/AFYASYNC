@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 15
     refresh_token_days: int = 30
+    # Comma-separated browser origins allowed to call the API (empty = no CORS)
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -45,6 +47,9 @@ class Settings(BaseSettings):
             if len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
         return self
+
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache
