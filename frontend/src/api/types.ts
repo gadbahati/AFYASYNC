@@ -1,46 +1,16 @@
-export type TokenResponse = {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  expires_in: number;
-};
-
+export type TokenResponse = { access_token: string; refresh_token: string; token_type: string; expires_in: number };
 export type FacilityOption = { facility_id: string; facility_name: string };
 export type FacilitySelectionRequired = { requires_facility_selection: true; access_token: string; facilities: FacilityOption[] };
 export type LoginResult = TokenResponse | FacilitySelectionRequired;
 export type AuthMe = { success: boolean; data: { user_id: string; username: string; status: string }; message: string };
-
-export type Patient = {
-  id: string; afya_id: string; first_name: string; middle_name: string | null; last_name: string;
-  date_of_birth: string | null; sex: string | null; phone: string | null; email: string | null;
-  address?: string | null; status: string;
-};
+export type Patient = { id: string; afya_id: string; first_name: string; middle_name: string | null; last_name: string; date_of_birth: string | null; sex: string | null; phone: string | null; email: string | null; address?: string | null; status: string };
 export type PatientListResponse = { items: Patient[]; total: number; limit: number; offset: number };
 export type PatientCreate = { first_name: string; middle_name?: string | null; last_name: string; national_id_number: string; date_of_birth?: string | null; sex?: string | null; phone?: string | null; email?: string | null; address?: string | null };
-
-export type FacilityReport = {
-  facility_id: string; start_date: string; end_date: string; patients: number; encounters: number;
-  charges_total: string; invoices_total: string; payer_billed: string; patient_billed: string;
-  confirmed_payments: string; claims: number; claims_amount: string; claims_approved: string; claims_paid: string;
-};
+export type FacilityReport = { facility_id: string; start_date: string; end_date: string; patients: number; encounters: number; charges_total: string; invoices_total: string; payer_billed: string; patient_billed: string; confirmed_payments: string; claims: number; claims_amount: string; claims_approved: string; claims_paid: string };
 export type BenefitPackage = { id: string; payer_code: string; package_code: string; name: string; description: string; status: string };
-
-export type SHAMember = {
-  person_id: string; afya_id: string; membership_number: string; full_name: string;
-  date_of_birth: string | null; sex: string | null; coverage_status: string; coverage_id: string; payer_id: string; benefit_package_codes: string[];
-};
-export type Admission = {
-  id: string; admission_number: string; patient_id: string; facility_id: string; encounter_id: string;
-  benefit_package_code: string; ward: string; bed: string; diagnosis: string | null; status: string;
-  admitted_at: string; discharged_at: string | null;
-};
-export type PreAuthorization = {
-  id: string; authorization_number: string; patient_id: string; benefit_package_code: string;
-  care_setting: "OUTPATIENT" | "INPATIENT"; department: string; requested_services: string[];
-  status: string; requested_amount: number; approved_amount: number; external_reference: string | null;
-  requested_at: string; decided_at: string | null;
-};
-
+export type SHAMember = { person_id: string; afya_id: string; membership_number: string; full_name: string; date_of_birth: string | null; sex: string | null; coverage_status: string; coverage_id: string; payer_id: string; benefit_package_codes: string[] };
+export type Admission = { id: string; admission_number: string; patient_id: string; facility_id: string; encounter_id: string; benefit_package_code: string; ward: string; bed: string; diagnosis: string | null; status: string; admitted_at: string; discharged_at: string | null };
+export type PreAuthorization = { id: string; authorization_number: string; patient_id: string; benefit_package_code: string; care_setting: "OUTPATIENT" | "INPATIENT"; department: string; requested_services: string[]; status: string; requested_amount: number; approved_amount: number; external_reference: string | null; requested_at: string; decided_at: string | null };
 export type Department = { id: string; facility_id: string; name: string; code: string; status: string };
 export type Encounter = { id: string; encounter_id: string; patient_id: string; facility_id: string; department_id: string; encounter_type: string; reason: string | null; status: string; started_at: string; ended_at: string | null; created_by: string };
 export type EncounterCreate = { patient_id: string; facility_id: string; department_id: string; encounter_type: string; reason?: string | null };
@@ -53,4 +23,6 @@ export type ClinicalTimeline = { encounter: Encounter; vitals: Vital[]; consulta
 export type Appointment = { id: string; patient_id: string; facility_id: string; department_id: string; provider_id: string | null; appointment_at: string; reason: string | null; status: string };
 export type Queue = { id: string; facility_id: string; department_id: string; name: string; status: string };
 export type QueueEntry = { id: string; queue_id: string; patient_id: string; appointment_id: string | null; encounter_id: string | null; priority: string; status: string; queued_at: string; called_at: string | null; completed_at: string | null };
+export type Referral = { id: string; referral_id: string; patient_id: string; encounter_id: string; source_facility_id: string; destination_facility_id: string; destination_department_id: string | null; referred_by: string; reason: string; priority: string; clinical_summary: string | null; status: string; created_at: string; updated_at: string };
+export type Transfer = { id: string; transfer_id: string; referral_id: string | null; patient_id: string; encounter_id: string; source_facility_id: string; destination_facility_id: string; requested_by: string; reason: string; status: string; notes: string | null; created_at: string; updated_at: string };
 export type ApiErrorBody = { detail?: string | { code?: string; message?: string } };
