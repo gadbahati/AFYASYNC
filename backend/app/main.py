@@ -9,6 +9,8 @@ from app.appointments.router import router as appointments_router
 from app.audit import models as audit_models
 from app.auth import models as auth_models
 from app.auth import router as auth_router
+from app.benefits import models as benefit_models
+from app.benefits.router import router as benefits_router
 from app.billing import models as billing_models
 from app.billing.router import router as billing_router
 from app.bootstrap import ensure_demo_admin
@@ -43,7 +45,7 @@ from app.reports.router import router as reports_router
 _ = (patient_models, coverage_models, facility_models, rbac_models, appointment_models,
      encounter_models, clinical_models, laboratory_models, pharmacy_models, billing_models,
      claims_models, integration_models, audit_models, referral_models, notification_models,
-     auth_models)
+     auth_models, benefit_models)
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, description="AfyaSync healthcare platform API")
 
@@ -88,6 +90,7 @@ def initialize_database() -> None:
 app.include_router(auth_router.router)
 app.include_router(patients_router)
 app.include_router(coverage_router)
+app.include_router(benefits_router)
 app.include_router(facilities_router)
 app.include_router(appointments_router)
 app.include_router(encounters_router)
