@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_facility_context, get_token_payload, require_permission
 from app.database import get_db
 from app.encounters.models import Encounter
-from app.laboratory.schemas import LabOrderCreate, LabOrderResponse, ResultCreate, ResultResponse, SampleCollect, SampleReceive, SampleResponse
+from app.laboratory.models import LabTest
+from app.laboratory.schemas import LabOrderCreate, LabOrderResponse, LabTestResponse, ResultCreate, ResultResponse, SampleCollect, SampleReceive, SampleResponse
 from app.laboratory.service import collect_sample, create_order, enter_result, receive_sample, verify_result
 from app.rbac.models import Staff, User
 
@@ -39,6 +40,15 @@ def _error(exc: ValueError) -> HTTPException:
     code = str(exc)
     status_code = 404 if code.endswith("NOT_FOUND") else 409 if "STATE" in code or "ALREADY" in code else 400
     return HTTPException(status_code=status_code, detail=code)
+
+
+@router.get("/tests", response_model=list[LabTestResponse])
+def list_tests(
+    user: User = Depends(require_permission("lab.order.create")),
+    db: Session = Depends(get_db),
+):
+    """Return the active laboratory test catalogue, including description, specimen and unit price."""
+    return list(db.scalars(select(LabTest).where(LabTest.status == "ACTIVE").order_by(LabTest.category, LabTest.name)).all())
 
 
 @router.post("/orders", response_model=LabOrderResponse, status_code=status.HTTP_201_CREATED)
