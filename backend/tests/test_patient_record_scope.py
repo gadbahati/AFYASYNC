@@ -38,10 +38,11 @@ def test_create_patient_links_patient_to_facility(monkeypatch) -> None:
     audit_mock = Mock()
     link = SimpleNamespace(patient_id=person.id, facility_id=uuid4())
 
-    monkeypatch.setattr(patient_service, "Person", lambda **_: person)
+    monkeypatch.setattr(patient_service, "Person", SimpleNamespace(national_id_hash="national_id_hash"))
     monkeypatch.setattr(patient_service, "AfyaIdentity", lambda **_: identity)
     monkeypatch.setattr(patient_service, "PatientFacility", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
+    monkeypatch.setattr(patient_service, "_hash_national_id", lambda value: "hashed-id")
     payload = SimpleNamespace(
         national_id_number="12345678",
         phone=None,
