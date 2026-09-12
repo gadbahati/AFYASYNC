@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
@@ -13,17 +13,17 @@ from app.patients.service import (
 )
 
 
-def _configure_nested_transaction(db: Mock) -> None:
+def _configure_nested_transaction(db: MagicMock) -> None:
     """Make the mocked savepoint behave like SQLAlchemy's context manager."""
     db.begin_nested.return_value.__enter__.return_value = db.begin_nested.return_value
     db.begin_nested.return_value.__exit__.return_value = False
 
 
 def test_enroll_patient_in_facility_creates_active_membership(monkeypatch) -> None:
-    db = Mock()
+    db = MagicMock()
     _configure_nested_transaction(db)
     db.scalar.side_effect = [uuid4(), None]
-    audit_mock = Mock()
+    audit_mock = MagicMock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
     patient_id, facility_id, actor_id = uuid4(), uuid4(), uuid4()
     result = enroll_patient_in_facility(db, patient_id, facility_id, actor_user_id=actor_id)
@@ -38,10 +38,10 @@ def test_enroll_patient_in_facility_creates_active_membership(monkeypatch) -> No
 
 
 def test_enroll_patient_in_facility_reactivates_inactive_membership(monkeypatch) -> None:
-    db = Mock()
+    db = MagicMock()
     membership = SimpleNamespace(id=uuid4(), patient_id=uuid4(), facility_id=uuid4(), status="INACTIVE")
     db.scalar.side_effect = [membership, membership]
-    audit_mock = Mock()
+    audit_mock = MagicMock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
     result = enroll_patient_in_facility(db, membership.patient_id, membership.facility_id, actor_user_id=uuid4())
     assert result is membership
@@ -53,10 +53,10 @@ def test_enroll_patient_in_facility_reactivates_inactive_membership(monkeypatch)
 
 
 def test_enroll_patient_in_facility_rejects_existing_active_membership(monkeypatch) -> None:
-    db = Mock()
+    db = MagicMock()
     membership = SimpleNamespace(id=uuid4(), status="ACTIVE")
     db.scalar.side_effect = [uuid4(), membership]
-    audit_mock = Mock()
+    audit_mock = MagicMock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
     try:
         enroll_patient_in_facility(db, uuid4(), uuid4(), actor_user_id=uuid4())
@@ -70,9 +70,9 @@ def test_enroll_patient_in_facility_rejects_existing_active_membership(monkeypat
 
 
 def test_enroll_patient_in_facility_rejects_unknown_patient(monkeypatch) -> None:
-    db = Mock()
+    db = MagicMock()
     db.scalar.return_value = None
-    audit_mock = Mock()
+    audit_mock = MagicMock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
     try:
         enroll_patient_in_facility(db, uuid4(), uuid4(), actor_user_id=uuid4())
@@ -86,13 +86,13 @@ def test_enroll_patient_in_facility_rejects_unknown_patient(monkeypatch) -> None
 
 
 def test_enroll_patient_in_facility_handles_concurrent_duplicate(monkeypatch) -> None:
-    db = Mock()
+    db = MagicMock()
     _configure_nested_transaction(db)
     patient_id, facility_id = uuid4(), uuid4()
     membership = SimpleNamespace(id=uuid4(), patient_id=patient_id, facility_id=facility_id, status="ACTIVE")
     db.scalar.side_effect = [uuid4(), None, membership]
     db.flush.side_effect = [IntegrityError("INSERT", {}, Exception("duplicate key"))]
-    audit_mock = Mock()
+    audit_mock = MagicMock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
 
     try:
@@ -108,10 +108,10 @@ def test_enroll_patient_in_facility_handles_concurrent_duplicate(monkeypatch) ->
 
 
 def test_update_patient_facility_status_deactivates_membership(monkeypatch) -> None:
-    db = Mock()
+    db = MagicMock()
     membership = SimpleNamespace(id=uuid4(), patient_id=uuid4(), facility_id=uuid4(), status="ACTIVE")
     db.scalar.return_value = membership
-    audit_mock = Mock()
+    audit_mock = MagicMock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
     result = update_patient_facility_status(db, membership.patient_id, membership.facility_id, "INACTIVE", actor_user_id=uuid4())
     assert result is membership
@@ -122,10 +122,10 @@ def test_update_patient_facility_status_deactivates_membership(monkeypatch) -> N
 
 
 def test_update_patient_facility_status_rejects_unchanged_status(monkeypatch) -> None:
-    db = Mock()
+    db = MagicMock()
     membership = SimpleNamespace(id=uuid4(), patient_id=uuid4(), facility_id=uuid4(), status="ACTIVE")
     db.scalar.return_value = membership
-    audit_mock = Mock()
+    audit_mock = MagicMock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
     try:
         update_patient_facility_status(db, membership.patient_id, membership.facility_id, "ACTIVE", actor_user_id=uuid4())
@@ -139,8 +139,8 @@ def test_update_patient_facility_status_rejects_unchanged_status(monkeypatch) ->
 
 
 def test_update_patient_facility_status_rejects_invalid_status(monkeypatch) -> None:
-    db = Mock()
-    audit_mock = Mock()
+    db = MagicMock()
+    audit_mock = MagicMock()
     monkeypatch.setattr(patient_service, "record_audit", audit_mock)
     try:
         update_patient_facility_status(db, uuid4(), uuid4(), "DECEASED", actor_user_id=uuid4())
@@ -154,7 +154,7 @@ def test_update_patient_facility_status_rejects_invalid_status(monkeypatch) -> N
 
 
 def test_get_patient_facility_enrollments_is_scoped_to_requested_facility() -> None:
-    db = Mock()
+    db = MagicMock()
     patient_id, facility_id = uuid4(), uuid4()
     memberships = [SimpleNamespace(id=uuid4(), facility_id=facility_id, status="ACTIVE")]
     db.scalars.return_value.all.return_value = memberships
@@ -168,7 +168,7 @@ def test_get_patient_facility_enrollments_is_scoped_to_requested_facility() -> N
 
 
 def test_list_patients_for_facility_returns_paginated_rows_and_total() -> None:
-    db = Mock()
+    db = MagicMock()
     facility_id = uuid4()
     person = SimpleNamespace(id=uuid4(), first_name="Jane", last_name="Doe")
     identity = SimpleNamespace(person_id=person.id, afya_id="AF-00000001")
