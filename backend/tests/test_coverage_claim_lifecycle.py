@@ -28,7 +28,8 @@ def test_paid_response_requires_approved_amount() -> None:
     claim = SimpleNamespace(id=uuid4(), invoice_id=uuid4(), status="ACCEPTED", claim_amount=Decimal("100"), approved_amount=Decimal("0"), patient_id=uuid4())
     invoice = SimpleNamespace(facility_id=uuid4())
     db = MagicMock()
-    db.get.side_effect = [claim, invoice]
+    db.scalar.return_value = claim
+    db.get.return_value = invoice
 
     with pytest.raises(ClaimsError, match="APPROVED_AMOUNT_REQUIRED"):
         record_payer_response(db, claim.id, invoice.facility_id, "PAID", None, None, None, None)
