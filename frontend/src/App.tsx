@@ -3,6 +3,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AppointmentsPage } from "./pages/AppointmentsPage";
+import { BenefitPackagesPage } from "./pages/BenefitPackagesPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import {
   BillingPage,
@@ -37,6 +38,7 @@ export default function App() {
               <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
               <Route path="/appointments" element={<AppointmentsPage />} />
               <Route path="/queue" element={<QueuePage />} />
+              <Route path="/benefits" element={<BenefitPackagesPage />} />
               <Route path="/laboratory" element={<LabPage />} />
               <Route path="/pharmacy" element={<PharmacyPage />} />
               <Route path="/billing" element={<BillingPage />} />
