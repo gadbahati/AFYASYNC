@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import re
 from uuid import UUID
 
 from sqlalchemy import func, or_, select, text
@@ -5,11 +8,26 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
+from app.config import settings
 from app.patients.models import AfyaIdentity, PatientFacility, Person
 from app.patients.schemas import PatientCreate, PatientUpdate
 
 
 _ALLOWED_PATIENT_STATUSES = {"ACTIVE", "INACTIVE"}
+_ID_NUMBER_PATTERN = re.compile(r"^\d{7,9}$")
+
+
+def _normalize_id_number(value: str) -> str:
+    normalized = value.strip()
+    if not _ID_NUMBER_PATTERN.fullmatch(normalized):
+        raise ValueError("INVALID_ID_NUMBER")
+    return normalized
+
+
+def _hash_id_number(value: str) -> str:
+    """Hash the government ID with the application secret; never persist the raw ID."""
+    normalized = _normalize_id_number(value)
+    return hmac.new(settings.jwt_secret.encode("utf-8"), normalized.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _next_afya_id(db: Session) -> str:
@@ -23,11 +41,19 @@ def _next_afya_id(db: Session) -> str:
 def create_patient(db: Session, payload: PatientCreate, *, actor_user_id: UUID | None = None, facility_id: UUID | None = None) -> Person:
     if facility_id is None:
         raise ValueError("FACILITY_CONTEXT_REQUIRED")
+
+    id_hash = _hash_id_number(payload.national_id_number)
+    existing_by_id = db.scalar(select(Person).where(Person.national_id_hash == id_hash))
+    if existing_by_id is not None:
+        raise ValueError("DUPLICATE_ID_NUMBER")
+
     if payload.phone:
         existing = db.scalar(select(Person).where(Person.phone == payload.phone, Person.first_name.ilike(payload.first_name), Person.last_name.ilike(payload.last_name)))
         if existing:
             raise ValueError("DUPLICATE_PATIENT")
-    person = Person(**payload.model_dump())
+
+    data = payload.model_dump(exclude={"national_id_number"})
+    person = Person(**data, national_id_hash=id_hash)
     db.add(person)
     db.flush()
     identity = AfyaIdentity(person_id=person.id, afya_id=_next_afya_id(db))
@@ -35,7 +61,7 @@ def create_patient(db: Session, payload: PatientCreate, *, actor_user_id: UUID |
     db.flush()
     db.add(PatientFacility(patient_id=person.id, facility_id=facility_id, status="ACTIVE"))
     db.flush()
-    record_audit(db, action="CREATE_PATIENT", resource_type="PERSON", resource_id=str(person.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=person.id, metadata={"afya_id": identity.afya_id}, commit=False)
+    record_audit(db, action="CREATE_PATIENT", resource_type="PERSON", resource_id=str(person.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=person.id, metadata={"afya_id": identity.afya_id, "identity_verified": True}, commit=False)
     db.commit()
     db.refresh(person)
     return person
@@ -51,49 +77,19 @@ def get_patient_facility_enrollments(db: Session, patient_id: UUID, facility_id:
     return list(db.scalars(statement).all())
 
 
-def list_patients_for_facility(
-    db: Session,
-    facility_id: UUID,
-    *,
-    limit: int = 50,
-    offset: int = 0,
-    enrollment_status: str | None = "ACTIVE",
-) -> tuple[list[tuple[Person, AfyaIdentity]], int]:
-    """Return patients enrolled at the given facility only, plus total count.
-
-    Strictly facility-scoped: never returns patients that are only enrolled
-    at other facilities. Defaults to ACTIVE enrollments.
-    """
+def list_patients_for_facility(db: Session, facility_id: UUID, *, limit: int = 50, offset: int = 0, enrollment_status: str | None = "ACTIVE") -> tuple[list[tuple[Person, AfyaIdentity]], int]:
     if facility_id is None:
         raise ValueError("FACILITY_CONTEXT_REQUIRED")
     limit = min(max(limit, 1), 100)
     offset = max(offset, 0)
-
     base_filters = [PatientFacility.facility_id == facility_id]
     if enrollment_status is not None:
         if enrollment_status not in _ALLOWED_PATIENT_STATUSES:
             raise ValueError("INVALID_ENROLLMENT_STATUS")
         base_filters.append(PatientFacility.status == enrollment_status)
-
-    count_stmt = (
-        select(func.count())
-        .select_from(PatientFacility)
-        .where(*base_filters)
-    )
-    total = int(db.scalar(count_stmt) or 0)
-
-    statement = (
-        select(Person, AfyaIdentity)
-        .join(AfyaIdentity, AfyaIdentity.person_id == Person.id)
-        .join(PatientFacility, PatientFacility.patient_id == Person.id)
-        .where(*base_filters)
-        .order_by(Person.last_name, Person.first_name, Person.id)
-        .offset(offset)
-        .limit(limit)
-    )
-
-    items = list(db.execute(statement).all())
-    return items, total
+    total = int(db.scalar(select(func.count()).select_from(PatientFacility).where(*base_filters)) or 0)
+    statement = select(Person, AfyaIdentity).join(AfyaIdentity, AfyaIdentity.person_id == Person.id).join(PatientFacility, PatientFacility.patient_id == Person.id).where(*base_filters).order_by(Person.last_name, Person.first_name, Person.id).offset(offset).limit(limit)
+    return list(db.execute(statement).all()), total
 
 
 def update_patient(db: Session, patient: Person, payload: PatientUpdate, *, actor_user_id: UUID | None = None, facility_id: UUID | None = None) -> Person:
@@ -143,10 +139,6 @@ def enroll_patient_in_facility(db: Session, patient_id: UUID, facility_id: UUID,
             db.add(membership)
             db.flush()
     except IntegrityError:
-        # The unique patient/facility constraint may race with another request.
-        # A savepoint keeps the caller's outer transaction usable after the
-        # losing insert is rolled back. Re-read the row and apply the same
-        # business rules as the non-racing path.
         membership = db.scalar(select(PatientFacility).where(PatientFacility.patient_id == patient_id, PatientFacility.facility_id == facility_id))
         if membership is None:
             raise
