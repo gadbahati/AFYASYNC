@@ -14,7 +14,15 @@ from app.appointments.schemas import (
     QueueEntryResponse,
     QueueResponse,
 )
-from app.appointments.service import add_to_queue, create_appointment, create_queue, list_appointments, update_queue_status
+from app.appointments.service import (
+    add_to_queue,
+    create_appointment,
+    create_queue,
+    list_appointments,
+    list_queue_entries,
+    list_queues,
+    update_queue_status,
+)
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
 from app.rbac.models import User
@@ -76,6 +84,25 @@ def create_queue_endpoint(
         return create_queue(db, data)
     except ValueError as err:
         raise _error(err) from err
+
+
+@router.get("/queues", response_model=list[QueueResponse])
+def list_queues_endpoint(
+    _: User = Depends(require_permission("appointments.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+):
+    return list_queues(db, facility_id)
+
+
+@router.get("/queues/entries", response_model=list[QueueEntryResponse])
+def list_queue_entries_endpoint(
+    queue_id: UUID | None = Query(default=None),
+    _: User = Depends(require_permission("appointments.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+):
+    return list_queue_entries(db, facility_id, queue_id)
 
 
 @router.post("/queues/entries", response_model=QueueEntryResponse, status_code=status.HTTP_201_CREATED)
