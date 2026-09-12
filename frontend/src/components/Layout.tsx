@@ -29,6 +29,11 @@ export function Layout() {
         </div>
       </aside>
       <main className="content">
+        {auth.demoMode && (
+          <div className="demo-banner">
+            DEMO MODE — offline sample data. Not connected to the live API. Remove this bypass before production.
+          </div>
+        )}
         <Outlet />
       </main>
     </div>
