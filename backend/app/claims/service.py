@@ -32,8 +32,6 @@ def _verified_current_coverage(db: Session, patient_id: UUID, payer_id: UUID | N
 
 
 def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
-    # Serialize claim creation per invoice. Without the row lock, two concurrent
-    # requests can both observe no claim and create duplicate claims for one invoice.
     invoice = db.scalar(select(Invoice).where(Invoice.id == invoice_id).with_for_update())
     if invoice is None:
         raise ClaimsError("INVOICE_NOT_FOUND")
@@ -136,8 +134,6 @@ def build_claim_submission_payload(db: Session, claim_id: UUID, facility_id: UUI
 
 
 def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
-    # Lock the claim through the full queue/status transaction so two workers cannot
-    # both enqueue the same READY claim before either one commits SUBMITTED.
     claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
     if claim is None:
         raise ClaimsError("CLAIM_NOT_FOUND")
@@ -208,12 +204,6 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
 
 
 def process_payer_callback(db: Session, facility_id: UUID, integration_id: UUID, claim_id: UUID, status: str, response_code: str | None, response_message: str | None, external_reference: str, approved_amount: Decimal | None, *, actor_user_id: UUID | None = None) -> Claim:
-    """Apply an authorised payer callback to the matching outbound claim transaction.
-
-    The integration transport result is kept separate from the payer business decision.
-    A callback is accepted only for an active, facility-scoped payer-claims integration
-    and the exact outbound transaction created for this claim.
-    """
     if not external_reference:
         raise ClaimsError("PAYER_EXTERNAL_REFERENCE_REQUIRED")
     integration = db.get(Integration, integration_id)
@@ -223,7 +213,6 @@ def process_payer_callback(db: Session, facility_id: UUID, integration_id: UUID,
         raise ClaimsError("INTEGRATION_NOT_ACTIVE")
     if integration.integration_type not in {"PAYER_CLAIMS", "CLAIMS"}:
         raise ClaimsError("INVALID_PAYER_INTEGRATION")
-
     claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
     if claim is None:
         raise ClaimsError("CLAIM_NOT_FOUND")
@@ -232,21 +221,17 @@ def process_payer_callback(db: Session, facility_id: UUID, integration_id: UUID,
     payer = db.get(Payer, claim.payer_id)
     if payer is None or payer.status != "ACTIVE" or integration.provider != payer.code:
         raise ClaimsError("PAYER_INTEGRATION_MISMATCH")
-
     transaction = db.scalar(select(IntegrationTransaction).where(IntegrationTransaction.integration_id == integration.id, IntegrationTransaction.entity_type == "CLAIM", IntegrationTransaction.entity_id == claim.id, IntegrationTransaction.direction == "OUTBOUND", IntegrationTransaction.request_reference == claim.claim_id).order_by(IntegrationTransaction.created_at.desc()).limit(1))
     if transaction is None:
         raise ClaimsError("INTEGRATION_TRANSACTION_NOT_FOUND")
-
     duplicate = db.scalar(select(ClaimResponse.id).where(ClaimResponse.claim_id == claim.id, ClaimResponse.external_reference == external_reference).limit(1))
     if duplicate is not None:
         raise ClaimsError("DUPLICATE_PAYER_RESPONSE")
-
     transaction.status = "SUCCEEDED"
     transaction.external_reference = external_reference
     transaction.response_code = response_code
     transaction.response_data = {"status": status, "response_message": response_message, "approved_amount": str(approved_amount) if approved_amount is not None else None}
     db.flush()
-
     try:
         result = record_payer_response(db, claim_id, facility_id, status, response_code, response_message, external_reference, approved_amount, actor_user_id=actor_user_id, commit=False)
     except Exception:
@@ -259,7 +244,9 @@ def process_payer_callback(db: Session, facility_id: UUID, integration_id: UUID,
 
 
 def reconcile_claim(db: Session, claim_id: UUID, facility_id: UUID, staff_id: UUID, received_amount: Decimal, *, actor_user_id: UUID | None = None) -> Reconciliation:
-    claim = db.get(Claim, claim_id)
+    # Lock the claim so concurrent reconciliation requests cannot both pass the
+    # existing-reconciliation check before either transaction commits.
+    claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
     if claim is None:
         raise ClaimsError("CLAIM_NOT_FOUND")
     invoice = db.get(Invoice, claim.invoice_id)
@@ -267,11 +254,13 @@ def reconcile_claim(db: Session, claim_id: UUID, facility_id: UUID, staff_id: UU
         raise ClaimsError("FACILITY_ACCESS_DENIED")
     if received_amount < 0:
         raise ClaimsError("INVALID_RECEIVED_AMOUNT")
+    expected = Decimal(str(claim.approved_amount)).quantize(Decimal("0.01"))
+    received = Decimal(str(received_amount)).quantize(Decimal("0.01"))
+    if received > expected:
+        raise ClaimsError("RECEIVED_AMOUNT_EXCEEDS_EXPECTED")
     existing = db.scalar(select(Reconciliation).where(Reconciliation.claim_id == claim.id).limit(1))
     if existing:
         raise ClaimsError("CLAIM_ALREADY_RECONCILED")
-    expected = Decimal(str(claim.approved_amount)).quantize(Decimal("0.01"))
-    received = Decimal(str(received_amount)).quantize(Decimal("0.01"))
     difference = received - expected
     status = "MATCHED" if difference == 0 else "VARIANCE"
     reconciliation = Reconciliation(claim_id=claim.id, expected_amount=expected, received_amount=received, difference=difference, status=status, reconciled_by=staff_id, reconciled_at=datetime.now(timezone.utc))
