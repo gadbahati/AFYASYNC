@@ -18,9 +18,11 @@ def _error(exc: ValueError) -> HTTPException:
         "SHA_MEMBER_NOT_FOUND": 404,
         "SHA_COVERAGE_NOT_ACTIVE": 409,
         "SHA_COVERAGE_EXPIRED": 409,
+        "VERIFIED_SHA_COVERAGE_REQUIRED": 409,
         "PATIENT_NOT_FOUND": 404,
         "PATIENT_NOT_IN_FACILITY": 404,
         "BENEFIT_PACKAGE_NOT_FOUND": 404,
+        "INPATIENT_SHA_PACKAGE_REQUIRED": 400,
         "PATIENT_ALREADY_ADMITTED": 409,
     }
     return HTTPException(status_code=mapping.get(code, 400), detail=code)
@@ -48,17 +50,6 @@ def admit(
     user: User = Depends(require_permission("encounters.create")),
 ):
     try:
-        return start_admission(
-            db,
-            patient_id=payload.patient_id,
-            facility_id=facility_id,
-            department_id=payload.department_id,
-            benefit_package_code=payload.benefit_package_code,
-            ward=payload.ward,
-            bed=payload.bed,
-            diagnosis=payload.diagnosis,
-            created_by=user.id,
-            actor_user_id=user.id,
-        )
+        return start_admission(db, patient_id=payload.patient_id, facility_id=facility_id, department_id=payload.department_id, benefit_package_code=payload.benefit_package_code, ward=payload.ward, bed=payload.bed, diagnosis=payload.diagnosis, created_by=user.id, actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
