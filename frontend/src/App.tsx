@@ -15,6 +15,7 @@ import { PharmacyPage } from "./pages/PharmacyPage";
 import { EncounterDetailPage } from "./pages/EncounterDetailPage";
 import { FacilitySelectPage } from "./pages/FacilitySelectPage";
 import { LoginPage } from "./pages/LoginPage";
+import { NationalBenefitConfigurationPage } from "./pages/NationalBenefitConfigurationPage";
 import { NationalCommandCentrePage } from "./pages/NationalCommandCentrePage";
 import { NationalFacilitiesPage } from "./pages/NationalFacilitiesPage";
 import { NationalPayerNetworkPage } from "./pages/NationalPayerNetworkPage";
@@ -27,40 +28,33 @@ import { QueuePage } from "./pages/QueuePage";
 import { ReferralsPage } from "./pages/ReferralsPage";
 
 export default function App() {
-  return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/select-facility" element={<FacilitySelectPage />} />
-          <Route element={<ProtectedRoute />}>
-            <Route element={<Layout />}>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/command-centre" element={<CommandCentrePage />} />
-              <Route path="/national-command-centre" element={<NationalCommandCentrePage />} />
-              <Route path="/national-facilities" element={<NationalFacilitiesPage />} />
-              <Route path="/national-staff" element={<NationalStaffPage />} />
-              <Route path="/national-payers" element={<NationalPayerNetworkPage />} />
-              <Route path="/coverage-simulator" element={<CoverageSimulatorPage />} />
-              <Route path="/patients" element={<PatientsPage />} />
-              <Route path="/patients/new" element={<NewPatientPage />} />
-              <Route path="/patients/sha-lookup" element={<ShaLookupPage />} />
-              <Route path="/patients/:patientId" element={<PatientDetailPage />} />
-              <Route path="/patients/:patientId/encounters/new" element={<NewEncounterPage />} />
-              <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
-              <Route path="/appointments" element={<AppointmentsPage />} />
-              <Route path="/queue" element={<QueuePage />} />
-              <Route path="/benefits" element={<BenefitPackagesPage />} />
-              <Route path="/laboratory" element={<LaboratoryWorkflowPage />} />
-              <Route path="/pharmacy" element={<PharmacyPage />} />
-              <Route path="/billing" element={<BillingPage />} />
-              <Route path="/claims" element={<ClaimsPage />} />
-              <Route path="/referrals" element={<ReferralsPage />} />
-            </Route>
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
-  );
+  return <AuthProvider><BrowserRouter><Routes>
+    <Route path="/login" element={<LoginPage />} />
+    <Route path="/select-facility" element={<FacilitySelectPage />} />
+    <Route element={<ProtectedRoute />}><Route element={<Layout />}>
+      <Route path="/" element={<DashboardPage />} />
+      <Route path="/command-centre" element={<CommandCentrePage />} />
+      <Route path="/national-command-centre" element={<NationalCommandCentrePage />} />
+      <Route path="/national-facilities" element={<NationalFacilitiesPage />} />
+      <Route path="/national-staff" element={<NationalStaffPage />} />
+      <Route path="/national-payers" element={<NationalPayerNetworkPage />} />
+      <Route path="/national-benefits" element={<NationalBenefitConfigurationPage />} />
+      <Route path="/coverage-simulator" element={<CoverageSimulatorPage />} />
+      <Route path="/patients" element={<PatientsPage />} />
+      <Route path="/patients/new" element={<NewPatientPage />} />
+      <Route path="/patients/sha-lookup" element={<ShaLookupPage />} />
+      <Route path="/patients/:patientId" element={<PatientDetailPage />} />
+      <Route path="/patients/:patientId/encounters/new" element={<NewEncounterPage />} />
+      <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
+      <Route path="/appointments" element={<AppointmentsPage />} />
+      <Route path="/queue" element={<QueuePage />} />
+      <Route path="/benefits" element={<BenefitPackagesPage />} />
+      <Route path="/laboratory" element={<LaboratoryWorkflowPage />} />
+      <Route path="/pharmacy" element={<PharmacyPage />} />
+      <Route path="/billing" element={<BillingPage />} />
+      <Route path="/claims" element={<ClaimsPage />} />
+      <Route path="/referrals" element={<ReferralsPage />} />
+    </Route></Route>
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes></BrowserRouter></AuthProvider>;
 }
