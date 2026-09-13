@@ -78,6 +78,28 @@ def update_integration_status(db: Session, integration_id: UUID, facility_id: UU
     return integration
 
 
+def update_integration_configuration(db: Session, integration_id: UUID, facility_id: UUID, *, name: str | None, provider: str | None, configuration: dict | None, reason: str, actor_user_id: UUID) -> Integration:
+    integration = db.scalar(select(Integration).where(Integration.id == integration_id, Integration.facility_id == facility_id).with_for_update())
+    if integration is None:
+        raise IntegrationError("INTEGRATION_NOT_FOUND")
+    if integration.status != "SUSPENDED":
+        raise IntegrationError("INTEGRATION_MUST_BE_SUSPENDED")
+    reason = reason.strip()
+    if len(reason) < 3:
+        raise IntegrationError("INTEGRATION_CONFIGURATION_REASON_REQUIRED")
+    if name is not None:
+        integration.name = name.strip()
+    if provider is not None:
+        integration.provider = provider.strip().upper()
+    if configuration is not None:
+        integration.configuration = _validate_configuration(configuration)
+    db.flush()
+    record_audit(db, action="UPDATE_INTEGRATION_CONFIGURATION", resource_type="INTEGRATION", resource_id=str(integration.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, metadata={"reason": reason, "provider": integration.provider, "configuration_keys": sorted(integration.configuration.keys())}, commit=False)
+    db.commit()
+    db.refresh(integration)
+    return integration
+
+
 def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, transaction_id: str, entity_type: str, entity_id: UUID | None, direction: str, request_reference: str | None, *, commit: bool = False) -> IntegrationTransaction:
     integration = db.scalar(select(Integration).where(Integration.id == integration_id, Integration.facility_id == facility_id))
     if integration is None:
@@ -97,11 +119,7 @@ def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, tran
 
 
 def list_integration_transactions(db: Session, facility_id: UUID, *, integration_id: UUID | None = None, status: str | None = None, limit: int = 100) -> list[IntegrationTransaction]:
-    stmt = (
-        select(IntegrationTransaction)
-        .join(Integration, Integration.id == IntegrationTransaction.integration_id)
-        .where(Integration.facility_id == facility_id)
-    )
+    stmt = select(IntegrationTransaction).join(Integration, Integration.id == IntegrationTransaction.integration_id).where(Integration.facility_id == facility_id)
     if integration_id is not None:
         stmt = stmt.where(IntegrationTransaction.integration_id == integration_id)
     if status:
