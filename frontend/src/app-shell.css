@@ -12,18 +12,9 @@
   z-index: 10;
 }
 
-.brand-row {
-  padding: 4px 8px 16px;
-}
-
-.brand-row strong {
-  font-size: 17px;
-}
-
-.brand-row .muted {
-  font-size: 11px;
-  letter-spacing: .02em;
-}
+.brand-row { padding: 4px 8px 16px; }
+.brand-row strong { font-size: 17px; }
+.brand-row .muted { font-size: 11px; letter-spacing: .02em; }
 
 .facility-context {
   display: grid;
@@ -51,13 +42,8 @@
   white-space: nowrap;
 }
 
-.nav-group + .nav-group {
-  margin-top: 5px;
-}
-
-.nav-group .nav-section {
-  margin-top: 11px;
-}
+.nav-group + .nav-group { margin-top: 5px; }
+.nav-group .nav-section { margin-top: 11px; }
 
 .sidebar nav a {
   position: relative;
@@ -80,11 +66,7 @@
   box-shadow: 0 0 0 3px rgba(156,233,206,.10);
 }
 
-.content {
-  max-width: none;
-  padding: 0;
-  min-width: 0;
-}
+.content { max-width: none; padding: 0; min-width: 0; }
 
 .topbar {
   min-height: 68px;
@@ -101,11 +83,7 @@
   backdrop-filter: blur(8px);
 }
 
-.topbar > div:first-child {
-  display: grid;
-  gap: 1px;
-}
-
+.topbar > div:first-child { display: grid; gap: 1px; }
 .topbar-kicker {
   color: var(--muted-soft);
   font-size: 10px;
@@ -113,31 +91,19 @@
   letter-spacing: .07em;
   text-transform: uppercase;
 }
+.topbar-title { color: var(--ink); font-size: 15px; font-weight: 600; }
 
-.topbar-title {
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.topbar-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+.topbar-context {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 11px;
   font-size: 12px;
-  white-space: nowrap;
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--brand);
 }
 
 .content-inner {
@@ -146,42 +112,17 @@
   padding: 28px 32px 52px;
 }
 
-.page-heading,
-.page-header {
-  background: transparent;
-}
+.page-heading, .page-header { background: transparent; }
 
-.card,
-.stat-card,
-.table-wrap,
-.hero-banner {
+.card, .stat-card, .table-wrap, .hero-banner {
   box-shadow: 0 1px 3px rgba(10,30,25,.045);
 }
-
-.card:hover,
-.stat-card:hover {
-  border-color: var(--border-strong);
-}
-
-button, .button {
-  min-height: 38px;
-}
-
-button.secondary, .button.secondary {
-  background: #fff;
-}
-
-.table-wrap {
-  scrollbar-width: thin;
-}
-
-th {
-  white-space: nowrap;
-}
-
-td {
-  vertical-align: middle;
-}
+.card:hover, .stat-card:hover { border-color: var(--border-strong); }
+button, .button { min-height: 38px; }
+button.secondary, .button.secondary { background: #fff; }
+.table-wrap { scrollbar-width: thin; }
+th { white-space: nowrap; }
+td { vertical-align: middle; }
 
 .user-context {
   display: flex;
@@ -189,13 +130,7 @@ td {
   gap: 9px;
   padding-bottom: 10px;
 }
-
-.user-context > div:last-child {
-  min-width: 0;
-  display: grid;
-  gap: 1px;
-}
-
+.user-context > div:last-child { min-width: 0; display: grid; gap: 1px; }
 .user-context strong {
   color: #f3fbf8;
   font-size: 12.5px;
@@ -204,7 +139,6 @@ td {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .user-avatar {
   width: 30px;
   height: 30px;
@@ -217,63 +151,37 @@ td {
   font-size: 12px;
   font-weight: 600;
 }
-
-.signout {
-  width: fit-content;
-  font-size: 12px;
-}
+.signout { width: fit-content; font-size: 12px; }
 
 @media (max-width: 900px) {
-  .sidebar {
-    box-shadow: none;
-  }
-
-  .facility-context {
-    display: none;
-  }
-
+  .sidebar { box-shadow: none; }
+  .facility-context { display: none; }
   .sidebar nav {
     max-height: 118px;
     overflow: auto;
     padding-bottom: 2px;
   }
-
-  .sidebar nav a {
-    min-height: 34px;
-  }
-
-  .nav-dot {
-    display: none;
-  }
-
+  .sidebar nav a { min-height: 34px; }
+  .nav-dot { display: none; }
   .topbar {
     position: relative;
     min-height: 62px;
     padding: 11px 16px;
   }
-
-  .topbar-kicker {
-    font-size: 9px;
-  }
-
-  .content-inner {
-    padding: 20px 16px 36px;
-  }
+  .topbar-kicker { font-size: 9px; }
+  .content-inner { padding: 20px 16px 36px; }
 }
 
 @media (max-width: 560px) {
-  .topbar-status {
+  .topbar-context {
+    max-width: 36px;
     font-size: 0;
     padding: 7px;
   }
-
-  .topbar-status .status-dot {
-    width: 8px;
-    height: 8px;
+  .topbar-context::before {
+    content: "•";
+    color: var(--brand);
+    font-size: 14px;
   }
-
-  .content-inner {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
+  .content-inner { padding-left: 12px; padding-right: 12px; }
 }
