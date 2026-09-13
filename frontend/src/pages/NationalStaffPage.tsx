@@ -1,22 +1,34 @@
 import { useEffect, useState } from "react";
 import { getNetworkFacilities, getNetworkStaff } from "../api/national";
 
+type StaffResponse = Awaited<ReturnType<typeof getNetworkStaff>>;
+
+type FacilityResponse = Awaited<ReturnType<typeof getNetworkFacilities>>;
+
 export function NationalStaffPage() {
-  const [staff, setStaff] = useState<Awaited<ReturnType<typeof getNetworkStaff>>>(null);
-  const [facilities, setFacilities] = useState<Awaited<ReturnType<typeof getNetworkFacilities>>>([]);
+  const [staff, setStaff] = useState<StaffResponse | null>(null);
+  const [facilities, setFacilities] = useState<FacilityResponse>([]);
   const [facilityId, setFacilityId] = useState("");
   const [status, setStatus] = useState("ACTIVE");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   async function load() {
-    setLoading(true); setError("");
-    try { setStaff(await getNetworkStaff({ facilityId: facilityId || undefined, status: status || undefined })); }
-    catch (err) { setError(err instanceof Error ? err.message : "NATIONAL_STAFF_REQUEST_FAILED"); }
-    finally { setLoading(false); }
+    setLoading(true);
+    setError("");
+    try {
+      setStaff(await getNetworkStaff({ facilityId: facilityId || undefined, status: status || undefined }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "NATIONAL_STAFF_REQUEST_FAILED");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { void getNetworkFacilities().then(setFacilities).catch(() => undefined); void load(); }, []);
+  useEffect(() => {
+    void getNetworkFacilities().then(setFacilities).catch(() => undefined);
+    void load();
+  }, []);
 
   return <section className="page-stack">
     <div className="page-header"><div><p className="eyebrow">National administration</p><h1>Staff network</h1><p className="muted">Cross-facility workforce membership for network administration. Clinical records are not exposed.</p></div><button type="button" onClick={() => void load()} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
