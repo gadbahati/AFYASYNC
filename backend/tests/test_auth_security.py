@@ -37,12 +37,27 @@ def test_refresh_token_requires_refresh_claims() -> None:
 
 def test_production_rejects_default_jwt_secret() -> None:
     with pytest.raises(ValueError, match="JWT_SECRET"):
-        Settings(environment="production", jwt_secret="change-this-development-secret")
+        Settings(environment="production", jwt_secret="change-this-development-secret", cors_origins="https://app.example.com")
 
 
 def test_production_requires_long_jwt_secret() -> None:
     with pytest.raises(ValueError, match="32 characters"):
-        Settings(environment="production", jwt_secret="too-short")
+        Settings(environment="production", jwt_secret="too-short", cors_origins="https://app.example.com")
+
+
+def test_production_requires_explicit_cors_origin() -> None:
+    with pytest.raises(ValueError, match="CORS_ORIGINS"):
+        Settings(environment="production", jwt_secret="a" * 32, cors_origins="")
+
+
+def test_production_rejects_local_cors_origin() -> None:
+    with pytest.raises(ValueError, match="local development origins"):
+        Settings(environment="production", jwt_secret="a" * 32, cors_origins="http://localhost:5173")
+
+
+def test_production_accepts_trusted_https_cors_origin() -> None:
+    configured = Settings(environment="production", jwt_secret="a" * 32, cors_origins="https://app.example.com")
+    assert configured.cors_origin_list() == ["https://app.example.com"]
 
 
 def test_access_token_contains_facility_scope() -> None:
