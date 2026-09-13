@@ -29,42 +29,45 @@ jobs:
       - name: Compile application and tests
         run: python -m compileall -q app migrations tests
 
-      - name: Guard production JWT configuration
+      - name: Guard production configuration
         run: |
           python - <<'PY'
           import os
+          from app.config import Settings
+
           os.environ["ENVIRONMENT"] = "production"
           os.environ["JWT_SECRET"] = "change-this-development-secret"
+          os.environ["CORS_ORIGINS"] = "https://app.example.com"
           try:
-              from app.config import Settings
               Settings()
           except Exception as exc:
               print("OK: production rejects default JWT secret:", type(exc).__name__)
           else:
               raise SystemExit("FAIL: production accepted default JWT secret")
+
+          os.environ["JWT_SECRET"] = "a" * 32
+          os.environ["CORS_ORIGINS"] = ""
+          try:
+              Settings()
+          except Exception as exc:
+              print("OK: production rejects missing CORS origins:", type(exc).__name__)
+          else:
+              raise SystemExit("FAIL: production accepted missing CORS origins")
           PY
 
       - name: Verify migration chain
         run: |
           python - <<'PY'
-          from pathlib import Path
-          import re
-          versions = sorted(Path("migrations/versions").glob("*.py"))
-          revisions = {}
-          down_revisions = {}
-          for path in versions:
-              text = path.read_text()
-              revision = re.search(r"^revision\s*=\s*['\"]([^'\"]+)", text, re.MULTILINE)
-              down = re.search(r"^down_revision\s*=\s*(.+)$", text, re.MULTILINE)
-              if revision:
-                  revisions[revision.group(1)] = path.name
-                  down_revisions[revision.group(1)] = down.group(1).strip() if down else "None"
-          if len(revisions) != len(versions):
-              raise SystemExit("FAIL: migration file without revision identifier")
-          heads = [revision for revision, down in down_revisions.items() if all(revision not in value for value in down_revisions.values() if value not in {"None", "None,", "None #"})]
-          if not heads:
-              raise SystemExit("FAIL: migration chain has no head")
-          print("Migration files:", len(versions), "candidate heads:", heads)
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+
+          config = Config("alembic.ini")
+          script = ScriptDirectory.from_config(config)
+          heads = script.get_heads()
+          if len(heads) != 1:
+              raise SystemExit(f"FAIL: Alembic migration graph must have exactly one head; found {heads}")
+          print("Alembic head:", heads[0])
+          print("Migration revisions:", len(list(script.walk_revisions())))
           PY
 
       - name: Run tests
