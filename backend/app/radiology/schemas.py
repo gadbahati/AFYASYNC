@@ -16,12 +16,12 @@ class ImagingTestResponse(BaseModel):
 
 class ImagingOrderCreate(BaseModel):
     patient_id: UUID
-    encounter_id: UUID | None = None
+    encounter_id: UUID
     test_id: UUID
     clinical_indication: str | None = None
 
 class ImagingOrderResponse(BaseModel):
-    id: UUID; order_number: str; patient_id: UUID; facility_id: UUID; encounter_id: UUID | None; test_id: UUID; ordered_by: UUID; clinical_indication: str | None; status: str; ordered_at: datetime; completed_at: datetime | None
+    id: UUID; order_number: str; patient_id: UUID; facility_id: UUID; encounter_id: UUID; test_id: UUID; ordered_by: UUID; clinical_indication: str | None; status: str; ordered_at: datetime; completed_at: datetime | None
     model_config = {"from_attributes": True}
 
 class ImagingReportCreate(BaseModel):
