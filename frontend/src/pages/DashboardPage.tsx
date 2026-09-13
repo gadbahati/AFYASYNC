@@ -13,20 +13,14 @@ export function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .facilityReport()
-      .then((data) => {
-        if (!cancelled) setReport(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message || err.code : "REPORT_LOAD_FAILED");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    api.facilityReport().then((data) => {
+      if (!cancelled) setReport(data);
+    }).catch((err) => {
+      if (!cancelled) setError(err instanceof ApiError ? err.message || err.code : "REPORT_LOAD_FAILED");
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   return (
@@ -68,28 +62,49 @@ export function DashboardPage() {
             <Stat label="Claims amount" value={formatMoney(report.claims_amount)} />
             <Stat label="Claims approved" value={formatMoney(report.claims_approved)} />
             <Stat label="Claims paid" value={formatMoney(report.claims_paid)} />
+            <Stat label="Payer receivable" value={formatMoney(report.claims_receivable)} />
           </div>
 
+          <section className="report-grid">
+            <ReportTable
+              title="Claims by status"
+              headers={["Status", "Claims", "Billed", "Approved", "Paid"]}
+              rows={report.claim_statuses.map((item) => [
+                item.status,
+                String(item.count),
+                formatMoney(item.amount),
+                formatMoney(item.approved_amount),
+                formatMoney(item.paid_amount),
+              ])}
+              empty="No claims were updated in this period."
+            />
+            <ReportTable
+              title="Payer performance"
+              headers={["Payer", "Claims", "Billed", "Approved", "Receivable"]}
+              rows={report.payer_claims.map((item) => [
+                item.payer_name,
+                String(item.claims),
+                formatMoney(item.amount),
+                formatMoney(item.approved_amount),
+                formatMoney(item.receivable),
+              ])}
+              empty="No payer claims were recorded in this period."
+            />
+          </section>
+
           <section className="card monitor-panel">
-            <h3 style={{ marginTop: 0 }}>Modules</h3>
+            <h3 style={{ marginTop: 0 }}>Operational areas</h3>
             <p className="muted" style={{ marginBottom: 8 }}>
-              Use the left menu to open each area. In demo mode the tables show sample facility work.
+              Open a clinical or financing workspace to work with live facility records.
             </p>
             <p>
-              <Link to="/patients">Patients</Link>
-              {" · "}
-              <Link to="/appointments">Appointments</Link>
-              {" · "}
-              <Link to="/queue">Queue</Link>
-              {" · "}
-              <Link to="/laboratory">Lab</Link>
-              {" · "}
-              <Link to="/pharmacy">Pharmacy</Link>
-              {" · "}
-              <Link to="/billing">Billing</Link>
-              {" · "}
-              <Link to="/claims">Claims</Link>
-              {" · "}
+              <Link to="/patients">Patients</Link>{" · "}
+              <Link to="/appointments">Appointments</Link>{" · "}
+              <Link to="/queue">Clinical queue</Link>{" · "}
+              <Link to="/laboratory">Lab</Link>{" · "}
+              <Link to="/pharmacy">Pharmacy</Link>{" · "}
+              <Link to="/billing">Billing</Link>{" · "}
+              <Link to="/claims">Claims &amp; rework</Link>{" · "}
               <Link to="/referrals">Referrals</Link>
             </p>
           </section>
@@ -111,5 +126,28 @@ function Stat({ label, value }: { label: string; value: string | number }) {
       <div className="muted small">{label}</div>
       <div className="stat-value">{value}</div>
     </div>
+  );
+}
+
+function ReportTable({ title, headers, rows, empty }: { title: string; headers: string[]; rows: string[][]; empty: string }) {
+  return (
+    <section className="card report-card">
+      <div className="report-card-header">
+        <div>
+          <h3 style={{ margin: 0 }}>{title}</h3>
+          <p className="muted small">Calculated from facility records for the selected reporting window.</p>
+        </div>
+      </div>
+      {rows.length === 0 ? <p className="muted">{empty}</p> : (
+        <div className="table-wrap">
+          <table>
+            <thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
+            <tbody>{rows.map((row, index) => (
+              <tr key={`${row[0]}-${index}`}>{row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`}>{cell}</td>)}</tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
