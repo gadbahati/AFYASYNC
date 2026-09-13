@@ -124,7 +124,10 @@ export const api = {
   listBillingServices() { return request<Array<{ id: string; code: string; name: string; service_type: string; price: number; status: string }>>("/api/v1/billing/services"); },
   createBillingService(payload: { code: string; name: string; service_type: string; price: number; department_id?: string | null }) { return request("/api/v1/billing/services", { method: "POST", body: JSON.stringify(payload) }); },
   listInvoices() { return request<Array<{ id: string; invoice_id: string; patient_id: string; encounter_id: string; total_amount: number; patient_amount: number; payer_amount: number; status: string }>>("/api/v1/billing/invoices"); },
-  recordPayment(payload: { invoice_id: string; amount: number; payment_method: string; provider?: string | null; external_reference?: string | null }) { return request("/api/v1/billing/payments", { method: "POST", body: JSON.stringify(payload) }); },
+  recordPayment(payload: { invoice_id: string; amount: number; payment_method: string; provider?: string | null; external_reference?: string | null }, idempotencyKey?: string) {
+    const headers = idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined;
+    return request("/api/v1/billing/payments", { method: "POST", headers, body: JSON.stringify(payload) });
+  },
   listClaims() { return request<Array<{ id: string; claim_id: string; invoice_id: string; payer_id: string; claim_amount: number; approved_amount: number; paid_amount: number; status: string }>>("/api/v1/claims"); },
   createClaim(invoice_id: string) { return request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id }) }); },
   validateClaim(claim_id: string) { return request<{ claim_id: string; valid: boolean; errors: string[] }>(`/api/v1/claims/${claim_id}/validate`, { method: "POST" }); },
