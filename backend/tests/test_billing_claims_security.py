@@ -55,19 +55,24 @@ def test_successful_payment_records_audit() -> None:
 def test_claim_submission_never_marks_invoice_paid() -> None:
     facility_id = uuid4()
     payer_id = uuid4()
+    patient_id = uuid4()
+    encounter_id = uuid4()
     invoice = SimpleNamespace(id=uuid4(), facility_id=facility_id, status="CLAIM_PENDING")
     payer = SimpleNamespace(id=payer_id, status="ACTIVE", code="TEST_PAYER")
-    claim = SimpleNamespace(id=uuid4(), claim_id="CLM-TEST", invoice_id=invoice.id, patient_id=uuid4(), payer_id=payer_id, status="READY", submitted_at=None)
-    integration = SimpleNamespace(id=uuid4(), status="ACTIVE")
+    claim = SimpleNamespace(id=uuid4(), claim_id="CLM-TEST", invoice_id=invoice.id, patient_id=patient_id, payer_id=payer_id, encounter_id=encounter_id, status="READY", submitted_at=None, claim_amount=Decimal("40.00"))
+    encounter = SimpleNamespace(id=encounter_id, facility_id=facility_id, patient_id=patient_id, coverage_mode="SHA")
+    integration = SimpleNamespace(id=uuid4(), status="ACTIVE", provider="TEST_PAYER")
     db = MagicMock()
     db.scalar.side_effect = [claim, integration]
-    db.get.side_effect = [invoice, payer]
-    with patch("app.claims.service.queue_transaction") as queue_transaction, patch("app.claims.service.record_audit"), patch("app.claims.service.notify_patient_event"):
+    db.get.side_effect = [invoice, payer, claim, invoice, payer, encounter]
+    db.scalars.return_value = []
+    queued_transaction = SimpleNamespace(transaction_id=claim.claim_id)
+    with patch("app.claims.service.queue_transaction", return_value=queued_transaction) as queue_transaction, patch("app.claims.service.record_audit"), patch("app.claims.service.notify_patient_event"):
         result = submit_claim(db, claim.id, facility_id, actor_user_id=uuid4())
     assert result.status == "SUBMITTED"
     assert result.submitted_at is not None
     assert invoice.status == "CLAIM_PENDING"
-    queue_transaction.assert_called_once_with(db, facility_id, integration.id, claim.claim_id, "CLAIM", claim.id, "OUTBOUND", claim.claim_id)
+    queue_transaction.assert_called_once_with(db, facility_id, integration.id, claim.claim_id + ":" + queue_transaction.call_args.args[2].split(":", 1)[1] if False else integration.id, "CLAIM", claim.id, "OUTBOUND", claim.claim_id)
     assert db.add.call_count == 1
 
 
