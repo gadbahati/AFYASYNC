@@ -72,7 +72,12 @@ def test_claim_submission_never_marks_invoice_paid() -> None:
     assert result.status == "SUBMITTED"
     assert result.submitted_at is not None
     assert invoice.status == "CLAIM_PENDING"
-    queue_transaction.assert_called_once_with(db, facility_id, integration.id, claim.claim_id + ":" + queue_transaction.call_args.args[2].split(":", 1)[1] if False else integration.id, "CLAIM", claim.id, "OUTBOUND", claim.claim_id)
+    args = queue_transaction.call_args.args
+    assert args[0] is db
+    assert args[1] == facility_id
+    assert args[2] == integration.id
+    assert args[3].startswith(claim.claim_id + ":")
+    assert args[4:] == ("CLAIM", claim.id, "OUTBOUND", claim.claim_id)
     assert db.add.call_count == 1
 
 
