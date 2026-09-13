@@ -45,6 +45,7 @@ def process_claim_payer_callback(
     external_reference = external_reference.strip()
     if not external_reference:
         raise ClaimsError("PAYER_EXTERNAL_REFERENCE_REQUIRED")
+    status = status.strip().upper()
     if status not in _ALLOWED_STATUSES:
         raise ClaimsError("INVALID_CLAIM_RESPONSE_STATUS")
 
@@ -58,7 +59,7 @@ def process_claim_payer_callback(
     payer = db.get(Payer, claim.payer_id)
     if payer is None or payer.status != "ACTIVE":
         raise ClaimsError("PAYER_NOT_ACTIVE")
-    if integration.provider.upper() != payer.code.upper():
+    if integration.provider.strip().upper() != payer.code.strip().upper():
         raise ClaimsError("PAYER_INTEGRATION_MISMATCH")
 
     transaction = db.scalar(
@@ -86,20 +87,33 @@ def process_claim_payer_callback(
             return claim, True
         raise ClaimsError("DUPLICATE_PAYER_RESPONSE")
 
+    current = claim.status
+    valid_previous = {
+        "ACCEPTED": {"SUBMITTED", "UNDER_REVIEW"},
+        "UNDER_REVIEW": {"SUBMITTED", "UNDER_REVIEW"},
+        "REJECTED": {"SUBMITTED", "UNDER_REVIEW", "REJECTED"},
+        "PARTIALLY_PAID": {"ACCEPTED", "UNDER_REVIEW", "PARTIALLY_PAID"},
+        "PAID": {"ACCEPTED", "PARTIALLY_PAID", "PAID"},
+    }
+    if current not in valid_previous[status]:
+        raise ClaimsError("CLAIM_RESPONSE_NOT_ALLOWED")
+
     if approved_amount is not None:
         approved_amount = Decimal(str(approved_amount)).quantize(Decimal("0.01"))
+        if approved_amount < 0:
+            raise ClaimsError("INVALID_APPROVED_AMOUNT")
         if approved_amount > Decimal(str(claim.claim_amount)).quantize(Decimal("0.01")):
             raise ClaimsError("APPROVED_AMOUNT_EXCEEDS_CLAIM")
     if status in {"ACCEPTED", "PARTIALLY_PAID", "PAID"} and approved_amount is None:
         raise ClaimsError("APPROVED_AMOUNT_REQUIRED")
+    if status == "REJECTED" and approved_amount not in (None, Decimal("0.00")):
+        raise ClaimsError("REJECTED_AMOUNT_MUST_BE_ZERO")
+    if status == "ACCEPTED" and approved_amount == Decimal("0.00"):
+        raise ClaimsError("INVALID_APPROVED_AMOUNT")
     if status == "PAID" and approved_amount == Decimal("0.00"):
         raise ClaimsError("INVALID_APPROVED_AMOUNT")
 
-    transaction.status = (
-        "FAILED" if status == "REJECTED"
-        else "SUCCEEDED" if status in {"ACCEPTED", "PARTIALLY_PAID", "PAID"}
-        else "PENDING"
-    )
+    transaction.status = "SUCCEEDED" if status in {"ACCEPTED", "PARTIALLY_PAID", "PAID"} else "FAILED" if status == "REJECTED" else "PENDING"
     transaction.external_reference = external_reference
     transaction.response_code = response_code
     transaction.response_data = {
