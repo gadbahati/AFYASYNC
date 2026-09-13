@@ -28,6 +28,12 @@ button.secondary, .button.secondary { background: #fff; }
 .table-wrap { scrollbar-width: thin; }
 th { white-space: nowrap; }
 td { vertical-align: middle; }
+.report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+.report-card { min-width: 0; }
+.report-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.report-card .small { margin: 4px 0 0; }
+.report-card table { min-width: 560px; }
+.report-card tbody tr:last-child td { border-bottom: 0; }
 .user-context { display: flex; align-items: center; gap: 9px; padding-bottom: 10px; }
 .user-context > div:last-child { min-width: 0; display: grid; gap: 1px; }
 .user-context strong { color: #f3fbf8; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -36,5 +42,5 @@ td { vertical-align: middle; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(7, 28, 23, .42); backdrop-filter: blur(2px); }
 .modal-card { width: min(720px, 100%); max-height: min(90vh, 760px); overflow: auto; box-shadow: 0 24px 70px rgba(7, 28, 23, .24); }
 .modal-card .page-heading { align-items: flex-start; }
-@media (max-width: 900px) { .sidebar { box-shadow: none; } .facility-context { display: none; } .sidebar nav { max-height: 118px; overflow: auto; padding-bottom: 2px; } .sidebar nav a { min-height: 34px; } .nav-dot { display: none; } .topbar { position: relative; min-height: 62px; padding: 11px 16px; } .topbar-kicker { font-size: 9px; } .content-inner { padding: 20px 16px 36px; } }
+@media (max-width: 900px) { .sidebar { box-shadow: none; } .facility-context { display: none; } .sidebar nav { max-height: 118px; overflow: auto; padding-bottom: 2px; } .sidebar nav a { min-height: 34px; } .nav-dot { display: none; } .topbar { position: relative; min-height: 62px; padding: 11px 16px; } .topbar-kicker { font-size: 9px; } .content-inner { padding: 20px 16px 36px; } .report-grid { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .topbar-context { max-width: 36px; font-size: 0; padding: 7px; } .topbar-context::before { content: "•"; color: var(--brand); font-size: 14px; } .content-inner { padding-left: 12px; padding-right: 12px; } }
