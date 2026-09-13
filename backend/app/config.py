@@ -4,6 +4,7 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_JWT_SECRET = "change-this-development-secret"
+_DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:5173"
 
 
 class Settings(BaseSettings):
@@ -19,8 +20,7 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_pool_timeout_seconds: int = 30
     db_pool_recycle_seconds: int = 1800
-    # Comma-separated browser origins allowed to call the API (empty = no CORS)
-    cors_origins: str = "http://localhost:3000,http://localhost:5173,https://afyasync-swart.vercel.app"
+    cors_origins: str = _DEFAULT_CORS_ORIGINS
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -52,12 +52,17 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def reject_insecure_production_secrets(self) -> "Settings":
+    def validate_production_settings(self) -> "Settings":
         if self.environment == "production":
             if not self.jwt_secret or self.jwt_secret == _DEFAULT_JWT_SECRET:
                 raise ValueError("JWT_SECRET must be set to a strong non-default value when ENVIRONMENT=production")
             if len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
+            origins = self.cors_origin_list()
+            if not origins:
+                raise ValueError("CORS_ORIGINS must contain at least one trusted browser origin in production")
+            if any(origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1") for origin in origins):
+                raise ValueError("CORS_ORIGINS must not contain local development origins in production")
         return self
 
     def cors_origin_list(self) -> list[str]:
