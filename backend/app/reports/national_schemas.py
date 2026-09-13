@@ -40,6 +40,18 @@ class NationalFacilitySummary(BaseModel):
     claims_receivable: Decimal
 
 
+class NationalOperationalSummary(BaseModel):
+    open_encounters: int
+    encounters_24h: int
+    open_invoices: int
+    pending_prescriptions: int
+    low_stock_items: int
+    rejected_claims: int
+    integration_pending: int
+    integration_retrying: int
+    integration_failed: int
+
+
 class NationalReport(BaseModel):
     start_date: date
     end_date: date
@@ -59,3 +71,4 @@ class NationalReport(BaseModel):
     claim_statuses: list[NationalClaimStatusSummary]
     payer_claims: list[NationalPayerSummary]
     facilities: list[NationalFacilitySummary]
+    operations: NationalOperationalSummary
