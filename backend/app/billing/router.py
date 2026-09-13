@@ -1,11 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
-from app.billing.models import Service
+from app.billing.models import Invoice, Service
 from app.billing.permissions import BILLING_CHARGE_WRITE, BILLING_INVOICE_WRITE, BILLING_PAYMENT_WRITE, BILLING_SERVICE_WRITE
 from app.billing.schemas import ChargeResponse, InvoiceResponse, PaymentCreate, PaymentResponse, ServiceCreate, ServiceResponse
 from app.billing.service import BillingError, create_invoice, record_payment
@@ -27,6 +27,18 @@ def _error(exc: BillingError) -> HTTPException:
         "PAYMENT_PROVIDER_REQUIRED": 400, "PAYMENT_INTEGRATION_NOT_CONFIGURED": 409,
     }
     return HTTPException(status_code=mapping.get(code, 400), detail=code)
+
+
+@router.get("/services", response_model=list[ServiceResponse])
+def list_services(db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_SERVICE_WRITE))):
+    _ = user
+    return list(db.scalars(select(Service).where(Service.facility_id == facility_id, Service.status == "ACTIVE").order_by(Service.code)).all())
+
+
+@router.get("/invoices", response_model=list[InvoiceResponse])
+def list_invoices(limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_INVOICE_WRITE))):
+    _ = user
+    return list(db.scalars(select(Invoice).where(Invoice.facility_id == facility_id).order_by(Invoice.created_at.desc()).limit(limit)).all())
 
 
 @router.post("/services", response_model=ServiceResponse, status_code=201)
