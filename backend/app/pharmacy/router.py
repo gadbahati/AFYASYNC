@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.admissions.models import Admission
@@ -32,6 +32,25 @@ def _staff(db: Session, user: User, facility_id: UUID) -> Staff:
 def _error(exc: PharmacyError) -> HTTPException:
     mapping = {"ENCOUNTER_NOT_FOUND": 404, "PRESCRIPTION_NOT_FOUND": 404, "MEDICATION_NOT_STOCKED": 409, "INSUFFICIENT_STOCK": 409, "INSUFFICIENT_BATCH_STOCK": 409, "ENCOUNTER_CLOSED": 409, "PRESCRIPTION_ALREADY_DISPENSED": 409, "PRESCRIPTION_NOT_DISPENSABLE": 409, "PRESCRIPTION_EMPTY": 409, "DUPLICATE_BILLING_ITEM": 400, "BILLING_ITEMS_MUST_MATCH_PRESCRIPTION": 400, "BILLING_SERVICE_NOT_FOUND": 404, "BILLING_FACILITY_ACCESS_DENIED": 403}
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
+
+@router.get("/medications", response_model=list[MedicationResponse])
+def list_medications(db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_CREATE_PRESCRIPTION)), token: dict = Depends(get_token_payload)):
+    _facility(token); _ = user
+    return list(db.scalars(select(Medication).where(Medication.status == "ACTIVE").order_by(Medication.name)).all())
+
+@router.get("/inventory", response_model=list[InventoryResponse])
+def list_inventory(db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_RECEIVE_INVENTORY)), token: dict = Depends(get_token_payload)):
+    facility_id = _facility(token); _ = user
+    return list(db.scalars(select(InventoryItem).where(InventoryItem.facility_id == facility_id).order_by(InventoryItem.medication_id)).all())
+
+@router.get("/prescriptions", response_model=list[PrescriptionResponse])
+def list_prescriptions(status_filter: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_DISPENSE)), token: dict = Depends(get_token_payload)):
+    facility_id = _facility(token); _ = user
+    stmt = select(Prescription).join(Encounter, Encounter.id == Prescription.encounter_id).where(Encounter.facility_id == facility_id)
+    if status_filter:
+        stmt = stmt.where(Prescription.status == status_filter.upper())
+    stmt = stmt.order_by(Prescription.created_at.desc()).limit(limit)
+    return list(db.scalars(stmt).all())
 
 @router.post("/medications", response_model=MedicationResponse, status_code=201)
 def create_medication(payload: MedicationCreate, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_CREATE_MEDICATION)), token: dict = Depends(get_token_payload)) -> Medication:
