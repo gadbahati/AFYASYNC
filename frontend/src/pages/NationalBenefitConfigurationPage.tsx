@@ -1,6 +1,8 @@
-import { FormEvent, useEffect, useState } from "react";
-import { createNetworkBenefitRule, getNetworkBenefitRules, NetworkBenefitRule, updateNetworkBenefitRuleStatus } from "../api/benefitNetwork";
-import { getNetworkPayers, getNetworkPayerPlans, NetworkPayer, NetworkPayerPlan } from "../api/payerNetwork";
+import { useEffect, useState, type FormEvent } from "react";
+import { createNetworkBenefitRule, getNetworkBenefitRules, updateNetworkBenefitRuleStatus } from "../api/benefitNetwork";
+import type { NetworkBenefitRule } from "../api/benefitNetwork";
+import { getNetworkPayers, getNetworkPayerPlans } from "../api/payerNetwork";
+import type { NetworkPayer, NetworkPayerPlan } from "../api/payerNetwork";
 
 export function NationalBenefitConfigurationPage() {
   const [payers, setPayers] = useState<NetworkPayer[]>([]); const [plans, setPlans] = useState<NetworkPayerPlan[]>([]); const [rules, setRules] = useState<NetworkBenefitRule[]>([]);
@@ -9,56 +11,17 @@ export function NationalBenefitConfigurationPage() {
   const [statusFilter, setStatusFilter] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
 
   async function loadPayers() {
-    const data = await getNetworkPayers("ACTIVE");
-    setPayers(data);
-    const selected = payerId || data[0]?.id || "";
-    if (!payerId && selected) setPayerId(selected);
-    return selected;
+    const data = await getNetworkPayers("ACTIVE"); setPayers(data); const selected = payerId || data[0]?.id || ""; if (!payerId && selected) setPayerId(selected); return selected;
   }
-
-  async function loadPlans(id: string) {
-    if (!id) { setPlans([]); setPlanId(""); return; }
-    const data = await getNetworkPayerPlans(id);
-    const active = data.filter((plan) => plan.status === "ACTIVE");
-    setPlans(active);
-    if (planId && !active.some((plan) => plan.id === planId)) setPlanId("");
-  }
-
-  async function loadRules(filterPayerId = payerId, filterPlanId = planId) {
-    setRules(await getNetworkBenefitRules({ payerId: filterPayerId || undefined, payerPlanId: filterPlanId || undefined, status: statusFilter || undefined }));
-  }
-
-  async function refresh() {
-    setLoading(true); setError("");
-    try {
-      const selectedPayerId = await loadPayers();
-      await loadRules(selectedPayerId, "");
-    } catch (err) { setError(err instanceof Error ? err.message : "Unable to load benefit configuration."); }
-    finally { setLoading(false); }
-  }
-
+  async function loadPlans(id: string) { if (!id) { setPlans([]); setPlanId(""); return; } const data = await getNetworkPayerPlans(id); const active = data.filter((plan) => plan.status === "ACTIVE"); setPlans(active); if (planId && !active.some((plan) => plan.id === planId)) setPlanId(""); }
+  async function loadRules(filterPayerId = payerId, filterPlanId = planId) { setRules(await getNetworkBenefitRules({ payerId: filterPayerId || undefined, payerPlanId: filterPlanId || undefined, status: statusFilter || undefined })); }
+  async function refresh() { setLoading(true); setError(""); try { const selectedPayerId = await loadPayers(); await loadRules(selectedPayerId, ""); } catch (err) { setError(err instanceof Error ? err.message : "Unable to load benefit configuration."); } finally { setLoading(false); } }
   useEffect(() => { void refresh(); }, []);
   useEffect(() => { if (payerId) void loadPlans(payerId).catch((err) => setError(err instanceof Error ? err.message : "Unable to load plans.")); }, [payerId]);
   useEffect(() => { if (!loading) void loadRules().catch((err) => setError(err instanceof Error ? err.message : "Unable to load benefit rules.")); }, [planId, statusFilter]);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setError(""); setMessage("");
-    if (!payerId) { setError("Select an active payer."); return; }
-    if (!serviceCode.trim() && !serviceType.trim()) { setError("Provide a service code or service type."); return; }
-    try {
-      await createNetworkBenefitRule({ payer_id: payerId, payer_plan_id: planId || null, service_code: serviceCode.trim() || null, service_type: serviceType.trim() || null, payer_percent: Number(payerPercent), fixed_patient_copay: Number(copay), max_covered_amount: maxCovered ? Number(maxCovered) : null, effective_from: effectiveFrom || null, effective_to: effectiveTo || null });
-      setMessage("Benefit rule created."); setServiceCode(""); setServiceType(""); setMaxCovered(""); setEffectiveFrom(""); setEffectiveTo(""); await loadRules();
-    } catch (err) { setError(err instanceof Error ? err.message : "Unable to create benefit rule."); }
-  }
-
-  async function changeStatus(rule: NetworkBenefitRule) {
-    const next = rule.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
-    const reason = window.prompt(`Reason for changing this rule to ${next}:`);
-    if (!reason?.trim()) return;
-    try { await updateNetworkBenefitRuleStatus(rule.id, next, reason.trim()); await loadRules(); setMessage("Benefit rule status updated."); }
-    catch (err) { setError(err instanceof Error ? err.message : "Unable to update benefit rule."); }
-  }
-
+  async function submit(event: FormEvent) { event.preventDefault(); setError(""); setMessage(""); if (!payerId) { setError("Select an active payer."); return; } if (!serviceCode.trim() && !serviceType.trim()) { setError("Provide a service code or service type."); return; } try { await createNetworkBenefitRule({ payer_id: payerId, payer_plan_id: planId || null, service_code: serviceCode.trim() || null, service_type: serviceType.trim() || null, payer_percent: Number(payerPercent), fixed_patient_copay: Number(copay), max_covered_amount: maxCovered ? Number(maxCovered) : null, effective_from: effectiveFrom || null, effective_to: effectiveTo || null }); setMessage("Benefit rule created."); setServiceCode(""); setServiceType(""); setMaxCovered(""); setEffectiveFrom(""); setEffectiveTo(""); await loadRules(); } catch (err) { setError(err instanceof Error ? err.message : "Unable to create benefit rule."); } }
+  async function changeStatus(rule: NetworkBenefitRule) { const next = rule.status === "ACTIVE" ? "INACTIVE" : "ACTIVE"; const reason = window.prompt(`Reason for changing this rule to ${next}:`); if (!reason?.trim()) return; try { await updateNetworkBenefitRuleStatus(rule.id, next, reason.trim()); await loadRules(); setMessage("Benefit rule status updated."); } catch (err) { setError(err instanceof Error ? err.message : "Unable to update benefit rule."); } }
   const payerName = (id: string) => payers.find((payer) => payer.id === id)?.code ?? id.slice(0, 8);
   const planName = (id: string | null) => id ? plans.find((plan) => plan.id === id)?.code ?? id.slice(0, 8) : "All plans";
 
