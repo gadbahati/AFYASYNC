@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from sqlalchemy import text
-
 from app.admissions import models as admission_models
 from app.admissions.router import router as admissions_router
 from app.appointments import models as appointment_models
@@ -49,15 +48,13 @@ from app.rbac import models as rbac_models
 from app.referrals import models as referral_models
 from app.referrals.router import router as referrals_router
 from app.reports.router import router as reports_router
+from app.wards import models as ward_models
+from app.wards.movement import PatientMovement
+from app.wards.router import router as wards_router
+from app.wards.movement_router import router as ward_movement_router
 
-_ = (patient_models, coverage_models, facility_models, rbac_models, appointment_models,
-     encounter_models, clinical_models, laboratory_models, pharmacy_models, billing_models,
-     claims_models, integration_models, audit_models, referral_models, notification_models,
-     auth_models, benefit_models, admission_models, preauthorization_models, emergency_models,
-     nursing_models)
-
+_ = (patient_models, coverage_models, facility_models, rbac_models, appointment_models, encounter_models, clinical_models, laboratory_models, pharmacy_models, billing_models, claims_models, integration_models, audit_models, referral_models, notification_models, auth_models, benefit_models, admission_models, preauthorization_models, emergency_models, nursing_models, ward_models, PatientMovement)
 app = FastAPI(title=settings.app_name, version=settings.app_version, description="AfyaSync healthcare platform API")
-
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -66,73 +63,35 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-        if settings.environment == "production":
-            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        if settings.environment == "production": response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
-
 
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
-    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True,
-                       allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-                       allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature"])
+    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature"])
 app.add_middleware(SecurityHeadersMiddleware)
-
 
 @app.on_event("startup")
 def initialize_database() -> None:
     if settings.environment != "production":
         Base.metadata.create_all(bind=engine)
         with SessionLocal() as db:
-            try:
-                ensure_demo_admin(db)
-            except Exception:
-                db.rollback()
+            try: ensure_demo_admin(db)
+            except Exception: db.rollback()
 
-
-app.include_router(auth_router.router)
-app.include_router(patients_router)
-app.include_router(coverage_router)
-app.include_router(benefits_router)
-app.include_router(admissions_router)
-app.include_router(preauthorizations_router)
-app.include_router(emergency_router)
-app.include_router(nursing_router)
-app.include_router(facilities_router)
-app.include_router(appointments_router)
-app.include_router(encounters_router)
-app.include_router(clinical_router)
-app.include_router(laboratory_router)
-app.include_router(pharmacy_router)
-app.include_router(billing_router)
-app.include_router(claims_router)
-app.include_router(integrations_router)
-app.include_router(referrals_router)
-app.include_router(notifications_router)
-app.include_router(portal_router)
-app.include_router(reports_router)
-
+app.include_router(auth_router.router); app.include_router(patients_router); app.include_router(coverage_router); app.include_router(benefits_router); app.include_router(admissions_router); app.include_router(preauthorizations_router); app.include_router(emergency_router); app.include_router(nursing_router); app.include_router(wards_router); app.include_router(ward_movement_router); app.include_router(facilities_router); app.include_router(appointments_router); app.include_router(encounters_router); app.include_router(clinical_router); app.include_router(laboratory_router); app.include_router(pharmacy_router); app.include_router(billing_router); app.include_router(claims_router); app.include_router(integrations_router); app.include_router(referrals_router); app.include_router(notifications_router); app.include_router(portal_router); app.include_router(reports_router)
 
 @app.get("/health", tags=["System"])
-def health_check() -> dict[str, object]:
-    return {"success": True, "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version}, "message": "AfyaSync API is running"}
-
+def health_check() -> dict[str, object]: return {"success": True, "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version}, "message": "AfyaSync API is running"}
 
 @app.get("/ready", tags=["System"])
 def readiness_check(response: Response) -> dict[str, object]:
-    db_ok = False
     try:
-        with SessionLocal() as db:
-            db.execute(text("SELECT 1"))
-            db_ok = True
+        with SessionLocal() as db: db.execute(text("SELECT 1"))
+        return {"success": True, "data": {"service": "afasync-api", "status": "ready", "database": "ok"}, "message": "AfyaSync API is ready"}
     except Exception:
-        db_ok = False
-    if not db_ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"success": False, "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"}, "message": "AfyaSync API is not ready"}
-    return {"success": True, "data": {"service": "afasync-api", "status": "ready", "database": "ok"}, "message": "AfyaSync API is ready"}
-
 
 @app.get("/api/v1", tags=["System"])
-def api_root() -> dict[str, object]:
-    return {"success": True, "data": {"name": settings.app_name, "version": settings.app_version}, "message": "AfyaSync API v1"}
+def api_root() -> dict[str, object]: return {"success": True, "data": {"name": settings.app_name, "version": settings.app_version}, "message": "AfyaSync API v1"}
