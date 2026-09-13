@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.coverage.models import Coverage, Payer, PayerBenefitRule, PayerPlan
 
 
@@ -19,78 +20,82 @@ def check_coverage_eligibility(
     service_code: str | None = None,
     service_type: str | None = None,
     as_of: date | None = None,
+    actor_user_id: UUID | None = None,
+    facility_id: UUID | None = None,
 ) -> dict:
-    """Return a deterministic eligibility decision from persisted coverage data.
-
-    This is intentionally payer-neutral: external payer/SHA verification can be
-    layered on later without making core care depend on an external service.
-    """
+    """Evaluate persisted coverage and benefit configuration without external payer dependency."""
     if not service_code and not service_type:
         raise EligibilityError("ELIGIBILITY_SERVICE_REQUIRED")
 
-    coverage = db.scalar(
-        select(Coverage).where(
-            Coverage.id == coverage_id,
-            Coverage.person_id == patient_id,
-        )
-    )
+    coverage = db.scalar(select(Coverage).where(Coverage.id == coverage_id, Coverage.person_id == patient_id))
     if coverage is None:
         raise EligibilityError("COVERAGE_NOT_FOUND")
-    if coverage.status != "ACTIVE":
-        return {"eligible": False, "reason": "COVERAGE_NOT_ACTIVE", "coverage_id": coverage.id}
 
     today = as_of or date.today()
-    if coverage.start_date and coverage.start_date > today:
-        return {"eligible": False, "reason": "COVERAGE_NOT_STARTED", "coverage_id": coverage.id}
-    if coverage.end_date and coverage.end_date < today:
-        return {"eligible": False, "reason": "COVERAGE_EXPIRED", "coverage_id": coverage.id}
-    if coverage.verification_status != "VERIFIED":
-        return {"eligible": False, "reason": "VERIFICATION_REQUIRED", "coverage_id": coverage.id}
-
+    reason = None
     payer = db.get(Payer, coverage.payer_id)
-    if payer is None or payer.status != "ACTIVE":
-        return {"eligible": False, "reason": "PAYER_NOT_ACTIVE", "coverage_id": coverage.id}
+    plan = db.get(PayerPlan, coverage.payer_plan_id) if coverage.payer_plan_id else None
 
-    if coverage.payer_plan_id:
-        plan = db.get(PayerPlan, coverage.payer_plan_id)
-        if plan is None or plan.status != "ACTIVE":
-            return {"eligible": False, "reason": "PLAN_NOT_ACTIVE", "coverage_id": coverage.id}
+    if coverage.status != "ACTIVE":
+        reason = "COVERAGE_NOT_ACTIVE"
+    elif coverage.start_date and coverage.start_date > today:
+        reason = "COVERAGE_NOT_STARTED"
+    elif coverage.end_date and coverage.end_date < today:
+        reason = "COVERAGE_EXPIRED"
+    elif coverage.verification_status != "VERIFIED":
+        reason = "VERIFICATION_REQUIRED"
+    elif payer is None or payer.status != "ACTIVE":
+        reason = "PAYER_NOT_ACTIVE"
+    elif coverage.payer_plan_id and (plan is None or plan.status != "ACTIVE"):
+        reason = "PLAN_NOT_ACTIVE"
 
-    rules = list(
-        db.scalars(
-            select(PayerBenefitRule).where(
-                PayerBenefitRule.payer_id == coverage.payer_id,
-                PayerBenefitRule.status == "ACTIVE",
-                (PayerBenefitRule.effective_from.is_(None) | (PayerBenefitRule.effective_from <= today)),
-                (PayerBenefitRule.effective_to.is_(None) | (PayerBenefitRule.effective_to >= today)),
-            )
-        ).all()
-    )
+    rule = None
+    if reason is None:
+        rules = list(db.scalars(select(PayerBenefitRule).where(
+            PayerBenefitRule.payer_id == coverage.payer_id,
+            PayerBenefitRule.status == "ACTIVE",
+            (PayerBenefitRule.effective_from.is_(None) | (PayerBenefitRule.effective_from <= today)),
+            (PayerBenefitRule.effective_to.is_(None) | (PayerBenefitRule.effective_to >= today)),
+        )).all())
 
-    def rank(rule: PayerBenefitRule) -> int:
-        if coverage.payer_plan_id and rule.payer_plan_id == coverage.payer_plan_id and rule.service_code == service_code:
-            return 4
-        if coverage.payer_plan_id and rule.payer_plan_id == coverage.payer_plan_id and rule.service_type == service_type and rule.service_code is None:
-            return 3
-        if rule.payer_plan_id is None and rule.service_code == service_code:
-            return 2
-        if rule.payer_plan_id is None and rule.service_type == service_type and rule.service_code is None:
-            return 1
-        return 0
+        def rank(candidate: PayerBenefitRule) -> int:
+            if coverage.payer_plan_id and candidate.payer_plan_id == coverage.payer_plan_id and candidate.service_code == service_code:
+                return 4
+            if coverage.payer_plan_id and candidate.payer_plan_id == coverage.payer_plan_id and candidate.service_type == service_type and candidate.service_code is None:
+                return 3
+            if candidate.payer_plan_id is None and candidate.service_code == service_code:
+                return 2
+            if candidate.payer_plan_id is None and candidate.service_type == service_type and candidate.service_code is None:
+                return 1
+            return 0
 
-    matches = sorted((rule for rule in rules if rank(rule) > 0), key=lambda rule: (rank(rule), rule.created_at), reverse=True)
-    rule = matches[0] if matches else None
-    if rule is None:
-        return {"eligible": False, "reason": "BENEFIT_NOT_CONFIGURED", "coverage_id": coverage.id, "payer_id": coverage.payer_id, "payer_plan_id": coverage.payer_plan_id}
+        matches = sorted((candidate for candidate in rules if rank(candidate) > 0), key=lambda candidate: (rank(candidate), candidate.created_at), reverse=True)
+        rule = matches[0] if matches else None
+        if rule is None:
+            reason = "BENEFIT_NOT_CONFIGURED"
 
-    return {
-        "eligible": True,
-        "reason": "ELIGIBLE",
+    eligible = reason is None
+    result = {
+        "eligible": eligible,
+        "reason": "ELIGIBLE" if eligible else reason,
         "coverage_id": coverage.id,
         "payer_id": coverage.payer_id,
         "payer_plan_id": coverage.payer_plan_id,
-        "benefit_rule_id": rule.id,
-        "payer_percent": rule.payer_percent,
-        "fixed_patient_copay": rule.fixed_patient_copay,
-        "max_covered_amount": rule.max_covered_amount,
+        "benefit_rule_id": rule.id if rule else None,
+        "payer_percent": rule.payer_percent if rule else None,
+        "fixed_patient_copay": rule.fixed_patient_copay if rule else None,
+        "max_covered_amount": rule.max_covered_amount if rule else None,
     }
+    record_audit(
+        db,
+        action="CHECK_COVERAGE_ELIGIBILITY",
+        resource_type="COVERAGE",
+        resource_id=str(coverage.id),
+        result="ELIGIBLE" if eligible else "INELIGIBLE",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=patient_id,
+        metadata={"service_code": service_code, "service_type": service_type, "reason": result["reason"], "benefit_rule_id": str(rule.id) if rule else None},
+        commit=True,
+    )
+    return result
