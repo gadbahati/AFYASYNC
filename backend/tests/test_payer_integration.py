@@ -38,24 +38,23 @@ def test_payer_callback_updates_integration_transaction_and_claim() -> None:
     record_response.assert_called_once()
 
 
-def test_duplicate_payer_callback_is_rejected_before_claim_mutation() -> None:
+def test_duplicate_payer_callback_is_idempotent_when_payload_matches() -> None:
     facility_id = uuid4()
     integration_id = uuid4()
     claim_id = uuid4()
     integration = SimpleNamespace(id=integration_id, facility_id=facility_id, status="ACTIVE", integration_type="CLAIMS", provider="TEST_PAYER")
     payer = SimpleNamespace(id=uuid4(), status="ACTIVE", code="TEST_PAYER")
-    claim = SimpleNamespace(id=claim_id, claim_id="CLM-DUP", invoice_id=uuid4(), patient_id=uuid4(), payer_id=payer.id, status="SUBMITTED")
+    claim = SimpleNamespace(id=claim_id, claim_id="CLM-DUP", invoice_id=uuid4(), patient_id=uuid4(), payer_id=payer.id, status="ACCEPTED")
     invoice = SimpleNamespace(id=claim.invoice_id, facility_id=facility_id)
-    transaction = SimpleNamespace(id=uuid4(), integration_id=integration_id, entity_type="CLAIM", entity_id=claim_id, direction="OUTBOUND", request_reference=claim.claim_id, status="PENDING")
+    transaction = SimpleNamespace(id=uuid4(), integration_id=integration_id, entity_type="CLAIM", entity_id=claim_id, direction="OUTBOUND", request_reference=claim.claim_id, status="SUCCEEDED")
     duplicate = SimpleNamespace(id=uuid4(), status="ACCEPTED", response_code=None)
     db = MagicMock()
     db.scalar.side_effect = [integration, claim, invoice, transaction, duplicate]
     db.get.return_value = payer
 
-    with pytest.raises(ClaimsError, match="DUPLICATE_PAYER_RESPONSE"):
-        process_payer_callback(db, facility_id, integration_id, claim_id, "ACCEPTED", None, None, "PAYER-DUP", Decimal("50.00"))
+    result = process_payer_callback(db, facility_id, integration_id, claim_id, "ACCEPTED", None, None, "PAYER-DUP", Decimal("50.00"))
 
-    assert transaction.status == "PENDING"
+    assert result is claim
     db.commit.assert_not_called()
 
 
@@ -72,7 +71,7 @@ def test_payer_callback_rejects_cross_facility_integration() -> None:
 def test_worker_builds_claim_payload_before_adapter_send() -> None:
     facility_id = uuid4()
     claim_id = uuid4()
-    transaction = SimpleNamespace(id=uuid4(), integration_id=uuid4(), transaction_id="CLM-WORKER", entity_type="CLAIM", entity_id=claim_id, status="PENDING", attempt_count=0, response_code=None, external_reference=None, response_data={}, last_attempt_at=None)
+    transaction = SimpleNamespace(id=uuid4(), integration_id=uuid4(), transaction_id="CLM-WORKER", entity_type="CLAIM", entity_id=claim_id, direction="OUTBOUND", status="PENDING", attempt_count=0, response_code=None, external_reference=None, response_data={}, last_attempt_at=None)
     integration = SimpleNamespace(id=transaction.integration_id, facility_id=facility_id, status="ACTIVE")
     adapter = MagicMock()
     adapter.send.return_value = SimpleNamespace(status="RETRYING", response_code="ADAPTER_UNAVAILABLE", external_reference=None, response_data={"retryable": True})
@@ -118,7 +117,7 @@ def test_callback_signature_rejects_expired_timestamp(monkeypatch: pytest.Monkey
 
 
 def test_worker_fails_after_max_integration_attempts() -> None:
-    transaction = SimpleNamespace(id=uuid4(), integration_id=uuid4(), status="RETRYING", attempt_count=MAX_INTEGRATION_ATTEMPTS, response_code=None, response_data={}, last_attempt_at=None)
+    transaction = SimpleNamespace(id=uuid4(), integration_id=uuid4(), direction="OUTBOUND", status="RETRYING", attempt_count=MAX_INTEGRATION_ATTEMPTS, response_code=None, response_data={}, last_attempt_at=None)
     integration = SimpleNamespace(id=transaction.integration_id, status="ACTIVE")
     db = MagicMock()
     db.scalar.return_value = transaction
