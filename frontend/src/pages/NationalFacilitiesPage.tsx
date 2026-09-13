@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   createNetworkFacility,
   getNetworkFacilities,
@@ -51,7 +51,7 @@ export function NationalFacilitiesPage() {
     void load();
   }, []);
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
     setError("");
