@@ -3,31 +3,35 @@ from uuid import uuid4
 
 import jwt
 import pytest
+from fastapi import HTTPException
 
-from app.auth.security import create_access_token, create_refresh_token, decode_access_token, decode_refresh_token
-from app.config import Settings
+from app.auth.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_access_token,
+    decode_refresh_token,
+)
+from app.config import Settings, settings
 
 
 def test_access_token_rejects_refresh_token() -> None:
     token = create_refresh_token(uuid4())
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException, match="INVALID_TOKEN"):
         decode_access_token(token)
 
 
 def test_refresh_token_requires_refresh_claims() -> None:
-    user_id = uuid4()
     token = jwt.encode(
         {
-            "sub": str(user_id),
+            "sub": str(uuid4()),
             "type": "refresh",
             "iat": datetime.now(timezone.utc),
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
         },
-        "test-secret",
-        algorithm="HS256",
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
     )
-    from app import auth as auth_package  # noqa: F401
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException, match="INVALID_REFRESH_TOKEN"):
         decode_refresh_token(token)
 
 
