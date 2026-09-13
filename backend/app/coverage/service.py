@@ -24,19 +24,11 @@ def create_coverage(db: Session, payload: CoverageCreate, *, actor_user_id: UUID
         if not plan or plan.payer_id != payload.payer_id or plan.status != "ACTIVE":
             raise ValueError("INVALID_PAYER_PLAN")
 
-    data = payload.model_dump()
-    # Standalone AfyaSync + cash are internal; mark verified.
-    # SHA stays UNVERIFIED until staff completes SHA-style membership lookup/confirm.
     code = (payer.code or "").upper()
-    if code in {"AFYASYNC", "CASH"} or payer.payer_type in {"AFYASYNC", "CASH"}:
-        data["verification_status"] = "VERIFIED"
-    else:
-        data.setdefault("verification_status", "UNVERIFIED")
-        if "verification_status" not in data or not data.get("verification_status"):
-            data["verification_status"] = "UNVERIFIED"
+    # Standalone AfyaSync + cash are internal → verified.
+    # SHA stays UNVERIFIED until staff confirms via SHA-style membership lookup.
+    verification = "VERIFIED" if code in {"AFYASYNC", "CASH"} else "UNVERIFIED"
 
-    coverage = Coverage(**{k: v for k, v in data.items() if k in Coverage.__table__.columns.keys() or k in {"person_id", "payer_id", "payer_plan_id", "membership_number", "start_date", "end_date", "verification_status", "status"}})
-    # Coverage model may not accept arbitrary keys — build explicitly
     coverage = Coverage(
         person_id=payload.person_id,
         payer_id=payload.payer_id,
@@ -44,7 +36,7 @@ def create_coverage(db: Session, payload: CoverageCreate, *, actor_user_id: UUID
         membership_number=payload.membership_number,
         start_date=payload.start_date,
         end_date=payload.end_date,
-        verification_status="VERIFIED" if code in {"AFYASYNC", "CASH"} else "UNVERIFIED",
+        verification_status=verification,
         status="ACTIVE",
     )
     db.add(coverage)
