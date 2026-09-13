@@ -38,3 +38,16 @@ class PreAuthorizationResponse(BaseModel):
     decided_at: datetime | None
 
     model_config = {"from_attributes": True}
+
+
+class PreAuthorizationSubmission(BaseModel):
+    integration_id: UUID
+
+
+class PreAuthorizationSubmissionResponse(BaseModel):
+    authorization_id: UUID
+    transaction_id: str
+    integration_id: UUID
+    status: str
+    transaction_status: str
+    request_reference: str
