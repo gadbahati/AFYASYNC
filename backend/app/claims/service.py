@@ -10,7 +10,7 @@ from app.billing.models import Charge, Invoice, InvoiceItem, Service
 from app.claims.models import Claim, ClaimItem, ClaimResponse, Reconciliation
 from app.coverage.models import Coverage, Payer
 from app.encounters.models import Encounter
-from app.integrations.models import Integration, IntegrationTransaction
+from app.integrations.models import Integration
 from app.integrations.service import IntegrationError, queue_transaction
 from app.notifications.events import notify_patient_event
 
@@ -50,12 +50,9 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
     encounter = db.get(Encounter, invoice.encounter_id)
     if encounter is None or encounter.facility_id != facility_id or encounter.patient_id != invoice.patient_id:
         raise ClaimsError("ENCOUNTER_MISMATCH")
-
-    # Multi-coverage product rule: cash visits are invoice/payment only — never SHA/AfyaSync claims.
     mode = getattr(encounter, "coverage_mode", None) or "CASH"
     if mode == "CASH":
         raise ClaimsError("CASH_ENCOUNTER_NO_CLAIM")
-
     existing = db.scalar(select(Claim).where(Claim.invoice_id == invoice.id).limit(1))
     if existing:
         raise ClaimsError("CLAIM_ALREADY_EXISTS")
@@ -73,25 +70,15 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
     payer = db.get(Payer, invoice.payer_id)
     if payer is None or payer.status != "ACTIVE":
         raise ClaimsError("PAYER_NOT_ACTIVE")
-
-    # Soft consistency with encounter coverage_mode
     payer_code = (payer.code or "").upper()
     if mode == "SHA" and payer_code not in {"SHA", "SHIF", "PHF", "ECCIF"}:
         raise ClaimsError("SHA_MODE_REQUIRES_SHA_PAYER")
     if mode == "AFYASYNC" and payer_code not in {"AFYASYNC"}:
         raise ClaimsError("AFYASYNC_MODE_REQUIRES_AFYASYNC_PAYER")
-
     items = list(db.scalars(select(InvoiceItem).where(InvoiceItem.invoice_id == invoice.id)))
     if not items:
         raise ClaimsError("CLAIM_ITEMS_REQUIRED")
-    claim = Claim(
-        claim_id=_claim_number(),
-        invoice_id=invoice.id,
-        encounter_id=encounter.id,
-        patient_id=invoice.patient_id,
-        payer_id=payer.id,
-        claim_amount=Decimal("0"),
-    )
+    claim = Claim(claim_id=_claim_number(), invoice_id=invoice.id, encounter_id=encounter.id, patient_id=invoice.patient_id, payer_id=payer.id, claim_amount=Decimal("0"))
     db.add(claim)
     db.flush()
     claim_amount = Decimal("0")
@@ -114,24 +101,7 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
     claim.claim_amount = claim_amount
     invoice.status = "CLAIM_PENDING"
     db.flush()
-    record_audit(
-        db,
-        action="CREATE_CLAIM",
-        resource_type="CLAIM",
-        resource_id=str(claim.id),
-        result="SUCCESS",
-        user_id=actor_user_id,
-        facility_id=facility_id,
-        patient_id=claim.patient_id,
-        metadata={
-            "claim_id": claim.claim_id,
-            "amount": str(claim.claim_amount),
-            "payer_id": str(payer.id),
-            "coverage_mode": mode,
-            "payer_code": payer_code,
-        },
-        commit=False,
-    )
+    record_audit(db, action="CREATE_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "amount": str(claim.claim_amount), "payer_id": str(payer.id), "coverage_mode": mode, "payer_code": payer_code}, commit=False)
     db.commit()
     db.refresh(claim)
     return claim
@@ -182,17 +152,7 @@ def build_claim_submission_payload(db: Session, claim_id: UUID, facility_id: UUI
     if encounter is None or encounter.facility_id != facility_id or encounter.patient_id != claim.patient_id:
         raise ClaimsError("ENCOUNTER_MISMATCH")
     items = list(db.scalars(select(ClaimItem).where(ClaimItem.claim_id == claim.id)))
-    return {
-        "claim_id": claim.claim_id,
-        "invoice_id": str(invoice.id),
-        "encounter_id": str(encounter.id),
-        "patient_id": str(claim.patient_id),
-        "payer_id": str(payer.id),
-        "payer_code": payer.code,
-        "coverage_mode": getattr(encounter, "coverage_mode", None),
-        "claim_amount": str(claim.claim_amount),
-        "items": [{"service_code": item.service_code, "quantity": str(item.quantity), "amount": str(item.amount), "charge_id": str(item.charge_id)} for item in items],
-    }
+    return {"claim_id": claim.claim_id, "invoice_id": str(invoice.id), "encounter_id": str(encounter.id), "patient_id": str(claim.patient_id), "payer_id": str(payer.id), "payer_code": payer.code, "coverage_mode": getattr(encounter, "coverage_mode", None), "claim_amount": str(claim.claim_amount), "items": [{"service_code": item.service_code, "quantity": str(item.quantity), "amount": str(item.amount), "charge_id": str(item.charge_id)} for item in items]}
 
 
 def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
@@ -230,6 +190,7 @@ def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_i
 
 def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status: str, response_code: str | None, response_message: str | None, external_reference: str | None, approved_amount: Decimal | None, *, actor_user_id: UUID | None = None, commit: bool = True) -> Claim:
     allowed = {"ACCEPTED", "UNDER_REVIEW", "REJECTED", "PARTIALLY_PAID", "PAID"}
+    status = status.strip().upper()
     if status not in allowed:
         raise ClaimsError("INVALID_CLAIM_RESPONSE_STATUS")
     claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
@@ -242,13 +203,18 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
     valid_previous = {"ACCEPTED": {"SUBMITTED", "UNDER_REVIEW"}, "UNDER_REVIEW": {"SUBMITTED", "UNDER_REVIEW"}, "REJECTED": {"SUBMITTED", "UNDER_REVIEW", "REJECTED"}, "PARTIALLY_PAID": {"ACCEPTED", "UNDER_REVIEW", "PARTIALLY_PAID"}, "PAID": {"ACCEPTED", "PARTIALLY_PAID", "PAID"}}
     if current not in valid_previous.get(status, set()):
         raise ClaimsError("CLAIM_RESPONSE_NOT_ALLOWED")
-    if approved_amount is not None and (approved_amount < 0 or approved_amount > claim.claim_amount):
-        raise ClaimsError("INVALID_APPROVED_AMOUNT")
+    if approved_amount is not None:
+        approved_amount = Decimal(str(approved_amount)).quantize(Decimal("0.01"))
+        if approved_amount < 0 or approved_amount > claim.claim_amount:
+            raise ClaimsError("INVALID_APPROVED_AMOUNT")
     if status in {"ACCEPTED", "PARTIALLY_PAID", "PAID"} and approved_amount is None:
         raise ClaimsError("APPROVED_AMOUNT_REQUIRED")
-    if status == "PAID" and approved_amount == 0:
+    if status == "REJECTED" and approved_amount not in (None, Decimal("0.00")):
+        raise ClaimsError("REJECTED_AMOUNT_MUST_BE_ZERO")
+    if status in {"ACCEPTED", "PAID"} and approved_amount == Decimal("0.00"):
         raise ClaimsError("INVALID_APPROVED_AMOUNT")
     if external_reference:
+        external_reference = external_reference.strip()
         duplicate = db.scalar(select(ClaimResponse.id).where(ClaimResponse.claim_id == claim.id, ClaimResponse.external_reference == external_reference).limit(1))
         if duplicate is not None:
             raise ClaimsError("DUPLICATE_PAYER_RESPONSE")
@@ -266,42 +232,10 @@ def record_payer_response(db: Session, claim_id: UUID, facility_id: UUID, status
 
 
 def process_payer_callback(db: Session, facility_id: UUID, integration_id: UUID, claim_id: UUID, status: str, response_code: str | None, response_message: str | None, external_reference: str, approved_amount: Decimal | None, *, actor_user_id: UUID | None = None) -> Claim:
-    if not external_reference:
-        raise ClaimsError("PAYER_EXTERNAL_REFERENCE_REQUIRED")
-    integration = db.get(Integration, integration_id)
-    if integration is None or integration.facility_id != facility_id:
-        raise ClaimsError("INTEGRATION_NOT_FOUND")
-    if integration.status != "ACTIVE":
-        raise ClaimsError("INTEGRATION_NOT_ACTIVE")
-    if integration.integration_type not in {"PAYER_CLAIMS", "CLAIMS"}:
-        raise ClaimsError("INVALID_PAYER_INTEGRATION")
-    claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
-    if claim is None:
-        raise ClaimsError("CLAIM_NOT_FOUND")
-    if claim.payer_id is None:
-        raise ClaimsError("PAYER_NOT_ACTIVE")
-    payer = db.get(Payer, claim.payer_id)
-    if payer is None or payer.status != "ACTIVE" or integration.provider != payer.code:
-        raise ClaimsError("PAYER_INTEGRATION_MISMATCH")
-    transaction = db.scalar(select(IntegrationTransaction).where(IntegrationTransaction.integration_id == integration.id, IntegrationTransaction.entity_type == "CLAIM", IntegrationTransaction.entity_id == claim.id, IntegrationTransaction.direction == "OUTBOUND", IntegrationTransaction.request_reference == claim.claim_id).order_by(IntegrationTransaction.created_at.desc()).limit(1))
-    if transaction is None:
-        raise ClaimsError("INTEGRATION_TRANSACTION_NOT_FOUND")
-    duplicate = db.scalar(select(ClaimResponse.id).where(ClaimResponse.claim_id == claim.id, ClaimResponse.external_reference == external_reference).limit(1))
-    if duplicate is not None:
-        raise ClaimsError("DUPLICATE_PAYER_RESPONSE")
-    transaction.status = "SUCCEEDED"
-    transaction.external_reference = external_reference
-    transaction.response_code = response_code
-    transaction.response_data = {"status": status, "response_message": response_message, "approved_amount": str(approved_amount) if approved_amount is not None else None}
-    db.flush()
-    try:
-        result = record_payer_response(db, claim_id, facility_id, status, response_code, response_message, external_reference, approved_amount, actor_user_id=actor_user_id, commit=False)
-    except Exception:
-        db.rollback()
-        raise
-    record_audit(db, action="PROCESS_PAYER_CALLBACK", resource_type="INTEGRATION_TRANSACTION", resource_id=str(transaction.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=result.patient_id, metadata={"claim_id": result.claim_id, "integration_id": str(integration.id), "external_reference": external_reference, "payer_status": status}, commit=False)
-    db.commit()
-    db.refresh(result)
+    """Compatibility wrapper for the signed integration callback boundary."""
+    from app.claims.integration_callback import process_claim_payer_callback
+
+    result, _duplicate = process_claim_payer_callback(db, facility_id=facility_id, integration_id=integration_id, claim_id=claim_id, status=status, response_code=response_code, response_message=response_message, external_reference=external_reference, approved_amount=approved_amount)
     return result
 
 
