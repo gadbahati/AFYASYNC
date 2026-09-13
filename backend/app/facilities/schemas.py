@@ -40,6 +40,13 @@ class FacilityResponse(FacilityCreate):
     status: str
 
 
+class NetworkFacilityResponse(FacilityResponse):
+    """Facility record exposed to explicitly privileged national operators."""
+
+    created_at: str
+    updated_at: str
+
+
 class DepartmentCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     code: str = Field(min_length=2, max_length=50)
