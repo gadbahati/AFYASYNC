@@ -9,6 +9,7 @@ import { ClaimsPage } from "./pages/ClaimsPage";
 import { CommandCentrePage } from "./pages/CommandCentrePage";
 import { CoverageSimulatorPage } from "./pages/CoverageSimulatorPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { IntegrationOperationsPage } from "./pages/IntegrationOperationsPage";
 import { ShaLookupPage } from "./pages/ShaLookupPage";
 import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
 import { PharmacyPage } from "./pages/PharmacyPage";
@@ -40,6 +41,7 @@ export default function App() {
       <Route path="/national-payers" element={<NationalPayerNetworkPage />} />
       <Route path="/national-benefits" element={<NationalBenefitConfigurationPage />} />
       <Route path="/coverage-simulator" element={<CoverageSimulatorPage />} />
+      <Route path="/integrations" element={<IntegrationOperationsPage />} />
       <Route path="/patients" element={<PatientsPage />} />
       <Route path="/patients/new" element={<NewPatientPage />} />
       <Route path="/patients/sha-lookup" element={<ShaLookupPage />} />
