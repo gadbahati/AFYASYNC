@@ -101,15 +101,18 @@ def update_integration_configuration(db: Session, integration_id: UUID, facility
 
 
 def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, transaction_id: str, entity_type: str, entity_id: UUID | None, direction: str, request_reference: str | None, *, commit: bool = False) -> IntegrationTransaction:
-    integration = db.scalar(select(Integration).where(Integration.id == integration_id, Integration.facility_id == facility_id))
+    integration = db.scalar(select(Integration).where(Integration.id == integration_id, Integration.facility_id == facility_id).with_for_update())
     if integration is None:
         raise IntegrationError("INTEGRATION_NOT_FOUND")
     if integration.status != "ACTIVE":
         raise IntegrationError("INTEGRATION_NOT_ACTIVE")
-    existing = db.scalar(select(IntegrationTransaction).where(IntegrationTransaction.integration_id == integration_id, IntegrationTransaction.transaction_id == transaction_id).limit(1))
+    normalized_transaction_id = transaction_id.strip()
+    if not normalized_transaction_id:
+        raise IntegrationError("TRANSACTION_ID_REQUIRED")
+    existing = db.scalar(select(IntegrationTransaction).where(IntegrationTransaction.integration_id == integration_id, IntegrationTransaction.transaction_id == normalized_transaction_id).limit(1))
     if existing is not None:
         return existing
-    transaction = IntegrationTransaction(integration_id=integration_id, transaction_id=transaction_id.strip(), entity_type=entity_type.strip().upper(), entity_id=entity_id, direction=direction, request_reference=request_reference, status="PENDING", attempt_count=0, response_data={})
+    transaction = IntegrationTransaction(integration_id=integration_id, transaction_id=normalized_transaction_id, entity_type=entity_type.strip().upper(), entity_id=entity_id, direction=direction, request_reference=request_reference, status="PENDING", attempt_count=0, response_data={})
     db.add(transaction)
     db.flush()
     if commit:
