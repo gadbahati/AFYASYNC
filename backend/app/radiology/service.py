@@ -4,32 +4,27 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.billing.models import Charge, Service
+from app.encounters.models import Encounter
 from app.patients.models import PatientFacility
 from app.radiology.models import ImagingOrder, ImagingReport, ImagingTest
 
-
 def _patient_ok(db: Session, patient_id: UUID, facility_id: UUID) -> bool:
     return db.scalar(select(PatientFacility.id).where(PatientFacility.patient_id == patient_id, PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE")) is not None
-
 
 def create_test(db: Session, facility_id: UUID, actor: UUID, payload):
     item = ImagingTest(facility_id=facility_id, **payload.model_dump()); db.add(item)
     record_audit(db, action="IMAGING_TEST_CREATED", resource_type="ImagingTest", result="SUCCESS", user_id=actor, resource_id=str(item.id), facility_id=facility_id, commit=False)
     db.commit(); db.refresh(item); return item
 
-
 def create_order(db: Session, facility_id: UUID, actor: UUID, payload):
     if not _patient_ok(db, payload.patient_id, facility_id): raise ValueError("PATIENT_NOT_IN_FACILITY")
     test = db.scalar(select(ImagingTest).where(ImagingTest.id == payload.test_id, ImagingTest.facility_id == facility_id, ImagingTest.active.is_(True)))
     if not test: raise ValueError("IMAGING_TEST_NOT_FOUND")
-    if payload.encounter_id is not None:
-        from app.encounters.models import Encounter
-        encounter = db.scalar(select(Encounter).where(Encounter.id == payload.encounter_id, Encounter.patient_id == payload.patient_id, Encounter.facility_id == facility_id, Encounter.status == "OPEN"))
-        if not encounter: raise ValueError("ENCOUNTER_NOT_OPEN")
+    encounter = db.scalar(select(Encounter).where(Encounter.id == payload.encounter_id, Encounter.patient_id == payload.patient_id, Encounter.facility_id == facility_id, Encounter.status == "OPEN"))
+    if not encounter: raise ValueError("ENCOUNTER_NOT_OPEN")
     order = ImagingOrder(order_number=f"IMG-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}", facility_id=facility_id, ordered_by=actor, **payload.model_dump()); db.add(order)
     record_audit(db, action="IMAGING_ORDER_CREATED", resource_type="ImagingOrder", result="SUCCESS", user_id=actor, resource_id=str(order.id), facility_id=facility_id, patient_id=payload.patient_id, commit=False)
     db.commit(); db.refresh(order); return order
-
 
 def report_order(db: Session, facility_id: UUID, actor: UUID, order_id: UUID, payload):
     order = db.scalar(select(ImagingOrder).where(ImagingOrder.id == order_id, ImagingOrder.facility_id == facility_id).with_for_update())
@@ -47,11 +42,10 @@ def report_order(db: Session, facility_id: UUID, actor: UUID, order_id: UUID, pa
     record_audit(db, action="IMAGING_REPORT_COMPLETED", resource_type="ImagingReport", result="SUCCESS", user_id=actor, resource_id=str(report.id), facility_id=facility_id, patient_id=order.patient_id, commit=False)
     db.commit(); db.refresh(report); return report
 
-
 def review_report(db: Session, facility_id: UUID, actor: UUID, report_id: UUID):
     report = db.scalar(select(ImagingReport).join(ImagingOrder, ImagingOrder.id == ImagingReport.order_id).where(ImagingReport.id == report_id, ImagingOrder.facility_id == facility_id).with_for_update())
     if not report: raise ValueError("IMAGING_REPORT_NOT_FOUND")
     if report.report_status == "REVIEWED": raise ValueError("IMAGING_ALREADY_REVIEWED")
     report.reviewed_by = actor; report.reviewed_at = datetime.now(timezone.utc); report.report_status = "REVIEWED"
-    record_audit(db, action="IMAGING_REPORT_REVIEWED", resource_type="ImagingReport", result="SUCCESS", user_id=actor, resource_id=str(report.id), facility_id=facility_id, commit=False)
+    record_audit(db, action="IMAGING_REPORT_REVIEWED", resource_type="ImagingReport", result="SUCCESS", user_id=actor, resource_id=str(report.id), facility_id=facility_id, patient_id=report.order_id, commit=False)
     db.commit(); db.refresh(report); return report
