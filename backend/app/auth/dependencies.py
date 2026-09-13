@@ -76,3 +76,32 @@ def require_permission(permission_code: str):
             raise HTTPException(status_code=403, detail="PERMISSION_DENIED")
         return user
     return dependency
+
+
+def require_national_permission(permission_code: str):
+    """Require an explicitly assigned permission without creating a facility context.
+
+    National permissions are intentionally independent of the facility selected in a token.
+    The user's active staff assignment is still required, but access is granted only when
+    one of that user's active staff roles carries the requested permission.
+    """
+    def dependency(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+        stmt = (
+            select(Permission.id)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(Role, Role.id == RolePermission.role_id)
+            .join(StaffRole, StaffRole.role_id == Role.id)
+            .join(Staff, Staff.id == StaffRole.staff_id)
+            .join(Facility, Facility.id == Staff.facility_id)
+            .where(
+                Permission.code == permission_code,
+                Staff.person_id == user.person_id,
+                StaffRole.facility_id == Staff.facility_id,
+                Staff.status == "ACTIVE",
+                Facility.status == "ACTIVE",
+            ).limit(1)
+        )
+        if db.scalar(stmt) is None:
+            raise HTTPException(status_code=403, detail="PERMISSION_DENIED")
+        return user
+    return dependency
