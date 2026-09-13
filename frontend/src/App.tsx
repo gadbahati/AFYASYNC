@@ -6,6 +6,7 @@ import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { BenefitPackagesPage } from "./pages/BenefitPackagesPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ShaCareDemoPage } from "./pages/ShaCareDemoPage";
+import { ShaLookupPage } from "./pages/ShaLookupPage";
 import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
 import {
   BillingPage,
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/patients" element={<PatientsPage />} />
               <Route path="/patients/new" element={<NewPatientPage />} />
+              <Route path="/patients/sha-lookup" element={<ShaLookupPage />} />
               <Route path="/patients/:patientId" element={<PatientDetailPage />} />
               <Route path="/patients/:patientId/encounters/new" element={<NewEncounterPage />} />
               <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
