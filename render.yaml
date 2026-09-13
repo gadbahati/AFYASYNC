@@ -3,7 +3,7 @@ services:
     name: afyasync-api
     runtime: docker
     rootDir: backend
-    plan: free
+    plan: starter
     preDeployCommand: alembic upgrade head
     healthCheckPath: /health
     envVars:
@@ -22,7 +22,7 @@ services:
     name: afyasync-worker
     runtime: docker
     rootDir: backend
-    plan: free
+    plan: starter
     startCommand: python -m app.integrations.worker_runner
     envVars:
       - key: ENVIRONMENT
@@ -57,4 +57,4 @@ services:
 
 databases:
   - name: afyasync-db
-    plan: free
+    plan: basic-256mb
