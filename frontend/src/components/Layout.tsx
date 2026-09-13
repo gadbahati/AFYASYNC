@@ -7,27 +7,37 @@ export function Layout() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand brand-row"><KenyaFlag /><div><strong>AfyaSync</strong><span className="muted">Staff console</span></div></div>
+        <div className="brand brand-row">
+          <KenyaFlag />
+          <div>
+            <strong>AfyaSync</strong>
+            <span className="muted">Staff console</span>
+          </div>
+        </div>
         <nav>
           <div className="nav-section">Overview</div>
           <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/command-centre">Command centre</NavLink>
           <NavLink to="/coverage-simulator">Coverage simulator</NavLink>
+
           <div className="nav-section">Patients</div>
           <NavLink to="/patients">Patient register</NavLink>
           <NavLink to="/patients/new">Register patient</NavLink>
           <NavLink to="/patients/sha-lookup">SHA lookup</NavLink>
+
           <div className="nav-section">Clinical</div>
           <NavLink to="/appointments">Appointments</NavLink>
           <NavLink to="/queue">Queue</NavLink>
-          <NavLink to="/sha-workflow">SHA care workflow</NavLink>
-          <NavLink to="/benefits">SHA benefits</NavLink>
-          <div className="nav-section">Laboratory</div>
-          <NavLink to="/laboratory">Laboratory workflow</NavLink>
+          <NavLink to="/benefits">Benefit packages</NavLink>
+
+          <div className="nav-section">Laboratory & pharmacy</div>
+          <NavLink to="/laboratory">Laboratory</NavLink>
           <NavLink to="/pharmacy">Pharmacy</NavLink>
+
           <div className="nav-section">Finance</div>
           <NavLink to="/billing">Billing</NavLink>
           <NavLink to="/claims">Claims</NavLink>
+
           <div className="nav-section">Movement</div>
           <NavLink to="/referrals">Referrals</NavLink>
         </nav>
@@ -38,7 +48,6 @@ export function Layout() {
         </div>
       </aside>
       <main className="content">
-        {auth.demoMode && <div className="demo-banner">Demo mode: sample data only. Not connected to the live API.</div>}
         <Outlet />
       </main>
     </div>
