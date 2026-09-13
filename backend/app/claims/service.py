@@ -10,7 +10,7 @@ from app.billing.models import Charge, Invoice, InvoiceItem, Service
 from app.claims.models import Claim, ClaimItem, ClaimResponse, Reconciliation
 from app.coverage.models import Coverage, Payer
 from app.encounters.models import Encounter
-from app.integrations.models import Integration
+from app.integrations.models import Integration, IntegrationTransaction
 from app.integrations.service import IntegrationError, queue_transaction
 from app.notifications.events import notify_patient_event
 
@@ -25,13 +25,7 @@ def _claim_number() -> str:
 
 def _verified_current_coverage(db: Session, patient_id: UUID, payer_id: UUID | None = None) -> Coverage | None:
     today = date.today()
-    filters = [
-        Coverage.person_id == patient_id,
-        Coverage.status == "ACTIVE",
-        Coverage.verification_status == "VERIFIED",
-        (Coverage.start_date.is_(None) | (Coverage.start_date <= today)),
-        (Coverage.end_date.is_(None) | (Coverage.end_date >= today)),
-    ]
+    filters = [Coverage.person_id == patient_id, Coverage.status == "ACTIVE", Coverage.verification_status == "VERIFIED", (Coverage.start_date.is_(None) | (Coverage.start_date <= today)), (Coverage.end_date.is_(None) | (Coverage.end_date >= today))]
     if payer_id is not None:
         filters.append(Coverage.payer_id == payer_id)
     return db.scalar(select(Coverage).where(*filters).order_by(Coverage.created_at.desc()).limit(1))
@@ -57,15 +51,7 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
     if existing:
         raise ClaimsError("CLAIM_ALREADY_EXISTS")
     coverage = db.get(Coverage, invoice.coverage_id)
-    if (
-        coverage is None
-        or coverage.person_id != invoice.patient_id
-        or coverage.payer_id != invoice.payer_id
-        or coverage.status != "ACTIVE"
-        or coverage.verification_status != "VERIFIED"
-        or (coverage.start_date and coverage.start_date > date.today())
-        or (coverage.end_date and coverage.end_date < date.today())
-    ):
+    if coverage is None or coverage.person_id != invoice.patient_id or coverage.payer_id != invoice.payer_id or coverage.status != "ACTIVE" or coverage.verification_status != "VERIFIED" or (coverage.start_date and coverage.start_date > date.today()) or (coverage.end_date and coverage.end_date < date.today()):
         raise ClaimsError("VERIFIED_COVERAGE_REQUIRED")
     payer = db.get(Payer, invoice.payer_id)
     if payer is None or payer.status != "ACTIVE":
@@ -172,17 +158,22 @@ def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_i
     integration = _find_payer_submission_integration(db, facility_id, payer)
     if integration is None:
         raise ClaimsError("PAYER_INTEGRATION_NOT_CONFIGURED")
+
+    submission_payload = build_claim_submission_payload(db, claim.id, facility_id)
+    prior_transaction = db.scalar(select(IntegrationTransaction.id).where(IntegrationTransaction.integration_id == integration.id, IntegrationTransaction.entity_type == "CLAIM", IntegrationTransaction.entity_id == claim.id, IntegrationTransaction.direction == "OUTBOUND").limit(1))
+    transaction_id = claim.claim_id if prior_transaction is None else f"{claim.claim_id}:RESUBMIT:{uuid4().hex[:12].upper()}"
     try:
-        queue_transaction(db, facility_id, integration.id, claim.claim_id, "CLAIM", claim.id, "OUTBOUND", claim.claim_id)
+        transaction = queue_transaction(db, facility_id, integration.id, transaction_id, "CLAIM", claim.id, "OUTBOUND", claim.claim_id)
     except IntegrationError as exc:
         db.rollback()
         raise ClaimsError(str(exc)) from exc
+    transaction.response_data = {"submission_payload": submission_payload}
     claim.status = "SUBMITTED"
     claim.submitted_at = datetime.now(timezone.utc)
     db.add(ClaimResponse(claim_id=claim.id, status="SUBMITTED", response_message="Queued for authorised payer submission"))
     db.flush()
     notify_patient_event(db, patient_id=claim.patient_id, facility_id=facility_id, event_type="CLAIM_STATUS_CHANGED", action_url=f"/patient/claims/{claim.id}", metadata={"claim_id": claim.claim_id, "status": "SUBMITTED"}, actor_user_id=actor_user_id, commit=False)
-    record_audit(db, action="SUBMIT_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "integration_id": str(integration.id)}, commit=False)
+    record_audit(db, action="SUBMIT_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "integration_id": str(integration.id), "transaction_id": transaction.transaction_id}, commit=False)
     db.commit()
     db.refresh(claim)
     return claim
