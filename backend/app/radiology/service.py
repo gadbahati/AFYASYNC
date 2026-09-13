@@ -22,6 +22,10 @@ def create_order(db: Session, facility_id: UUID, actor: UUID, payload):
     if not _patient_ok(db, payload.patient_id, facility_id): raise ValueError("PATIENT_NOT_IN_FACILITY")
     test = db.scalar(select(ImagingTest).where(ImagingTest.id == payload.test_id, ImagingTest.facility_id == facility_id, ImagingTest.active.is_(True)))
     if not test: raise ValueError("IMAGING_TEST_NOT_FOUND")
+    if payload.encounter_id is not None:
+        from app.encounters.models import Encounter
+        encounter = db.scalar(select(Encounter).where(Encounter.id == payload.encounter_id, Encounter.patient_id == payload.patient_id, Encounter.facility_id == facility_id, Encounter.status == "OPEN"))
+        if not encounter: raise ValueError("ENCOUNTER_NOT_OPEN")
     order = ImagingOrder(order_number=f"IMG-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}", facility_id=facility_id, ordered_by=actor, **payload.model_dump()); db.add(order)
     record_audit(db, action="IMAGING_ORDER_CREATED", resource_type="ImagingOrder", result="SUCCESS", user_id=actor, resource_id=str(order.id), facility_id=facility_id, patient_id=payload.patient_id, commit=False)
     db.commit(); db.refresh(order); return order
@@ -38,7 +42,16 @@ def report_order(db: Session, facility_id: UUID, actor: UUID, order_id: UUID, pa
     if not service:
         service = Service(facility_id=facility_id, code=f"IMG-{test.code}", name=test.name, service_type="RADIOLOGY", price=test.price, status="ACTIVE")
         db.add(service); db.flush()
-    charge = Charge(charge_id=f"CHG-{uuid4().hex[:20].upper()}", encounter_id=order.encounter_id, patient_id=order.patient_id, facility_id=facility_id, service_id=service.id, quantity=1, unit_price=test.price, total_amount=test.price, source_type="RADIOLOGY", source_id=report.id)
-    db.add(charge); order.status = "COMPLETED"; order.completed_at = datetime.now(timezone.utc)
+    db.add(Charge(charge_id=f"CHG-{uuid4().hex[:20].upper()}", encounter_id=order.encounter_id, patient_id=order.patient_id, facility_id=facility_id, service_id=service.id, quantity=1, unit_price=test.price, total_amount=test.price, source_type="RADIOLOGY", source_id=report.id))
+    order.status = "COMPLETED"; order.completed_at = datetime.now(timezone.utc)
     record_audit(db, action="IMAGING_REPORT_COMPLETED", resource_type="ImagingReport", result="SUCCESS", user_id=actor, resource_id=str(report.id), facility_id=facility_id, patient_id=order.patient_id, commit=False)
+    db.commit(); db.refresh(report); return report
+
+
+def review_report(db: Session, facility_id: UUID, actor: UUID, report_id: UUID):
+    report = db.scalar(select(ImagingReport).join(ImagingOrder, ImagingOrder.id == ImagingReport.order_id).where(ImagingReport.id == report_id, ImagingOrder.facility_id == facility_id).with_for_update())
+    if not report: raise ValueError("IMAGING_REPORT_NOT_FOUND")
+    if report.report_status == "REVIEWED": raise ValueError("IMAGING_ALREADY_REVIEWED")
+    report.reviewed_by = actor; report.reviewed_at = datetime.now(timezone.utc); report.report_status = "REVIEWED"
+    record_audit(db, action="IMAGING_REPORT_REVIEWED", resource_type="ImagingReport", result="SUCCESS", user_id=actor, resource_id=str(report.id), facility_id=facility_id, commit=False)
     db.commit(); db.refresh(report); return report
