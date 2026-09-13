@@ -18,7 +18,6 @@ class IntegrationOut(BaseModel):
     integration_type: str
     provider: str
     status: str
-
     model_config = {"from_attributes": True}
 
 
@@ -39,7 +38,6 @@ class TransactionOut(BaseModel):
     external_reference: str | None
     response_code: str | None
     response_data: dict
-
     model_config = {"from_attributes": True}
 
 
