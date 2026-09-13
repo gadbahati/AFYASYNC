@@ -3,7 +3,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user, get_facility_context, require_permission
+from app.auth.dependencies import (
+    get_current_user,
+    get_facility_context,
+    require_national_permission,
+    require_permission,
+)
 from app.database import get_db
 from app.facilities.schemas import (
     DepartmentCreate,
@@ -13,6 +18,7 @@ from app.facilities.schemas import (
     FacilityResponse,
     FacilityStatusUpdate,
     FacilityUpdate,
+    NetworkFacilityResponse,
 )
 from app.facilities.service import (
     create_department,
@@ -20,6 +26,7 @@ from app.facilities.service import (
     get_facility,
     list_departments,
     list_facilities,
+    list_network_facilities,
     update_department_status,
     update_facility,
     update_facility_status,
@@ -45,6 +52,78 @@ def get_facilities(
     db: Session = Depends(get_db),
 ) -> list[FacilityResponse]:
     return list_facilities(db, limit)
+
+
+@router.get("/network", response_model=list[NetworkFacilityResponse])
+def get_network_facilities(
+    limit: int = Query(default=100, ge=1, le=200),
+    facility_status: str | None = Query(default=None),
+    county: str | None = Query(default=None, max_length=100),
+    _: User = Depends(require_national_permission("facilities.network.read")),
+    db: Session = Depends(get_db),
+) -> list[NetworkFacilityResponse]:
+    try:
+        return list_network_facilities(
+            db,
+            limit=limit,
+            status_filter=facility_status,
+            county=county,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/network", response_model=NetworkFacilityResponse, status_code=status.HTTP_201_CREATED)
+def create_network_facility(
+    payload: FacilityCreate,
+    user: User = Depends(require_national_permission("facilities.network.manage")),
+    db: Session = Depends(get_db),
+) -> NetworkFacilityResponse:
+    return create_facility(db, payload.model_dump(), actor_user_id=user.id)
+
+
+@router.patch("/network/{facility_id}", response_model=NetworkFacilityResponse)
+def update_network_facility(
+    facility_id: UUID,
+    payload: FacilityUpdate,
+    user: User = Depends(require_national_permission("facilities.network.manage")),
+    db: Session = Depends(get_db),
+) -> NetworkFacilityResponse:
+    try:
+        return update_facility(
+            db,
+            facility_id,
+            payload.model_dump(exclude_unset=True),
+            actor_user_id=user.id,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        mapping = {"FACILITY_NOT_FOUND": 404, "NO_CHANGES": 400}
+        raise HTTPException(status_code=mapping.get(code, 400), detail=code) from exc
+
+
+@router.patch("/network/{facility_id}/status", response_model=NetworkFacilityResponse)
+def update_network_facility_status(
+    facility_id: UUID,
+    payload: FacilityStatusUpdate,
+    user: User = Depends(require_national_permission("facilities.network.manage")),
+    db: Session = Depends(get_db),
+) -> NetworkFacilityResponse:
+    try:
+        return update_facility_status(
+            db,
+            facility_id,
+            payload.status,
+            actor_user_id=user.id,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        mapping = {
+            "FACILITY_NOT_FOUND": 404,
+            "INVALID_FACILITY_STATUS": 400,
+            "FACILITY_STATUS_UNCHANGED": 400,
+        }
+        raise HTTPException(status_code=mapping.get(code, 400), detail=code) from exc
 
 
 @router.get("/me", response_model=FacilityResponse)
