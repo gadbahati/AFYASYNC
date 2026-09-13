@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
@@ -10,8 +10,8 @@ from app.claims.service import ClaimsError
 from app.database import get_db
 from app.integrations.models import Integration
 from app.integrations.preauthorization_callback import PreAuthorizationCallbackError, process_preauthorization_callback
-from app.integrations.schemas import IntegrationCreate, IntegrationOut, PayerCallbackCreate, PaymentCallbackCreate, TransactionCreate, TransactionOut
-from app.integrations.service import IntegrationError, create_integration, queue_transaction, verify_callback_signature
+from app.integrations.schemas import IntegrationCreate, IntegrationOut, PayerCallbackCreate, PaymentCallbackCreate, TransactionCreate, TransactionMonitorOut, TransactionOut
+from app.integrations.service import IntegrationError, create_integration, list_integration_transactions, queue_transaction, verify_callback_signature
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["Integrations"])
@@ -55,6 +55,14 @@ def queue(integration_id: UUID, payload: TransactionCreate, db: Session = Depend
         db.rollback(); raise _error(exc) from exc
 
 
+@router.get("/transactions", response_model=list[TransactionMonitorOut])
+def transactions(status: str | None = Query(default=None), integration_id: UUID | None = Query(default=None), limit: int = Query(default=100, ge=1, le=500), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission(INTEGRATIONS_QUEUE))):
+    try:
+        return list_integration_transactions(db, facility_id, integration_id=integration_id, status=status, limit=limit)
+    except IntegrationError as exc:
+        raise _error(exc) from exc
+
+
 @router.post("/{integration_id}/preauthorizations/{authorization_id}/callback", response_model=dict)
 def preauthorization_callback(integration_id: UUID, authorization_id: UUID, payload: PayerCallbackCreate, db: Session = Depends(get_db), x_afasync_timestamp: str = Header(..., alias="X-AfyaSync-Timestamp"), x_afasync_signature: str = Header(..., alias="X-AfyaSync-Signature")):
     try:
@@ -75,17 +83,7 @@ def payer_callback(integration_id: UUID, claim_id: UUID, payload: PayerCallbackC
         if integration is None:
             raise IntegrationError("INTEGRATION_NOT_FOUND")
         verify_callback_signature(integration, x_afasync_timestamp, x_afasync_signature, payload.model_dump(mode="json"))
-        claim, duplicate = process_claim_payer_callback(
-            db,
-            facility_id=integration.facility_id,
-            integration_id=integration_id,
-            claim_id=claim_id,
-            status=payload.status,
-            response_code=payload.response_code,
-            response_message=payload.response_message,
-            external_reference=payload.external_reference,
-            approved_amount=payload.approved_amount,
-        )
+        claim, duplicate = process_claim_payer_callback(db, facility_id=integration.facility_id, integration_id=integration_id, claim_id=claim_id, status=payload.status, response_code=payload.response_code, response_message=payload.response_message, external_reference=payload.external_reference, approved_amount=payload.approved_amount)
         return {"claim_id": claim.id, "claim_number": claim.claim_id, "status": claim.status, "approved_amount": claim.approved_amount, "paid_amount": claim.paid_amount, "duplicate": duplicate}
     except (IntegrationError, ClaimsError) as exc:
         raise _error(exc) from exc
