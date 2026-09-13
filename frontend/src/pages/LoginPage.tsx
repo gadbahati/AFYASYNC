@@ -5,16 +5,11 @@ import { useAuth } from "../auth/AuthContext";
 import { getRememberedUsername, isRememberMeEnabled, setRememberMe } from "../auth/storage";
 import { KenyaFlag } from "../components/KenyaFlag";
 
-// Controlled pilot/demo account. The password is never persisted in browser storage.
-// For a real production deployment, replace the backend bootstrap credentials through secrets.
-const UNIVERSAL_USERNAME = "afyasync.admin";
-const UNIVERSAL_PASSWORD = "Kenya@Health2026";
-
 export function LoginPage() {
   const auth = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState(getRememberedUsername() || UNIVERSAL_USERNAME);
-  const [password, setPassword] = useState(UNIVERSAL_PASSWORD);
+  const [username, setUsername] = useState(getRememberedUsername() || "");
+  const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(isRememberMeEnabled());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -37,12 +32,6 @@ export function LoginPage() {
     }
   }
 
-  function useUniversalAccount() {
-    setUsername(UNIVERSAL_USERNAME);
-    setPassword(UNIVERSAL_PASSWORD);
-    setError(null);
-  }
-
   return (
     <div className="auth-page">
       <form className="card auth-card" onSubmit={onSubmit}>
@@ -53,14 +42,14 @@ export function LoginPage() {
             <h1>AfyaSync</h1>
           </div>
         </div>
-        <p className="muted">Universal staff sign-in. Use the same account whenever you return to AfyaSync.</p>
+        <p className="muted">Secure staff sign-in to the AfyaSync healthcare platform.</p>
         <label>
           Username
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required placeholder="afyasync.admin" />
+          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required placeholder="Enter your username" />
         </label>
         <label>
           Password
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required placeholder="Enter your password" />
         </label>
         <label className="remember-row">
           <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
@@ -68,13 +57,7 @@ export function LoginPage() {
         </label>
         {error && <div className="error">{error}</div>}
         <button type="submit" disabled={submitting}>{submitting ? "Signing in…" : "Sign in"}</button>
-        <button type="button" className="button secondary" onClick={useUniversalAccount}>Use universal account</button>
-        <div className="notice auth-note">
-          <strong>Pilot account</strong>
-          <div className="small muted">Username: {UNIVERSAL_USERNAME}</div>
-          <div className="small muted">Password: {UNIVERSAL_PASSWORD}</div>
-        </div>
-        <p className="muted small auth-note">The live account is authenticated by the AfyaSync API. The browser remembers the username and session when selected; the password is not stored in browser storage.</p>
+        <p className="muted small auth-note">Authentication is handled by the AfyaSync API. Passwords are not stored in browser storage.</p>
       </form>
     </div>
   );
