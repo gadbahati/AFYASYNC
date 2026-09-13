@@ -15,7 +15,7 @@ from app.coverage.schemas import (
     PayerPlanResponse,
     PayerResponse,
 )
-from app.coverage.service import create_benefit_rule, create_coverage, get_active_coverage
+from app.coverage.service import create_benefit_rule, create_coverage, get_active_coverage, verify_coverage
 from app.database import get_db
 from app.patients.models import PatientFacility
 from app.rbac.models import User
@@ -41,7 +41,6 @@ def list_payers(
     _: User = Depends(require_permission(COVERAGE_READ)),
     __: UUID = Depends(get_facility_context),
 ) -> list[PayerResponse]:
-    """List active payers (AFYASYNC, SHA, CASH, others)."""
     return list(db.scalars(select(Payer).where(Payer.status == "ACTIVE").order_by(Payer.code)))
 
 
@@ -85,6 +84,22 @@ def add_coverage(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": code, "message": messages.get(code, code)},
         ) from err
+    return coverage
+
+
+@router.post("/{coverage_id}/verify", response_model=CoverageResponse)
+def confirm_coverage(
+    coverage_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(COVERAGE_WRITE)),
+) -> CoverageResponse:
+    """Staff confirmation after SHA-style membership lookup."""
+    try:
+        coverage = verify_coverage(db, coverage_id, actor_user_id=user.id)
+    except ValueError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err)) from err
+    _require_patient_enrolled(db, coverage.person_id, facility_id)
     return coverage
 
 
