@@ -3,6 +3,7 @@ import json
 import os
 from typing import Protocol
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
@@ -25,35 +26,26 @@ class UnconfiguredAdapter:
     """Safe default: retain the transaction locally until an authorised adapter exists."""
 
     def send(self, payload: dict, idempotency_key: str) -> AdapterResult:
-        return AdapterResult(
-            status="RETRYING",
-            response_code="ADAPTER_NOT_CONFIGURED",
-            response_data={"message": "Authorised integration adapter is not configured"},
-        )
+        return AdapterResult(status="RETRYING", response_code="ADAPTER_NOT_CONFIGURED", response_data={})
 
 
 class HttpJsonAdapter:
-    """Minimal HTTPS JSON adapter for an authorised external endpoint.
-
-    Secrets are read from an environment variable named by configuration rather
-    than persisted in the integration record. Only HTTPS endpoints are allowed.
-    The adapter reports transport/application responses; it never invents payer
-    approval, rejection, or payment state.
-    """
+    """Minimal HTTPS JSON adapter for an authorised external endpoint."""
 
     def __init__(self, *, endpoint: str, credential_env: str | None = None, timeout_seconds: int = 20):
-        if not endpoint.startswith("https://"):
+        parsed = urlparse(endpoint)
+        if parsed.scheme.lower() != "https" or not parsed.netloc or parsed.username or parsed.password:
             raise ValueError("HTTPS_ENDPOINT_REQUIRED")
+        if parsed.fragment:
+            raise ValueError("INVALID_ADAPTER_ENDPOINT")
+        if not parsed.hostname:
+            raise ValueError("INVALID_ADAPTER_ENDPOINT")
         self.endpoint = endpoint
         self.credential_env = credential_env
         self.timeout_seconds = max(1, min(timeout_seconds, 60))
 
     def send(self, payload: dict, idempotency_key: str) -> AdapterResult:
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Idempotency-Key": idempotency_key,
-        }
+        headers = {"Content-Type": "application/json", "Accept": "application/json", "Idempotency-Key": idempotency_key}
         if self.credential_env:
             credential = os.getenv(self.credential_env)
             if not credential:
@@ -62,8 +54,11 @@ class HttpJsonAdapter:
         request = Request(self.endpoint, data=json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8"), headers=headers, method="POST")
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
-                raw = response.read().decode("utf-8")
-                data = json.loads(raw) if raw else {}
+                raw = response.read().decode("utf-8", errors="replace")
+                try:
+                    data = json.loads(raw) if raw else {}
+                except json.JSONDecodeError:
+                    data = {"body": raw[:2000]}
                 if not isinstance(data, dict):
                     data = {"body": data}
                 return AdapterResult(status="SUCCEEDED", response_code=str(response.status), external_reference=data.get("external_reference"), response_data=data)
@@ -73,7 +68,11 @@ class HttpJsonAdapter:
                 data = json.loads(raw) if raw else {}
             except json.JSONDecodeError:
                 data = {"body": raw[:2000]}
-            return AdapterResult(status="RETRYING" if exc.code >= 500 else "FAILED", response_code=str(exc.code), response_data=data if isinstance(data, dict) else {"body": data})
+            if exc.code == 429 or exc.code >= 500:
+                status = "RETRYING"
+            else:
+                status = "FAILED"
+            return AdapterResult(status=status, response_code=str(exc.code), response_data=data if isinstance(data, dict) else {"body": data})
         except (URLError, TimeoutError, OSError):
             return AdapterResult(status="RETRYING", response_code="TRANSPORT_ERROR", response_data={})
 
@@ -87,7 +86,7 @@ def build_adapter(configuration: dict | None) -> IntegrationAdapter:
         if not isinstance(endpoint, str) or not endpoint:
             raise ValueError("ADAPTER_ENDPOINT_REQUIRED")
         credential_env = configuration.get("credential_env")
-        if credential_env is not None and not isinstance(credential_env, str):
+        if credential_env is not None and (not isinstance(credential_env, str) or not credential_env.strip()):
             raise ValueError("INVALID_CREDENTIAL_ENV")
         timeout = configuration.get("timeout_seconds", 20)
         if not isinstance(timeout, int):
