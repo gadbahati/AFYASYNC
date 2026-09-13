@@ -35,6 +35,7 @@ def _error(exc: IntegrationError | ClaimsError | BillingError | PreAuthorization
         "INVALID_PREAUTH_CALLBACK_STATUS": 400, "PREAUTH_EXTERNAL_REFERENCE_REQUIRED": 400,
         "DUPLICATE_PREAUTH_RESPONSE": 409, "PREAUTH_NOT_SUBMITTABLE": 409,
         "APPROVED_AMOUNT_EXCEEDS_REQUEST": 400, "REJECTED_AMOUNT_MUST_BE_ZERO": 400,
+        "PAYER_NOT_ACTIVE": 409,
     }
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
