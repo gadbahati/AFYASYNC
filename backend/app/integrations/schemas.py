@@ -27,6 +27,13 @@ class IntegrationStatusUpdate(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+class IntegrationConfigurationUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=150)
+    provider: str | None = Field(default=None, min_length=2, max_length=120)
+    configuration: dict | None = None
+    reason: str = Field(min_length=3, max_length=500)
+
+
 class TransactionCreate(BaseModel):
     transaction_id: str = Field(min_length=1, max_length=120)
     entity_type: str = Field(min_length=1, max_length=80)
