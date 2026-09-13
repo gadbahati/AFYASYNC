@@ -1,10 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
+from app.billing.models import Invoice
 from app.claims.models import Claim
 from app.claims.permissions import CLAIMS_CREATE, CLAIMS_RECONCILE, CLAIMS_SUBMIT, CLAIMS_VALIDATE
 from app.claims.schemas import ClaimCreate, ClaimResponseOut, ClaimSubmitOut, ClaimValidationOut, PayerResponseCreate, ReconcileCreate, ReconcileResponse
@@ -30,8 +31,23 @@ def _error(exc: ClaimsError) -> HTTPException:
         "CLAIM_ITEM_TOTAL_MISMATCH": 409, "DUPLICATE_PAYER_RESPONSE": 409,
         "PAYER_INTEGRATION_NOT_CONFIGURED": 409,
         "INTEGRATION_NOT_FOUND": 404, "INTEGRATION_NOT_ACTIVE": 409,
+        "CASH_ENCOUNTER_NO_CLAIM": 409, "SHA_MODE_REQUIRES_SHA_PAYER": 409, "AFYASYNC_MODE_REQUIRES_AFYASYNC_PAYER": 409,
     }
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
+
+
+@router.get("", response_model=list[ClaimResponseOut])
+def list_claims(limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_CREATE))):
+    _ = user
+    return list(
+        db.scalars(
+            select(Claim)
+            .join(Invoice, Invoice.id == Claim.invoice_id)
+            .where(Invoice.facility_id == facility_id)
+            .order_by(Claim.updated_at.desc())
+            .limit(limit)
+        ).all()
+    )
 
 
 @router.post("", response_model=ClaimResponseOut, status_code=201)
