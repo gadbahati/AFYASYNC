@@ -25,7 +25,13 @@ def _claim_number() -> str:
 
 def _verified_current_coverage(db: Session, patient_id: UUID, payer_id: UUID | None = None) -> Coverage | None:
     today = date.today()
-    filters = [Coverage.person_id == patient_id, Coverage.status == "ACTIVE", Coverage.verification_status == "VERIFIED", (Coverage.start_date.is_(None) | (Coverage.start_date <= today)), (Coverage.end_date.is_(None) | (Coverage.end_date >= today))]
+    filters = [
+        Coverage.person_id == patient_id,
+        Coverage.status == "ACTIVE",
+        Coverage.verification_status == "VERIFIED",
+        (Coverage.start_date.is_(None) | (Coverage.start_date <= today)),
+        (Coverage.end_date.is_(None) | (Coverage.end_date >= today)),
+    ]
     if payer_id is not None:
         filters.append(Coverage.payer_id == payer_id)
     return db.scalar(select(Coverage).where(*filters).order_by(Coverage.created_at.desc()).limit(1))
@@ -44,19 +50,48 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
     encounter = db.get(Encounter, invoice.encounter_id)
     if encounter is None or encounter.facility_id != facility_id or encounter.patient_id != invoice.patient_id:
         raise ClaimsError("ENCOUNTER_MISMATCH")
+
+    # Multi-coverage product rule: cash visits are invoice/payment only — never SHA/AfyaSync claims.
+    mode = getattr(encounter, "coverage_mode", None) or "CASH"
+    if mode == "CASH":
+        raise ClaimsError("CASH_ENCOUNTER_NO_CLAIM")
+
     existing = db.scalar(select(Claim).where(Claim.invoice_id == invoice.id).limit(1))
     if existing:
         raise ClaimsError("CLAIM_ALREADY_EXISTS")
     coverage = db.get(Coverage, invoice.coverage_id)
-    if coverage is None or coverage.person_id != invoice.patient_id or coverage.payer_id != invoice.payer_id or coverage.status != "ACTIVE" or coverage.verification_status != "VERIFIED" or (coverage.start_date and coverage.start_date > date.today()) or (coverage.end_date and coverage.end_date < date.today()):
+    if (
+        coverage is None
+        or coverage.person_id != invoice.patient_id
+        or coverage.payer_id != invoice.payer_id
+        or coverage.status != "ACTIVE"
+        or coverage.verification_status != "VERIFIED"
+        or (coverage.start_date and coverage.start_date > date.today())
+        or (coverage.end_date and coverage.end_date < date.today())
+    ):
         raise ClaimsError("VERIFIED_COVERAGE_REQUIRED")
     payer = db.get(Payer, invoice.payer_id)
     if payer is None or payer.status != "ACTIVE":
         raise ClaimsError("PAYER_NOT_ACTIVE")
+
+    # Soft consistency with encounter coverage_mode
+    payer_code = (payer.code or "").upper()
+    if mode == "SHA" and payer_code not in {"SHA", "SHIF", "PHF", "ECCIF"}:
+        raise ClaimsError("SHA_MODE_REQUIRES_SHA_PAYER")
+    if mode == "AFYASYNC" and payer_code not in {"AFYASYNC"}:
+        raise ClaimsError("AFYASYNC_MODE_REQUIRES_AFYASYNC_PAYER")
+
     items = list(db.scalars(select(InvoiceItem).where(InvoiceItem.invoice_id == invoice.id)))
     if not items:
         raise ClaimsError("CLAIM_ITEMS_REQUIRED")
-    claim = Claim(claim_id=_claim_number(), invoice_id=invoice.id, encounter_id=encounter.id, patient_id=invoice.patient_id, payer_id=payer.id, claim_amount=Decimal("0"))
+    claim = Claim(
+        claim_id=_claim_number(),
+        invoice_id=invoice.id,
+        encounter_id=encounter.id,
+        patient_id=invoice.patient_id,
+        payer_id=payer.id,
+        claim_amount=Decimal("0"),
+    )
     db.add(claim)
     db.flush()
     claim_amount = Decimal("0")
@@ -79,7 +114,24 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
     claim.claim_amount = claim_amount
     invoice.status = "CLAIM_PENDING"
     db.flush()
-    record_audit(db, action="CREATE_CLAIM", resource_type="CLAIM", resource_id=str(claim.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=claim.patient_id, metadata={"claim_id": claim.claim_id, "amount": str(claim.claim_amount), "payer_id": str(payer.id)}, commit=False)
+    record_audit(
+        db,
+        action="CREATE_CLAIM",
+        resource_type="CLAIM",
+        resource_id=str(claim.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=claim.patient_id,
+        metadata={
+            "claim_id": claim.claim_id,
+            "amount": str(claim.claim_amount),
+            "payer_id": str(payer.id),
+            "coverage_mode": mode,
+            "payer_code": payer_code,
+        },
+        commit=False,
+    )
     db.commit()
     db.refresh(claim)
     return claim
@@ -130,7 +182,17 @@ def build_claim_submission_payload(db: Session, claim_id: UUID, facility_id: UUI
     if encounter is None or encounter.facility_id != facility_id or encounter.patient_id != claim.patient_id:
         raise ClaimsError("ENCOUNTER_MISMATCH")
     items = list(db.scalars(select(ClaimItem).where(ClaimItem.claim_id == claim.id)))
-    return {"claim_id": claim.claim_id, "invoice_id": str(invoice.id), "encounter_id": str(encounter.id), "patient_id": str(claim.patient_id), "payer_id": str(payer.id), "payer_code": payer.code, "claim_amount": str(claim.claim_amount), "items": [{"service_code": item.service_code, "quantity": str(item.quantity), "amount": str(item.amount), "charge_id": str(item.charge_id)} for item in items]}
+    return {
+        "claim_id": claim.claim_id,
+        "invoice_id": str(invoice.id),
+        "encounter_id": str(encounter.id),
+        "patient_id": str(claim.patient_id),
+        "payer_id": str(payer.id),
+        "payer_code": payer.code,
+        "coverage_mode": getattr(encounter, "coverage_mode", None),
+        "claim_amount": str(claim.claim_amount),
+        "items": [{"service_code": item.service_code, "quantity": str(item.quantity), "amount": str(item.amount), "charge_id": str(item.charge_id)} for item in items],
+    }
 
 
 def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
@@ -244,8 +306,6 @@ def process_payer_callback(db: Session, facility_id: UUID, integration_id: UUID,
 
 
 def reconcile_claim(db: Session, claim_id: UUID, facility_id: UUID, staff_id: UUID, received_amount: Decimal, *, actor_user_id: UUID | None = None) -> Reconciliation:
-    # Lock the claim so concurrent reconciliation requests cannot both pass the
-    # existing-reconciliation check before either transaction commits.
     claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
     if claim is None:
         raise ClaimsError("CLAIM_NOT_FOUND")
