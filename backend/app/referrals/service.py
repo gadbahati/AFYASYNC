@@ -77,7 +77,7 @@ def create_referral(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         reason=payload["reason"],
         priority=payload.get("priority", "ROUTINE"),
         clinical_summary=payload.get("clinical_summary"),
-        status="CREATED",
+        status="SENT",
     )
     db.add(referral)
     db.flush()
@@ -99,7 +99,7 @@ def create_referral(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
         user_id=actor_user_id,
         facility_id=facility_id,
         patient_id=referral.patient_id,
-        metadata={"referral_id": referral.referral_id, "destination_facility_id": str(destination.id)},
+        metadata={"referral_id": referral.referral_id, "destination_facility_id": str(destination.id), "status": referral.status},
         commit=False,
     )
     db.commit()
@@ -161,6 +161,12 @@ def update_referral_status(db: Session, facility_id: UUID, referral_id: UUID, ne
         raise ReferralError("FACILITY_ACCESS_DENIED")
     if new_status not in REFERRAL_TRANSITIONS.get(referral.status, set()):
         raise ReferralError("INVALID_REFERRAL_TRANSITION")
+
+    # Acceptance/decline and downstream clinical progress belong to the
+    # receiving facility. Cancellation may be requested by either side.
+    if new_status in {"ACCEPTED", "DECLINED", "IN_PROGRESS", "COMPLETED"} and facility_id != referral.destination_facility_id:
+        raise ReferralError("DESTINATION_FACILITY_ACTION_REQUIRED")
+
     referral.status = new_status
     notify_patient_event(
         db,
@@ -303,6 +309,16 @@ def update_transfer_status(db: Session, facility_id: UUID, transfer_id: UUID, ne
         raise ReferralError("FACILITY_ACCESS_DENIED")
     if new_status not in TRANSFER_TRANSITIONS.get(transfer.status, set()):
         raise ReferralError("INVALID_TRANSFER_TRANSITION")
+
+    # The receiving facility accepts/receives the transfer; the sending
+    # facility controls the movement to IN_TRANSIT. Cancellation is shared.
+    if new_status == "ACCEPTED" and facility_id != transfer.destination_facility_id:
+        raise ReferralError("DESTINATION_FACILITY_ACTION_REQUIRED")
+    if new_status == "IN_TRANSIT" and facility_id != transfer.source_facility_id:
+        raise ReferralError("SOURCE_FACILITY_ACTION_REQUIRED")
+    if new_status == "ARRIVED" and facility_id != transfer.destination_facility_id:
+        raise ReferralError("DESTINATION_FACILITY_ACTION_REQUIRED")
+
     transfer.status = new_status
     notify_patient_event(
         db,
