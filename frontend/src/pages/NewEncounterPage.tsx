@@ -4,7 +4,7 @@ import { api, ApiError } from "../api/client";
 import type { Department, Patient } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 
- cons COVERAGE_OPTIONS = [
+const COVERAGE_OPTIONS = [
   {
     value: "CASH",
     label: "Cash / uninsured",
