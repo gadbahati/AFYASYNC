@@ -6,6 +6,8 @@ import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { BenefitPackagesPage } from "./pages/BenefitPackagesPage";
 import { BillingPage } from "./pages/BillingPage";
 import { ClaimsPage } from "./pages/ClaimsPage";
+import { CommandCentrePage } from "./pages/CommandCentrePage";
+import { CoverageSimulatorPage } from "./pages/CoverageSimulatorPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ShaCareDemoPage } from "./pages/ShaCareDemoPage";
 import { ShaLookupPage } from "./pages/ShaLookupPage";
@@ -31,6 +33,8 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/" element={<DashboardPage />} />
+              <Route path="/command-centre" element={<CommandCentrePage />} />
+              <Route path="/coverage-simulator" element={<CoverageSimulatorPage />} />
               <Route path="/patients" element={<PatientsPage />} />
               <Route path="/patients/new" element={<NewPatientPage />} />
               <Route path="/patients/sha-lookup" element={<ShaLookupPage />} />
