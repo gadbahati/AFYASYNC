@@ -14,7 +14,6 @@ from app.benefits import models as benefit_models
 from app.benefits.router import router as benefits_router
 from app.billing import models as billing_models
 from app.billing.router import router as billing_router
-from app.bootstrap import ensure_demo_admin
 from app.claims import models as claims_models
 from app.claims.router import router as claims_router
 from app.clinical import models as clinical_models
@@ -81,9 +80,6 @@ app.add_middleware(SecurityHeadersMiddleware)
 def initialize_database():
  if settings.environment!="production":
   Base.metadata.create_all(bind=engine)
-  with SessionLocal() as db:
-   try: ensure_demo_admin(db)
-   except Exception: db.rollback()
 app.include_router(auth_router.router);app.include_router(patients_router);app.include_router(coverage_router);app.include_router(benefits_router);app.include_router(admissions_router);app.include_router(preauthorizations_router);app.include_router(emergency_router);app.include_router(nursing_router);app.include_router(wards_router);app.include_router(ward_movement_router);app.include_router(radiology_router);app.include_router(theatre_router);app.include_router(maternity_router);app.include_router(child_health_router);app.include_router(blood_bank_router);app.include_router(patient_safety_router);app.include_router(dietetics_router);app.include_router(infection_control_router);app.include_router(facilities_router);app.include_router(appointments_router);app.include_router(encounters_router);app.include_router(clinical_router);app.include_router(laboratory_router);app.include_router(pharmacy_router);app.include_router(billing_router);app.include_router(claims_router);app.include_router(integrations_router);app.include_router(referrals_router);app.include_router(notifications_router);app.include_router(portal_router);app.include_router(reports_router);app.include_router(insight_router)
 @app.get("/health",tags=["System"])
 def health_check(): return {"success":True,"data":{"service":"afasync-api","status":"healthy","environment":settings.environment,"version":settings.app_version},"message":"AfyaSync API is running"}
