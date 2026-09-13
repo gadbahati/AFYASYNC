@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
+import { coverageApi, type Coverage, type Payer } from "../api/coverage";
 import type { Department, Patient } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 
@@ -36,6 +37,9 @@ export function NewEncounterPage() {
   const [departmentId, setDepartmentId] = useState("");
   const [encounterType, setEncounterType] = useState("OUTPATIENT");
   const [coverageMode, setCoverageMode] = useState<"AFYASYNC" | "SHA" | "CASH" | "OTHER">("CASH");
+  const [coverageId, setCoverageId] = useState<string>("");
+  const [activeCoverages, setActiveCoverages] = useState<Coverage[]>([]);
+  const [payers, setPayers] = useState<Payer[]>([]);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,13 +48,20 @@ export function NewEncounterPage() {
   useEffect(() => {
     if (!patientId || !auth.facilityId) return;
     let cancelled = false;
-    Promise.all([api.getPatient(patientId), api.listDepartments(auth.facilityId)])
-      .then(([p, deps]) => {
+    Promise.all([
+      api.getPatient(patientId),
+      api.listDepartments(auth.facilityId),
+      coverageApi.listActiveForPatient(patientId).catch(() => [] as Coverage[]),
+      coverageApi.listPayers().catch(() => [] as Payer[]),
+    ])
+      .then(([p, deps, covers, payerList]) => {
         if (cancelled) return;
         setPatient(p);
         const active = deps.filter((d) => d.status === "ACTIVE");
         setDepartments(active);
         if (active[0]) setDepartmentId(active[0].id);
+        setActiveCoverages(covers);
+        setPayers(payerList);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof ApiError ? err.code : "LOAD_FAILED");
@@ -62,6 +73,22 @@ export function NewEncounterPage() {
       cancelled = true;
     };
   }, [patientId, auth.facilityId]);
+
+  useEffect(() => {
+    // Prefer linking a matching active coverage for the selected mode
+    const codeForMode: Record<string, string[]> = {
+      AFYASYNC: ["AFYASYNC"],
+      SHA: ["SHA", "SHIF", "PHF", "ECCIF"],
+      CASH: ["CASH"],
+      OTHER: [],
+    };
+    const codes = codeForMode[coverageMode] || [];
+    const payerIds = new Set(
+      payers.filter((p) => codes.includes(p.code.toUpperCase())).map((p) => p.id),
+    );
+    const match = activeCoverages.find((c) => payerIds.has(c.payer_id));
+    setCoverageId(match?.id || "");
+  }, [coverageMode, activeCoverages, payers]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -75,6 +102,7 @@ export function NewEncounterPage() {
         department_id: departmentId,
         encounter_type: encounterType,
         coverage_mode: coverageMode,
+        coverage_id: coverageId || null,
         reason: reason.trim() || null,
       });
       navigate(`/encounters/${encounter.id}`);
@@ -136,6 +164,22 @@ export function NewEncounterPage() {
             </select>
           </label>
           {selectedHelp && <p className="muted full">{selectedHelp}</p>}
+          {activeCoverages.length > 0 && (
+            <label className="full">
+              Linked coverage record (optional)
+              <select value={coverageId} onChange={(e) => setCoverageId(e.target.value)}>
+                <option value="">None</option>
+                {activeCoverages.map((c) => {
+                  const payer = payers.find((p) => p.id === c.payer_id);
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {(payer?.code || c.payer_id)} · {c.membership_number || "no member no."} · {c.verification_status}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          )}
           <label className="full">
             Reason
             <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={2000} />
