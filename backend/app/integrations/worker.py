@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from app.integrations.models import Integration, IntegrationTransaction
 from app.preauthorizations.models import PreAuthorization
 
 MAX_INTEGRATION_ATTEMPTS = 5
+RETRY_DELAYS_SECONDS = (30, 120, 600, 1800, 3600)
 
 
 def _build_payment_submission_payload(db: Session, payment_id, facility_id):
@@ -51,21 +52,17 @@ def process_pending_transaction(db: Session, transaction_id, adapter: Integratio
         transaction.response_code = "MAX_ATTEMPTS_EXCEEDED"
         transaction.response_data = {"max_attempts": MAX_INTEGRATION_ATTEMPTS}
         db.commit(); db.refresh(transaction); return transaction
-
+    now = datetime.now(timezone.utc)
+    if transaction.status == "RETRYING" and transaction.last_attempt_at is not None:
+        delay = RETRY_DELAYS_SECONDS[min(transaction.attempt_count - 1, len(RETRY_DELAYS_SECONDS) - 1)]
+        if now < transaction.last_attempt_at + timedelta(seconds=delay):
+            return transaction
     try:
         adapter = adapter or build_adapter(integration.configuration)
     except ValueError as exc:
-        transaction.status = "FAILED"
-        transaction.response_code = str(exc)
-        transaction.response_data = {}
-        transaction.attempt_count += 1
-        transaction.last_attempt_at = datetime.now(timezone.utc)
+        transaction.status = "FAILED"; transaction.response_code = str(exc); transaction.response_data = {}; transaction.attempt_count += 1; transaction.last_attempt_at = now
         db.commit(); db.refresh(transaction); return transaction
-
-    transaction.status = "PROCESSING"
-    transaction.last_attempt_at = datetime.now(timezone.utc)
-    db.flush()
-
+    transaction.status = "PROCESSING"; transaction.last_attempt_at = now; db.flush()
     try:
         if transaction.entity_type == "CLAIM":
             if transaction.entity_id is None: raise ValueError("CLAIM_REFERENCE_REQUIRED")
@@ -79,29 +76,18 @@ def process_pending_transaction(db: Session, transaction_id, adapter: Integratio
         else:
             payload = {"transaction_id": transaction.transaction_id, "entity_type": transaction.entity_type, "entity_id": str(transaction.entity_id) if transaction.entity_id else None}
     except (ClaimsError, ValueError) as exc:
-        transaction.status = "FAILED"
-        transaction.response_code = str(exc)
-        transaction.response_data = {}
-        transaction.attempt_count += 1
-        transaction.last_attempt_at = datetime.now(timezone.utc)
+        transaction.status = "FAILED"; transaction.response_code = str(exc); transaction.response_data = {}; transaction.attempt_count += 1; transaction.last_attempt_at = datetime.now(timezone.utc)
         db.commit(); db.refresh(transaction); return transaction
-
     try:
         result = adapter.send(payload, transaction.transaction_id)
     except Exception as exc:
-        transaction.status = "RETRYING" if transaction.attempt_count + 1 < MAX_INTEGRATION_ATTEMPTS else "FAILED"
-        transaction.response_code = "ADAPTER_EXCEPTION"
-        transaction.response_data = {"error_type": type(exc).__name__}
-        transaction.attempt_count += 1
-        transaction.last_attempt_at = datetime.now(timezone.utc)
+        transaction.status = "RETRYING" if transaction.attempt_count + 1 < MAX_INTEGRATION_ATTEMPTS else "FAILED"; transaction.response_code = "ADAPTER_EXCEPTION"; transaction.response_data = {"error_type": type(exc).__name__}; transaction.attempt_count += 1; transaction.last_attempt_at = datetime.now(timezone.utc)
         db.commit(); db.refresh(transaction); return transaction
-
     if result.status not in {"SUCCEEDED", "FAILED", "RETRYING", "PENDING", "PROCESSING"}:
         transaction.status = "FAILED"; transaction.response_code = "INVALID_ADAPTER_STATUS"; transaction.response_data = {}
     else:
         transaction.status = result.status; transaction.response_code = result.response_code; transaction.external_reference = result.external_reference; transaction.response_data = result.response_data or {}
-    transaction.attempt_count += 1
-    transaction.last_attempt_at = datetime.now(timezone.utc)
+    transaction.attempt_count += 1; transaction.last_attempt_at = datetime.now(timezone.utc)
     if transaction.status in {"PENDING", "PROCESSING"} and transaction.attempt_count >= MAX_INTEGRATION_ATTEMPTS:
         transaction.status = "FAILED"; transaction.response_code = "MAX_ATTEMPTS_EXCEEDED"; transaction.response_data = {"max_attempts": MAX_INTEGRATION_ATTEMPTS}
     db.commit(); db.refresh(transaction); return transaction
