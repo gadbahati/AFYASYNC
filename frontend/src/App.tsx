@@ -4,16 +4,14 @@ import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { BenefitPackagesPage } from "./pages/BenefitPackagesPage";
+import { BillingPage } from "./pages/BillingPage";
+import { ClaimsPage } from "./pages/ClaimsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ShaCareDemoPage } from "./pages/ShaCareDemoPage";
 import { ShaLookupPage } from "./pages/ShaLookupPage";
 import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
-import {
-  BillingPage,
-  ClaimsPage,
-  PharmacyPage,
-  ReferralsPage,
-} from "./pages/demoPages";
+import { PharmacyPage } from "./pages/PharmacyPage";
+import { ReferralsPage } from "./pages/demoPages";
 import { EncounterDetailPage } from "./pages/EncounterDetailPage";
 import { FacilitySelectPage } from "./pages/FacilitySelectPage";
 import { LoginPage } from "./pages/LoginPage";
