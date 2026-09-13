@@ -9,11 +9,9 @@ import { ClaimsPage } from "./pages/ClaimsPage";
 import { CommandCentrePage } from "./pages/CommandCentrePage";
 import { CoverageSimulatorPage } from "./pages/CoverageSimulatorPage";
 import { DashboardPage } from "./pages/DashboardPage";
-import { ShaCareDemoPage } from "./pages/ShaCareDemoPage";
 import { ShaLookupPage } from "./pages/ShaLookupPage";
 import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
 import { PharmacyPage } from "./pages/PharmacyPage";
-import { ReferralsPage } from "./pages/demoPages";
 import { EncounterDetailPage } from "./pages/EncounterDetailPage";
 import { FacilitySelectPage } from "./pages/FacilitySelectPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -43,13 +41,11 @@ export default function App() {
               <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
               <Route path="/appointments" element={<AppointmentsPage />} />
               <Route path="/queue" element={<QueuePage />} />
-              <Route path="/sha-workflow" element={<ShaCareDemoPage />} />
               <Route path="/benefits" element={<BenefitPackagesPage />} />
               <Route path="/laboratory" element={<LaboratoryWorkflowPage />} />
               <Route path="/pharmacy" element={<PharmacyPage />} />
               <Route path="/billing" element={<BillingPage />} />
               <Route path="/claims" element={<ClaimsPage />} />
-              <Route path="/referrals" element={<ReferralsPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
