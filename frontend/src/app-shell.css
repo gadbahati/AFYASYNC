@@ -1,0 +1,279 @@
+/* AfyaSync application shell polish.
+   Keeps the clinical design system restrained and production-oriented. */
+
+.app-shell {
+  grid-template-columns: 264px minmax(0, 1fr);
+}
+
+.sidebar {
+  padding: 18px 14px 14px;
+  gap: 16px;
+  box-shadow: 6px 0 24px rgba(7, 50, 41, 0.08);
+  z-index: 10;
+}
+
+.brand-row {
+  padding: 4px 8px 16px;
+}
+
+.brand-row strong {
+  font-size: 17px;
+}
+
+.brand-row .muted {
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+
+.facility-context {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  background: rgba(255,255,255,.055);
+}
+
+.facility-context-label {
+  color: #8fbfb0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.facility-context strong {
+  color: #f3fbf8;
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-group + .nav-group {
+  margin-top: 5px;
+}
+
+.nav-group .nav-section {
+  margin-top: 11px;
+}
+
+.sidebar nav a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+}
+
+.nav-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #5e9b8a;
+  flex: 0 0 auto;
+}
+
+.sidebar a.active .nav-dot {
+  background: #9ce9ce;
+  box-shadow: 0 0 0 3px rgba(156,233,206,.10);
+}
+
+.content {
+  max-width: none;
+  padding: 0;
+  min-width: 0;
+}
+
+.topbar {
+  min-height: 68px;
+  padding: 13px clamp(20px, 4vw, 42px);
+  background: rgba(255,255,255,.94);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+}
+
+.topbar > div:first-child {
+  display: grid;
+  gap: 1px;
+}
+
+.topbar-kicker {
+  color: var(--muted-soft);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.topbar-title {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.topbar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--canvas);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.content-inner {
+  width: min(1240px, 100%);
+  margin: 0 auto;
+  padding: 28px 32px 52px;
+}
+
+.page-heading,
+.page-header {
+  background: transparent;
+}
+
+.card,
+.stat-card,
+.table-wrap,
+.hero-banner {
+  box-shadow: 0 1px 3px rgba(10,30,25,.045);
+}
+
+.card:hover,
+.stat-card:hover {
+  border-color: var(--border-strong);
+}
+
+button, .button {
+  min-height: 38px;
+}
+
+button.secondary, .button.secondary {
+  background: #fff;
+}
+
+.table-wrap {
+  scrollbar-width: thin;
+}
+
+th {
+  white-space: nowrap;
+}
+
+td {
+  vertical-align: middle;
+}
+
+.user-context {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 10px;
+}
+
+.user-context > div:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.user-context strong {
+  color: #f3fbf8;
+  font-size: 12.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-avatar {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: rgba(255,255,255,.12);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.signout {
+  width: fit-content;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    box-shadow: none;
+  }
+
+  .facility-context {
+    display: none;
+  }
+
+  .sidebar nav {
+    max-height: 118px;
+    overflow: auto;
+    padding-bottom: 2px;
+  }
+
+  .sidebar nav a {
+    min-height: 34px;
+  }
+
+  .nav-dot {
+    display: none;
+  }
+
+  .topbar {
+    position: relative;
+    min-height: 62px;
+    padding: 11px 16px;
+  }
+
+  .topbar-kicker {
+    font-size: 9px;
+  }
+
+  .content-inner {
+    padding: 20px 16px 36px;
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar-status {
+    font-size: 0;
+    padding: 7px;
+  }
+
+  .topbar-status .status-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .content-inner {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
