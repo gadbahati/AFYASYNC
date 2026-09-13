@@ -17,6 +17,7 @@ import { FacilitySelectPage } from "./pages/FacilitySelectPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NationalCommandCentrePage } from "./pages/NationalCommandCentrePage";
 import { NationalFacilitiesPage } from "./pages/NationalFacilitiesPage";
+import { NationalPayerNetworkPage } from "./pages/NationalPayerNetworkPage";
 import { NationalStaffPage } from "./pages/NationalStaffPage";
 import { NewEncounterPage } from "./pages/NewEncounterPage";
 import { NewPatientPage } from "./pages/NewPatientPage";
@@ -39,6 +40,7 @@ export default function App() {
               <Route path="/national-command-centre" element={<NationalCommandCentrePage />} />
               <Route path="/national-facilities" element={<NationalFacilitiesPage />} />
               <Route path="/national-staff" element={<NationalStaffPage />} />
+              <Route path="/national-payers" element={<NationalPayerNetworkPage />} />
               <Route path="/coverage-simulator" element={<CoverageSimulatorPage />} />
               <Route path="/patients" element={<PatientsPage />} />
               <Route path="/patients/new" element={<NewPatientPage />} />
