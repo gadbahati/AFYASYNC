@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 15
     refresh_token_days: int = 30
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_timeout_seconds: int = 30
+    db_pool_recycle_seconds: int = 1800
     # Comma-separated browser origins allowed to call the API (empty = no CORS)
     cors_origins: str = "http://localhost:3000,http://localhost:5173,https://afyasync-swart.vercel.app"
 
@@ -34,27 +38,24 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_database_url(cls, value: str) -> str:
         url = value.strip()
-        # Render/Heroku style URLs → SQLAlchemy psycopg3 driver
         if url.startswith("postgres://"):
             url = "postgresql+psycopg://" + url[len("postgres://"):]
         elif url.startswith("postgresql://") and "+psycopg" not in url:
             url = "postgresql+psycopg://" + url[len("postgresql://"):]
         return url
 
-    @field_validator("access_token_minutes", "refresh_token_days")
+    @field_validator("access_token_minutes", "refresh_token_days", "db_pool_size", "db_max_overflow", "db_pool_timeout_seconds", "db_pool_recycle_seconds")
     @classmethod
-    def validate_token_lifetimes(cls, value: int) -> int:
+    def validate_positive_settings(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("Token lifetime must be positive")
+            raise ValueError("Numeric setting must be positive")
         return value
 
     @model_validator(mode="after")
     def reject_insecure_production_secrets(self) -> "Settings":
         if self.environment == "production":
             if not self.jwt_secret or self.jwt_secret == _DEFAULT_JWT_SECRET:
-                raise ValueError(
-                    "JWT_SECRET must be set to a strong non-default value when ENVIRONMENT=production"
-                )
+                raise ValueError("JWT_SECRET must be set to a strong non-default value when ENVIRONMENT=production")
             if len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
         return self
