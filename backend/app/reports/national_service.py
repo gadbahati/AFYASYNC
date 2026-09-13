@@ -177,48 +177,72 @@ def build_national_report(
         for row in payer_rows
     ]
 
-    facility_rows = db.execute(
-        select(
-            Facility.id,
-            Facility.facility_id,
-            Facility.name,
-            Facility.county,
-            func.count(func.distinct(Encounter.id)),
-            func.count(func.distinct(Invoice.id)),
-            func.coalesce(func.sum(Invoice.total_amount), 0),
-            func.coalesce(func.sum(func.case((Payment.status == "CONFIRMED", Payment.amount), else_=0)), 0),
-            func.count(func.distinct(Claim.id)),
-            func.coalesce(func.sum(Claim.claim_amount), 0),
-            func.coalesce(func.sum(Claim.approved_amount), 0),
-            func.coalesce(func.sum(Claim.paid_amount), 0),
-        )
-        .outerjoin(Encounter, (Encounter.facility_id == Facility.id) & (Encounter.created_at >= start) & (Encounter.created_at < end))
-        .outerjoin(Invoice, (Invoice.facility_id == Facility.id) & (Invoice.created_at >= start) & (Invoice.created_at < end) & (Invoice.status != "VOID"))
-        .outerjoin(Payment, (Payment.facility_id == Facility.id) & (Payment.created_at >= start) & (Payment.created_at < end))
-        .outerjoin(Claim, (Claim.invoice_id == Invoice.id) & (Claim.updated_at >= start) & (Claim.updated_at < end))
+    facility_rows = db.scalars(
+        select(Facility)
         .where(Facility.status == "ACTIVE")
-        .group_by(Facility.id, Facility.facility_id, Facility.name, Facility.county)
         .order_by(Facility.name)
     ).all()
-
-    facilities = [
-        NationalFacilitySummary(
-            facility_id=row[0],
-            facility_code=row[1],
-            facility_name=row[2],
-            county=row[3],
-            encounters=int(row[4]),
-            invoices=int(row[5]),
-            billed=_money(row[6]),
-            confirmed_payments=_money(row[7]),
-            claims=int(row[8]),
-            claims_amount=_money(row[9]),
-            claims_approved=_money(row[10]),
-            claims_paid=_money(row[11]),
-            claims_receivable=_money(max(_money(row[10]) - _money(row[11]), Decimal("0"))),
+    facilities: list[NationalFacilitySummary] = []
+    for facility in facility_rows:
+        facility_encounters = db.scalar(
+            select(func.count(Encounter.id)).where(
+                Encounter.facility_id == facility.id,
+                Encounter.created_at >= start,
+                Encounter.created_at < end,
+            )
+        ) or 0
+        facility_invoice_totals = db.execute(
+            select(
+                func.count(Invoice.id),
+                func.coalesce(func.sum(Invoice.total_amount), 0),
+            ).where(
+                Invoice.facility_id == facility.id,
+                Invoice.created_at >= start,
+                Invoice.created_at < end,
+                Invoice.status != "VOID",
+            )
+        ).one()
+        facility_payments = db.scalar(
+            select(func.sum(Payment.amount)).where(
+                Payment.facility_id == facility.id,
+                Payment.created_at >= start,
+                Payment.created_at < end,
+                Payment.status == "CONFIRMED",
+            )
         )
-        for row in facility_rows
-    ]
+        facility_claim_totals = db.execute(
+            select(
+                func.count(Claim.id),
+                func.coalesce(func.sum(Claim.claim_amount), 0),
+                func.coalesce(func.sum(Claim.approved_amount), 0),
+                func.coalesce(func.sum(Claim.paid_amount), 0),
+            )
+            .join(Invoice, Invoice.id == Claim.invoice_id)
+            .where(
+                Invoice.facility_id == facility.id,
+                Claim.updated_at >= start,
+                Claim.updated_at < end,
+            )
+        ).one()
+        facility_claim_approved = _money(facility_claim_totals[2])
+        facility_claim_paid = _money(facility_claim_totals[3])
+        facilities.append(
+            NationalFacilitySummary(
+                facility_id=facility.id,
+                facility_code=facility.facility_id,
+                facility_name=facility.name,
+                county=facility.county,
+                encounters=int(facility_encounters),
+                invoices=int(facility_invoice_totals[0]),
+                billed=_money(facility_invoice_totals[1]),
+                confirmed_payments=_money(facility_payments),
+                claims=int(facility_claim_totals[0]),
+                claims_amount=_money(facility_claim_totals[1]),
+                claims_approved=facility_claim_approved,
+                claims_paid=facility_claim_paid,
+                claims_receivable=_money(max(facility_claim_approved - facility_claim_paid, Decimal("0"))),
+            )
+        )
 
     record_audit(
         db,
