@@ -1,4 +1,4 @@
-import type { NationalReport } from "./types";
+import type { NationalIntelligenceResponse, NationalReport } from "./types";
 import { getAccessToken } from "../auth/storage";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -23,7 +23,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) { let code = "NATIONAL_REQUEST_FAILED"; try { const body = await response.json() as { detail?: string | { code?: string } }; if (typeof body.detail === "string") code = body.detail; else if (body.detail?.code) code = body.detail.code; } catch {} throw new Error(code); }
   return response.json() as Promise<T>;
 }
-export async function getNationalReport(start?: string, end?: string): Promise<NationalReport> { const q = new URLSearchParams(); if (start) q.set("start_date", start); if (end) q.set("end_date", end); return request(`/api/v1/reports/national${q.toString() ? `?${q}` : ""}`); }
+function periodQuery(start?: string, end?: string) { const q = new URLSearchParams(); if (start) q.set("start_date", start); if (end) q.set("end_date", end); return q.toString() ? `?${q}` : ""; }
+export async function getNationalReport(start?: string, end?: string): Promise<NationalReport> { return request(`/api/v1/reports/national${periodQuery(start, end)}`); }
+export async function getNationalIntelligence(start?: string, end?: string): Promise<NationalIntelligenceResponse> { return request(`/api/v1/reports/national/intelligence${periodQuery(start, end)}`); }
 export async function getNetworkFacilities(filters?: { status?: string; county?: string }): Promise<NetworkFacility[]> { const q = new URLSearchParams(); if (filters?.status) q.set("facility_status", filters.status); if (filters?.county) q.set("county", filters.county); return request(`/api/v1/facilities/network${q.toString() ? `?${q}` : ""}`); }
 export async function createNetworkFacility(payload: NetworkFacilityInput): Promise<NetworkFacility> { return request("/api/v1/facilities/network", { method: "POST", body: JSON.stringify(payload) }); }
 export async function updateNetworkFacility(facilityId: string, payload: Partial<NetworkFacilityInput>): Promise<NetworkFacility> { return request(`/api/v1/facilities/network/${facilityId}`, { method: "PATCH", body: JSON.stringify(payload) }); }
