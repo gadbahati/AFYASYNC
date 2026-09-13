@@ -24,6 +24,29 @@ class CoverageResponse(BaseModel):
     verification_status: str
     status: str
 
+    model_config = {"from_attributes": True}
+
+
+class PayerResponse(BaseModel):
+    id: UUID
+    name: str
+    payer_type: str
+    code: str
+    status: str
+    integration_status: str
+
+    model_config = {"from_attributes": True}
+
+
+class PayerPlanResponse(BaseModel):
+    id: UUID
+    payer_id: UUID
+    name: str
+    code: str
+    status: str
+
+    model_config = {"from_attributes": True}
+
 
 class BenefitRuleCreate(BaseModel):
     payer_id: UUID
