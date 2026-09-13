@@ -44,5 +44,28 @@ jobs:
               raise SystemExit("FAIL: production accepted default JWT secret")
           PY
 
+      - name: Verify migration chain
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          versions = sorted(Path("migrations/versions").glob("*.py"))
+          revisions = {}
+          down_revisions = {}
+          for path in versions:
+              text = path.read_text()
+              revision = re.search(r"^revision\s*=\s*['\"]([^'\"]+)", text, re.MULTILINE)
+              down = re.search(r"^down_revision\s*=\s*(.+)$", text, re.MULTILINE)
+              if revision:
+                  revisions[revision.group(1)] = path.name
+                  down_revisions[revision.group(1)] = down.group(1).strip() if down else "None"
+          if len(revisions) != len(versions):
+              raise SystemExit("FAIL: migration file without revision identifier")
+          heads = [revision for revision, down in down_revisions.items() if all(revision not in value for value in down_revisions.values() if value not in {"None", "None,", "None #"})]
+          if not heads:
+              raise SystemExit("FAIL: migration chain has no head")
+          print("Migration files:", len(versions), "candidate heads:", heads)
+          PY
+
       - name: Run tests
         run: pytest -q --tb=short
