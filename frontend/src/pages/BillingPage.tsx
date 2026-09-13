@@ -5,6 +5,7 @@ type Service = { id: string; code: string; name: string; service_type: string; p
 type Invoice = { id: string; invoice_id: string; patient_id: string; encounter_id: string; total_amount: number; patient_amount: number; payer_amount: number; status: string };
 
 const money = (n: number) => `KES ${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const transactionKey = () => `WEB-${crypto.randomUUID()}`;
 
 export function BillingPage() {
   const [services, setServices] = useState<Service[]>([]);
@@ -13,7 +14,7 @@ export function BillingPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [svc, setSvc] = useState({ code: "", name: "", service_type: "CONSULTATION", price: "" });
-  const [pay, setPay] = useState({ invoice_id: "", amount: "", payment_method: "CASH" });
+  const [pay, setPay] = useState({ invoice_id: "", amount: "", payment_method: "CASH", provider: "", external_reference: "" });
 
   function load() {
     setLoading(true);
@@ -61,8 +62,10 @@ export function BillingPage() {
         invoice_id: pay.invoice_id,
         amount: Number(pay.amount),
         payment_method: pay.payment_method,
-      });
-      setPay({ invoice_id: "", amount: "", payment_method: "CASH" });
+        provider: pay.provider.trim() || null,
+        external_reference: pay.external_reference.trim() || null,
+      }, transactionKey());
+      setPay({ invoice_id: "", amount: "", payment_method: "CASH", provider: "", external_reference: "" });
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.code : "PAYMENT_FAILED");
@@ -71,13 +74,16 @@ export function BillingPage() {
     }
   }
 
+  const selectedInvoice = invoices.find((i) => i.id === pay.invoice_id);
+  const nonCash = pay.payment_method !== "CASH";
+
   return (
     <section className="page-stack">
       <header className="page-heading">
         <div>
           <p className="eyebrow">Financial workflow</p>
           <h1>Billing</h1>
-          <p className="muted">Facility service catalogue, invoices and cash/other payments from the live API.</p>
+          <p className="muted">Facility service catalogue, invoices and patient payments from the live API.</p>
         </div>
         <button type="button" className="button secondary" onClick={load}>Refresh</button>
       </header>
@@ -98,7 +104,7 @@ export function BillingPage() {
                   <option value="OTHER">Other</option>
                 </select>
               </label>
-              <label>Price (KES)<input required type="number" min="1" step="0.01" value={svc.price} onChange={(e) => setSvc({ ...svc, price: e.target.value })} /></label>
+              <label>Price (KES)<input required type="number" min="0.01" step="0.01" value={svc.price} onChange={(e) => setSvc({ ...svc, price: e.target.value })} /></label>
               <div className="full actions"><button type="submit" disabled={busy}>{busy ? "Saving…" : "Create service"}</button></div>
             </form>
           </article>
@@ -108,9 +114,7 @@ export function BillingPage() {
               <table>
                 <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Price</th><th>Status</th></tr></thead>
                 <tbody>
-                  {services.map((s) => (
-                    <tr key={s.id}><td>{s.code}</td><td>{s.name}</td><td>{s.service_type}</td><td>{money(s.price)}</td><td>{s.status}</td></tr>
-                  ))}
+                  {services.map((s) => <tr key={s.id}><td>{s.code}</td><td>{s.name}</td><td>{s.service_type}</td><td>{money(s.price)}</td><td>{s.status}</td></tr>)}
                   {services.length === 0 && <tr><td colSpan={5} className="muted">No services configured.</td></tr>}
                 </tbody>
               </table>
@@ -122,17 +126,9 @@ export function BillingPage() {
               <table>
                 <thead><tr><th>Invoice</th><th>Patient</th><th>Encounter</th><th>Total</th><th>Patient</th><th>Payer</th><th>Status</th></tr></thead>
                 <tbody>
-                  {invoices.map((i) => (
-                    <tr key={i.id}>
-                      <td>{i.invoice_id}</td>
-                      <td>{i.patient_id}</td>
-                      <td>{i.encounter_id}</td>
-                      <td>{money(i.total_amount)}</td>
-                      <td>{money(i.patient_amount)}</td>
-                      <td>{money(i.payer_amount)}</td>
-                      <td><span className="status-pill">{i.status}</span></td>
-                    </tr>
-                  ))}
+                  {invoices.map((i) => <tr key={i.id}>
+                    <td>{i.invoice_id}</td><td>{i.patient_id}</td><td>{i.encounter_id}</td><td>{money(i.total_amount)}</td><td>{money(i.patient_amount)}</td><td>{money(i.payer_amount)}</td><td><span className="status-pill">{i.status}</span></td>
+                  </tr>)}
                   {invoices.length === 0 && <tr><td colSpan={7} className="muted">No invoices yet. Create from encounter charges.</td></tr>}
                 </tbody>
               </table>
@@ -140,25 +136,23 @@ export function BillingPage() {
           </article>
           <article className="card">
             <h2>Record payment</h2>
+            <p className="muted">Cash settles immediately. Other payment methods require an active configured payment integration and provider reference.</p>
             <form className="form-grid" onSubmit={onPay}>
               <label className="full">Invoice
                 <select required value={pay.invoice_id} onChange={(e) => setPay({ ...pay, invoice_id: e.target.value })}>
                   <option value="">Select invoice</option>
-                  {invoices.map((i) => (
-                    <option key={i.id} value={i.id}>{i.invoice_id} · {money(i.patient_amount)} due · {i.status}</option>
-                  ))}
+                  {invoices.filter((i) => i.status !== "PAID").map((i) => <option key={i.id} value={i.id}>{i.invoice_id} · {money(i.patient_amount)} due · {i.status}</option>)}
                 </select>
               </label>
-              <label>Amount<input required type="number" min="0.01" step="0.01" value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} /></label>
+              <label>Amount<input required type="number" min="0.01" max={selectedInvoice?.patient_amount ?? undefined} step="0.01" value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} /></label>
               <label>Method
-                <select value={pay.payment_method} onChange={(e) => setPay({ ...pay, payment_method: e.target.value })}>
-                  <option value="CASH">Cash</option>
-                  <option value="MPESA">M-Pesa</option>
-                  <option value="CARD">Card</option>
-                  <option value="BANK">Bank</option>
+                <select value={pay.payment_method} onChange={(e) => setPay({ ...pay, payment_method: e.target.value, provider: "", external_reference: "" })}>
+                  <option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="CARD">Card</option><option value="BANK">Bank</option>
                 </select>
               </label>
-              <div className="full actions"><button type="submit" disabled={busy || !pay.invoice_id}>{busy ? "Posting…" : "Record payment"}</button></div>
+              {nonCash && <label>Provider<input required value={pay.provider} placeholder="Configured provider name" onChange={(e) => setPay({ ...pay, provider: e.target.value })} /></label>}
+              {nonCash && <label>External reference<input required value={pay.external_reference} placeholder="Provider transaction/reference" onChange={(e) => setPay({ ...pay, external_reference: e.target.value })} /></label>}
+              <div className="full actions"><button type="submit" disabled={busy || !pay.invoice_id || Number(pay.amount) <= 0}>{busy ? "Posting…" : "Record payment"}</button></div>
             </form>
           </article>
         </>
