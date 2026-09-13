@@ -103,7 +103,9 @@ def test_create_transfer_audits_before_single_commit() -> None:
 def test_update_transfer_status_audits_before_single_commit() -> None:
     facility_id = uuid4()
     transfer_id = uuid4()
-    transfer = MagicMock(id=transfer_id, source_facility_id=facility_id, destination_facility_id=uuid4(), status="REQUESTED", patient_id=uuid4())
+    # ACCEPTED is a destination-facility action; facility_id must match
+    # destination_facility_id here, not source_facility_id.
+    transfer = MagicMock(id=transfer_id, source_facility_id=uuid4(), destination_facility_id=facility_id, status="REQUESTED", patient_id=uuid4())
     db = MagicMock()
     db.get.return_value = transfer
 
