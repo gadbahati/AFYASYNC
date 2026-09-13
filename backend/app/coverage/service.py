@@ -23,7 +23,30 @@ def create_coverage(db: Session, payload: CoverageCreate, *, actor_user_id: UUID
         plan = db.get(PayerPlan, payload.payer_plan_id)
         if not plan or plan.payer_id != payload.payer_id or plan.status != "ACTIVE":
             raise ValueError("INVALID_PAYER_PLAN")
-    coverage = Coverage(**payload.model_dump())
+
+    data = payload.model_dump()
+    # Standalone AfyaSync + cash are internal; mark verified.
+    # SHA stays UNVERIFIED until staff completes SHA-style membership lookup/confirm.
+    code = (payer.code or "").upper()
+    if code in {"AFYASYNC", "CASH"} or payer.payer_type in {"AFYASYNC", "CASH"}:
+        data["verification_status"] = "VERIFIED"
+    else:
+        data.setdefault("verification_status", "UNVERIFIED")
+        if "verification_status" not in data or not data.get("verification_status"):
+            data["verification_status"] = "UNVERIFIED"
+
+    coverage = Coverage(**{k: v for k, v in data.items() if k in Coverage.__table__.columns.keys() or k in {"person_id", "payer_id", "payer_plan_id", "membership_number", "start_date", "end_date", "verification_status", "status"}})
+    # Coverage model may not accept arbitrary keys — build explicitly
+    coverage = Coverage(
+        person_id=payload.person_id,
+        payer_id=payload.payer_id,
+        payer_plan_id=payload.payer_plan_id,
+        membership_number=payload.membership_number,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        verification_status="VERIFIED" if code in {"AFYASYNC", "CASH"} else "UNVERIFIED",
+        status="ACTIVE",
+    )
     db.add(coverage)
     db.flush()
     record_audit(
@@ -34,7 +57,34 @@ def create_coverage(db: Session, payload: CoverageCreate, *, actor_user_id: UUID
         result="SUCCESS",
         user_id=actor_user_id,
         patient_id=coverage.person_id,
-        metadata={"payer_id": str(coverage.payer_id), "payer_plan_id": str(coverage.payer_plan_id) if coverage.payer_plan_id else None},
+        metadata={
+            "payer_id": str(coverage.payer_id),
+            "payer_code": code,
+            "payer_plan_id": str(coverage.payer_plan_id) if coverage.payer_plan_id else None,
+            "verification_status": coverage.verification_status,
+        },
+        commit=False,
+    )
+    db.commit()
+    db.refresh(coverage)
+    return coverage
+
+
+def verify_coverage(db: Session, coverage_id: UUID, *, actor_user_id: UUID | None = None) -> Coverage:
+    coverage = db.get(Coverage, coverage_id)
+    if coverage is None or coverage.status != "ACTIVE":
+        raise ValueError("COVERAGE_NOT_FOUND")
+    coverage.verification_status = "VERIFIED"
+    db.flush()
+    record_audit(
+        db,
+        action="VERIFY_COVERAGE",
+        resource_type="COVERAGE",
+        resource_id=str(coverage.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        patient_id=coverage.person_id,
+        metadata={"membership_number": coverage.membership_number},
         commit=False,
     )
     db.commit()
@@ -44,7 +94,12 @@ def create_coverage(db: Session, payload: CoverageCreate, *, actor_user_id: UUID
 
 def get_active_coverage(db: Session, person_id: UUID) -> list[Coverage]:
     today = date.today()
-    statement = select(Coverage).where(Coverage.person_id == person_id, Coverage.status == "ACTIVE", (Coverage.start_date.is_(None) | (Coverage.start_date <= today)), (Coverage.end_date.is_(None) | (Coverage.end_date >= today))).order_by(Coverage.created_at.desc())
+    statement = select(Coverage).where(
+        Coverage.person_id == person_id,
+        Coverage.status == "ACTIVE",
+        (Coverage.start_date.is_(None) | (Coverage.start_date <= today)),
+        (Coverage.end_date.is_(None) | (Coverage.end_date >= today)),
+    ).order_by(Coverage.created_at.desc())
     return list(db.scalars(statement).all())
 
 
@@ -68,7 +123,12 @@ def create_benefit_rule(db: Session, payload: BenefitRuleCreate, *, actor_user_i
         resource_id=str(rule.id),
         result="SUCCESS",
         user_id=actor_user_id,
-        metadata={"payer_id": str(rule.payer_id), "payer_plan_id": str(rule.payer_plan_id) if rule.payer_plan_id else None, "service_code": rule.service_code, "service_type": rule.service_type},
+        metadata={
+            "payer_id": str(rule.payer_id),
+            "payer_plan_id": str(rule.payer_plan_id) if rule.payer_plan_id else None,
+            "service_code": rule.service_code,
+            "service_type": rule.service_type,
+        },
         commit=False,
     )
     db.commit()
@@ -78,17 +138,46 @@ def create_benefit_rule(db: Session, payload: BenefitRuleCreate, *, actor_user_i
 
 def get_verified_current_coverage(db: Session, person_id: UUID) -> Coverage | None:
     today = date.today()
-    return db.scalar(select(Coverage).where(Coverage.person_id == person_id, Coverage.status == "ACTIVE", Coverage.verification_status == "VERIFIED", (Coverage.start_date.is_(None) | (Coverage.start_date <= today)), (Coverage.end_date.is_(None) | (Coverage.end_date >= today))).order_by(Coverage.created_at.desc()).limit(1))
+    return db.scalar(
+        select(Coverage)
+        .where(
+            Coverage.person_id == person_id,
+            Coverage.status == "ACTIVE",
+            Coverage.verification_status == "VERIFIED",
+            (Coverage.start_date.is_(None) | (Coverage.start_date <= today)),
+            (Coverage.end_date.is_(None) | (Coverage.end_date >= today)),
+        )
+        .order_by(Coverage.created_at.desc())
+        .limit(1)
+    )
 
 
 def has_current_unverified_coverage(db: Session, person_id: UUID) -> bool:
     today = date.today()
-    return db.scalar(select(Coverage.id).where(Coverage.person_id == person_id, Coverage.status == "ACTIVE", Coverage.verification_status != "VERIFIED", (Coverage.start_date.is_(None) | (Coverage.start_date <= today)), (Coverage.end_date.is_(None) | (Coverage.end_date >= today))).limit(1)) is not None
+    return (
+        db.scalar(
+            select(Coverage.id)
+            .where(
+                Coverage.person_id == person_id,
+                Coverage.status == "ACTIVE",
+                Coverage.verification_status != "VERIFIED",
+                (Coverage.start_date.is_(None) | (Coverage.start_date <= today)),
+                (Coverage.end_date.is_(None) | (Coverage.end_date >= today)),
+            )
+            .limit(1)
+        )
+        is not None
+    )
 
 
 def find_benefit_rule(db: Session, coverage: Coverage, service_code: str, service_type: str) -> PayerBenefitRule | None:
     today = date.today()
-    base = [PayerBenefitRule.payer_id == coverage.payer_id, PayerBenefitRule.status == "ACTIVE", (PayerBenefitRule.effective_from.is_(None) | (PayerBenefitRule.effective_from <= today)), (PayerBenefitRule.effective_to.is_(None) | (PayerBenefitRule.effective_to >= today))]
+    base = [
+        PayerBenefitRule.payer_id == coverage.payer_id,
+        PayerBenefitRule.status == "ACTIVE",
+        (PayerBenefitRule.effective_from.is_(None) | (PayerBenefitRule.effective_from <= today)),
+        (PayerBenefitRule.effective_to.is_(None) | (PayerBenefitRule.effective_to >= today)),
+    ]
     candidates = list(db.scalars(select(PayerBenefitRule).where(*base)).all())
 
     def rank(rule: PayerBenefitRule) -> int:
@@ -106,7 +195,14 @@ def find_benefit_rule(db: Session, coverage: Coverage, service_code: str, servic
     return ranked[0] if ranked else None
 
 
-def calculate_charge_responsibility(db: Session, coverage: Coverage, *, amount: Decimal, service_code: str, service_type: str) -> tuple[Decimal, Decimal, UUID]:
+def calculate_charge_responsibility(
+    db: Session,
+    coverage: Coverage,
+    *,
+    amount: Decimal,
+    service_code: str,
+    service_type: str,
+) -> tuple[Decimal, Decimal, UUID]:
     amount = amount.quantize(CENT)
     if amount < 0:
         raise ValueError("INVALID_CHARGE_AMOUNT")
