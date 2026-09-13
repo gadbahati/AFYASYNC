@@ -8,6 +8,8 @@ const navGroups = [
     links: [
       ["/", "Dashboard"],
       ["/command-centre", "Command centre"],
+      ["/national-command-centre", "National command centre"],
+      ["/national-facilities", "Facility network"],
       ["/coverage-simulator", "Coverage simulator"],
     ],
   },
