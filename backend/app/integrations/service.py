@@ -96,6 +96,22 @@ def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, tran
     return transaction
 
 
+def list_integration_transactions(db: Session, facility_id: UUID, *, integration_id: UUID | None = None, status: str | None = None, limit: int = 100) -> list[IntegrationTransaction]:
+    stmt = (
+        select(IntegrationTransaction)
+        .join(Integration, Integration.id == IntegrationTransaction.integration_id)
+        .where(Integration.facility_id == facility_id)
+    )
+    if integration_id is not None:
+        stmt = stmt.where(IntegrationTransaction.integration_id == integration_id)
+    if status:
+        normalized = status.strip().upper()
+        if normalized not in {"PENDING", "PROCESSING", "SUCCEEDED", "FAILED", "RETRYING"}:
+            raise IntegrationError("INVALID_TRANSACTION_STATUS")
+        stmt = stmt.where(IntegrationTransaction.status == normalized)
+    return list(db.scalars(stmt.order_by(IntegrationTransaction.created_at.desc()).limit(max(1, min(limit, 500)))))
+
+
 def mark_transaction_result(db: Session, transaction_id: UUID, status: str, response_code: str | None = None, response_data: dict | None = None, external_reference: str | None = None) -> IntegrationTransaction:
     if status not in {"PENDING", "PROCESSING", "SUCCEEDED", "FAILED", "RETRYING"}:
         raise IntegrationError("INVALID_TRANSACTION_STATUS")
