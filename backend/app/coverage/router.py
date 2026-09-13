@@ -16,11 +16,13 @@ from app.coverage.schemas import (
     PayerResponse,
 )
 from app.coverage.service import create_benefit_rule, create_coverage, get_active_coverage, verify_coverage
+from app.coverage.benefit_admin_router import router as benefit_network_router
 from app.database import get_db
 from app.patients.models import PatientFacility
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/coverage", tags=["Coverage"])
+router.include_router(benefit_network_router)
 
 
 def _require_patient_enrolled(db: Session, person_id: UUID, facility_id: UUID) -> None:
