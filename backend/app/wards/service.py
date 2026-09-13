@@ -33,20 +33,19 @@ def assign_bed(db: Session, facility_id: UUID, actor: UUID, bed_id: UUID, admiss
     active = db.scalar(select(BedAssignment.id).where(BedAssignment.bed_id == bed_id, BedAssignment.released_at.is_(None)))
     if active: raise ValueError("BED_NOT_AVAILABLE")
     assignment = BedAssignment(bed_id=bed_id, admission_id=admission_id, assigned_by=actor)
-    db.add(assignment)
-    bed.status = "OCCUPIED"
+    db.add(assignment); bed.status = "OCCUPIED"
     admission.ward = db.scalar(select(Ward.name).where(Ward.id == bed.ward_id)) or admission.ward
     admission.bed = bed.bed_number
     record_audit(db, action="BED_ASSIGNED", resource_type="BedAssignment", result="SUCCESS", user_id=actor, resource_id=str(assignment.id), facility_id=facility_id, commit=False)
     db.commit(); db.refresh(assignment); return assignment
 
 
-def release_bed(db: Session, facility_id: UUID, actor: UUID, bed_id: UUID):
+def release_bed(db: Session, facility_id: UUID, actor: UUID, bed_id: UUID, *, commit: bool = True):
     bed = db.scalar(select(Bed).join(Ward).where(Bed.id == bed_id, Ward.facility_id == facility_id).with_for_update())
     if not bed: raise ValueError("BED_NOT_FOUND")
     assignment = db.scalar(select(BedAssignment).where(BedAssignment.bed_id == bed_id, BedAssignment.released_at.is_(None)).with_for_update())
     if not assignment: raise ValueError("BED_NOT_OCCUPIED")
-    assignment.released_at = datetime.now(timezone.utc)
-    bed.status = "AVAILABLE"
-    record_audit(db, action="BED_RELEASED", resource_type="BedAssignment", result="SUCCESS", user_id=actor, resource_id=str(assignment.id), facility_id=facility_id, commit=False)
-    db.commit(); db.refresh(assignment); return assignment
+    assignment.released_at = datetime.now(timezone.utc); bed.status = "AVAILABLE"
+    record_audit(db, action="BED_RELEASED", resource_type="BedAssignment", result="SUCCESS", user_id=actor, resource_id=str(assignment.id), facility_id=facility_id, metadata={"admission_id": str(assignment.admission_id)}, commit=False)
+    if commit: db.commit(); db.refresh(assignment)
+    return assignment
