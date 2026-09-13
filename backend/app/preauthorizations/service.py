@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.audit.service import record_audit
 from app.benefits.models import BenefitPackage
+from app.audit.service import record_audit
 from app.coverage.models import Coverage, Payer
 from app.encounters.models import Encounter
 from app.patients.models import PatientFacility
@@ -64,10 +64,12 @@ def request_preauthorization(db: Session, *, facility_id: UUID, actor_user_id: U
             raise PreAuthorizationError("ENCOUNTER_NOT_OPEN")
 
     payer = db.get(Payer, payload.payer_id)
-    package = db.scalar(select(BenefitPackage).where(BenefitPackage.package_code == payload.benefit_package_code.strip().upper(), BenefitPackage.payer_code == payer.code, BenefitPackage.status == "ACTIVE")) if payer else None
+    package_code = payload.benefit_package_code.strip().upper()
+    package = db.scalar(select(BenefitPackage).where(BenefitPackage.package_code == package_code, BenefitPackage.payer_code == payer.code, BenefitPackage.status == "ACTIVE")) if payer else None
     if package is None:
         raise PreAuthorizationError("BENEFIT_PACKAGE_NOT_FOUND")
 
+    requested_amount = Decimal(str(payload.requested_amount)).quantize(Decimal("0.01"))
     authorization = PreAuthorization(
         authorization_number=f"PA-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}",
         patient_id=payload.patient_id,
@@ -79,7 +81,7 @@ def request_preauthorization(db: Session, *, facility_id: UUID, actor_user_id: U
         care_setting=payload.care_setting,
         department=service_type,
         requested_services=[item.strip().upper() for item in payload.requested_services],
-        requested_amount=payload.requested_amount,
+        requested_amount=requested_amount,
         idempotency_key=idempotency_key,
         status="PENDING",
     )
