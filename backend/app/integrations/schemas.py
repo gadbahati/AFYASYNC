@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -19,6 +20,11 @@ class IntegrationOut(BaseModel):
     provider: str
     status: str
     model_config = {"from_attributes": True}
+
+
+class IntegrationStatusUpdate(BaseModel):
+    status: str = Field(min_length=2, max_length=30)
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class TransactionCreate(BaseModel):
@@ -51,11 +57,11 @@ class TransactionMonitorOut(BaseModel):
     request_reference: str | None
     status: str
     attempt_count: int
-    last_attempt_at: object | None
+    last_attempt_at: datetime | None
     external_reference: str | None
     response_code: str | None
-    created_at: object
-    updated_at: object
+    created_at: datetime
+    updated_at: datetime
     model_config = {"from_attributes": True}
 
 
