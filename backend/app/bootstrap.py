@@ -1,7 +1,8 @@
 """Idempotent bootstrap for local/demo environments.
 
-Creates a recognized pilot facility and System Administrator account so the
-staff console can be monitored end-to-end without manual SQL.
+Creates a recognized pilot facility, System Administrator account, and the
+canonical multi-coverage payers so the staff console can run standalone,
+accept SHA members, or bill cash patients.
 
 Credentials (change immediately outside controlled demos):
   username: afyasync.admin
@@ -14,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.security import hash_password
+from app.coverage.models import Payer, PayerPlan
 from app.facilities.models import Department, Facility
 from app.patients.models import Person
 from app.rbac.models import Permission, Role, RolePermission, Staff, StaffRole, User
@@ -22,10 +24,76 @@ DEMO_USERNAME = "afyasync.admin"
 DEMO_PASSWORD = "Kenya@Health2026"
 DEMO_FACILITY_CODE = "AFYA-PILOT-001"
 
+CANONICAL_PAYERS = [
+    {
+        "code": "AFYASYNC",
+        "name": "AfyaSync Membership",
+        "payer_type": "AFYASYNC",
+        "plan_code": "AFYASYNC-STANDARD",
+        "plan_name": "AfyaSync Standard",
+    },
+    {
+        "code": "SHA",
+        "name": "Social Health Authority",
+        "payer_type": "SHA",
+        "plan_code": "SHA-SHIF",
+        "plan_name": "SHA / SHIF",
+    },
+    {
+        "code": "CASH",
+        "name": "Self Pay (Cash)",
+        "payer_type": "CASH",
+        "plan_code": "CASH-DEFAULT",
+        "plan_name": "Cash / Uninsured",
+    },
+]
+
+
+def ensure_canonical_payers(db: Session) -> None:
+    """Seed AFYASYNC, SHA, and CASH payers + default plans (idempotent)."""
+    for item in CANONICAL_PAYERS:
+        payer = db.scalar(select(Payer).where(Payer.code == item["code"]))
+        if payer is None:
+            payer = Payer(
+                id=uuid4(),
+                name=item["name"],
+                payer_type=item["payer_type"],
+                code=item["code"],
+                status="ACTIVE",
+                integration_status="NOT_CONFIGURED" if item["code"] == "SHA" else "INTERNAL",
+            )
+            db.add(payer)
+            db.flush()
+        else:
+            payer.name = item["name"]
+            payer.payer_type = item["payer_type"]
+            payer.status = "ACTIVE"
+
+        plan = db.scalar(
+            select(PayerPlan).where(
+                PayerPlan.payer_id == payer.id,
+                PayerPlan.code == item["plan_code"],
+            )
+        )
+        if plan is None:
+            db.add(
+                PayerPlan(
+                    id=uuid4(),
+                    payer_id=payer.id,
+                    name=item["plan_name"],
+                    code=item["plan_code"],
+                    status="ACTIVE",
+                )
+            )
+        else:
+            plan.name = item["plan_name"]
+            plan.status = "ACTIVE"
+
 
 def ensure_demo_admin(db: Session) -> None:
-    """Ensure pilot facility, roles, admin user, and full permission grants exist."""
-    # Roles catalog
+    """Ensure pilot facility, roles, admin user, payers, and full permission grants exist."""
+    ensure_canonical_payers(db)
+
     role_names = [
         "System Administrator",
         "Hospital Administrator",
@@ -46,7 +114,6 @@ def ensure_demo_admin(db: Session) -> None:
             db.flush()
         roles[name] = role
 
-    # Grant System Administrator every permission currently in the catalog
     admin_role = roles["System Administrator"]
     permission_ids = list(db.scalars(select(Permission.id)))
     for permission_id in permission_ids:
@@ -118,7 +185,6 @@ def ensure_demo_admin(db: Session) -> None:
         db.add(user)
         db.flush()
     else:
-        # Keep password aligned for demo monitoring account
         user.password_hash = hash_password(DEMO_PASSWORD)
         user.status = "ACTIVE"
         if user.person_id is None:
