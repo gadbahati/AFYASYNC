@@ -50,7 +50,7 @@ def _build_payload(db: Session, transaction: IntegrationTransaction, facility_id
         if transaction.entity_id is None:
             raise ValueError("PREAUTH_REFERENCE_REQUIRED")
         return _build_preauthorization_submission_payload(db, transaction.entity_id, facility_id)
-    return {"transaction_id": transaction.transaction_id, "entity_type": transaction.entity_type, "entity_id": str(transaction.entity_id) if transaction.entity_id else None}
+    raise ValueError("UNSUPPORTED_OUTBOUND_ENTITY")
 
 
 def _record_failure(db: Session, transaction_id, code: str, response_data: dict | None = None) -> IntegrationTransaction:
@@ -72,6 +72,8 @@ def process_pending_transaction(db: Session, transaction_id, adapter: Integratio
     transaction = db.scalar(select(IntegrationTransaction).where(IntegrationTransaction.id == transaction_id).with_for_update())
     if transaction is None:
         raise ValueError("TRANSACTION_NOT_FOUND")
+    if transaction.direction != "OUTBOUND":
+        return transaction
     integration = db.get(Integration, transaction.integration_id)
     if integration is None:
         raise ValueError("INTEGRATION_NOT_FOUND")
@@ -143,7 +145,7 @@ def process_pending_transaction(db: Session, transaction_id, adapter: Integratio
 
 def list_retryable_transactions(db: Session, limit: int = 100) -> list[IntegrationTransaction]:
     now = datetime.now(timezone.utc)
-    rows = list(db.scalars(select(IntegrationTransaction).where(IntegrationTransaction.status.in_(["PENDING", "RETRYING"]), IntegrationTransaction.attempt_count < MAX_INTEGRATION_ATTEMPTS).order_by(IntegrationTransaction.created_at).limit(max(1, min(limit, 500)))))
+    rows = list(db.scalars(select(IntegrationTransaction).where(IntegrationTransaction.direction == "OUTBOUND", IntegrationTransaction.status.in_(["PENDING", "RETRYING"]), IntegrationTransaction.attempt_count < MAX_INTEGRATION_ATTEMPTS).order_by(IntegrationTransaction.created_at).limit(max(1, min(limit, 500)))))
     retryable = []
     for transaction in rows:
         if transaction.status == "PENDING" or transaction.last_attempt_at is None:
