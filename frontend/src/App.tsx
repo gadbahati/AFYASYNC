@@ -20,6 +20,7 @@ import { NewPatientPage } from "./pages/NewPatientPage";
 import { PatientDetailPage } from "./pages/PatientDetailPage";
 import { PatientsPage } from "./pages/PatientsPage";
 import { QueuePage } from "./pages/QueuePage";
+import { ReferralsPage } from "./pages/ReferralsPage";
 
 export default function App() {
   return (
@@ -46,6 +47,7 @@ export default function App() {
               <Route path="/pharmacy" element={<PharmacyPage />} />
               <Route path="/billing" element={<BillingPage />} />
               <Route path="/claims" element={<ClaimsPage />} />
+              <Route path="/referrals" element={<ReferralsPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
