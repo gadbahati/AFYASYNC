@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -46,8 +47,10 @@ def request_preauthorization(db: Session, *, facility_id: UUID, actor_user_id: U
         raise PreAuthorizationError("PATIENT_NOT_IN_FACILITY")
 
     coverage = _coverage(db, payload.patient_id, payload.coverage_id, payload.payer_id)
+    service_code = payload.requested_services[0].strip().upper() if payload.requested_services else None
+    service_type = payload.department.strip().upper()
     try:
-        eligibility = check_coverage_eligibility(db, patient_id=payload.patient_id, coverage_id=coverage.id, service_code=payload.requested_services[0] if payload.requested_services else None, service_type=payload.department, actor_user_id=actor_user_id, facility_id=facility_id)
+        eligibility = check_coverage_eligibility(db, patient_id=payload.patient_id, coverage_id=coverage.id, service_code=service_code, service_type=service_type, actor_user_id=actor_user_id, facility_id=facility_id)
     except EligibilityError as exc:
         raise PreAuthorizationError(str(exc)) from exc
     if not eligibility.get("eligible"):
@@ -60,11 +63,10 @@ def request_preauthorization(db: Session, *, facility_id: UUID, actor_user_id: U
         if encounter.status != "OPEN":
             raise PreAuthorizationError("ENCOUNTER_NOT_OPEN")
 
-    package = db.scalar(select(BenefitPackage).where(BenefitPackage.package_code == payload.benefit_package_code, BenefitPackage.payer_code == "SHA", BenefitPackage.status == "ACTIVE"))
+    payer = db.get(Payer, payload.payer_id)
+    package = db.scalar(select(BenefitPackage).where(BenefitPackage.package_code == payload.benefit_package_code.strip().upper(), BenefitPackage.payer_code == payer.code, BenefitPackage.status == "ACTIVE")) if payer else None
     if package is None:
         raise PreAuthorizationError("BENEFIT_PACKAGE_NOT_FOUND")
-    if payload.care_setting == "INPATIENT" and payload.benefit_package_code not in {"SHA-07", "SHA-08"}:
-        raise PreAuthorizationError("INPATIENT_SHA_PACKAGE_REQUIRED")
 
     authorization = PreAuthorization(
         authorization_number=f"PA-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}",
@@ -73,10 +75,10 @@ def request_preauthorization(db: Session, *, facility_id: UUID, actor_user_id: U
         encounter_id=payload.encounter_id,
         coverage_id=payload.coverage_id,
         payer_id=payload.payer_id,
-        benefit_package_code=payload.benefit_package_code,
+        benefit_package_code=package.package_code,
         care_setting=payload.care_setting,
-        department=payload.department,
-        requested_services=payload.requested_services,
+        department=service_type,
+        requested_services=[item.strip().upper() for item in payload.requested_services],
         requested_amount=payload.requested_amount,
         idempotency_key=idempotency_key,
         status="PENDING",
@@ -91,7 +93,7 @@ def request_preauthorization(db: Session, *, facility_id: UUID, actor_user_id: U
             if existing is not None:
                 return existing
         raise PreAuthorizationError("PREAUTHORIZATION_CREATE_FAILED") from exc
-    record_audit(db, action="REQUEST_PREAUTHORIZATION", resource_type="PREAUTHORIZATION", resource_id=str(authorization.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=payload.patient_id, metadata={"authorization_number": authorization.authorization_number, "care_setting": payload.care_setting, "benefit_package_code": payload.benefit_package_code, "benefit_rule_id": str(eligibility["benefit_rule_id"])}, commit=False)
+    record_audit(db, action="REQUEST_PREAUTHORIZATION", resource_type="PREAUTHORIZATION", resource_id=str(authorization.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=payload.patient_id, metadata={"authorization_number": authorization.authorization_number, "care_setting": payload.care_setting, "benefit_package_code": package.package_code, "payer_id": str(payload.payer_id), "benefit_rule_id": str(eligibility["benefit_rule_id"])}, commit=False)
     db.commit()
     db.refresh(authorization)
     return authorization
@@ -105,13 +107,17 @@ def decide_preauthorization(db: Session, *, authorization_id: UUID, facility_id:
         raise PreAuthorizationError("FACILITY_ACCESS_DENIED")
     if authorization.status not in {"PENDING", "AUTHORIZED_PENDING_VISIT"}:
         raise PreAuthorizationError("PREAUTH_NOT_DECIDABLE")
-    if decision.approved_amount > float(authorization.requested_amount):
+    approved_amount = Decimal(str(decision.approved_amount)).quantize(Decimal("0.01"))
+    requested_amount = Decimal(str(authorization.requested_amount)).quantize(Decimal("0.01"))
+    if approved_amount > requested_amount:
         raise PreAuthorizationError("APPROVED_AMOUNT_EXCEEDS_REQUEST")
-    if decision.status == "REJECTED" and decision.approved_amount != 0:
+    if decision.status == "REJECTED" and approved_amount != Decimal("0.00"):
         raise PreAuthorizationError("REJECTED_AMOUNT_MUST_BE_ZERO")
+    if decision.status in {"AUTHORIZED", "AUTHORIZED_PENDING_VISIT"} and approved_amount == Decimal("0.00"):
+        raise PreAuthorizationError("INVALID_APPROVED_AMOUNT")
     authorization.status = decision.status
-    authorization.approved_amount = decision.approved_amount
-    authorization.external_reference = decision.external_reference
+    authorization.approved_amount = approved_amount
+    authorization.external_reference = decision.external_reference.strip() if decision.external_reference else None
     authorization.decided_at = datetime.now(timezone.utc)
     db.flush()
     record_audit(db, action="DECIDE_PREAUTHORIZATION", resource_type="PREAUTHORIZATION", resource_id=str(authorization.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=authorization.patient_id, metadata={"authorization_number": authorization.authorization_number, "status": authorization.status, "approved_amount": str(authorization.approved_amount), "external_reference": authorization.external_reference}, commit=False)
