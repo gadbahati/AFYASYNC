@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from app.reports.national_intelligence_schemas import (
     NationalCountyIntelligence,
@@ -20,31 +21,70 @@ def _severity(score: int) -> str:
     return "LOW"
 
 
-def _alert(code: str, severity: str, category: str, title: str, summary: str, value: int | float, unit: str, recommendation: str) -> NationalIntelligenceAlert:
-    return NationalIntelligenceAlert(code=code, severity=severity, category=category, title=title, summary=summary, value=value, unit=unit, recommendation=recommendation)
+def _alert(
+    code: str,
+    severity: str,
+    category: str,
+    title: str,
+    summary: str,
+    value: int | float,
+    unit: str,
+    recommendation: str,
+) -> NationalIntelligenceAlert:
+    return NationalIntelligenceAlert(
+        code=code,
+        severity=severity,
+        category=category,
+        title=title,
+        summary=summary,
+        value=value,
+        unit=unit,
+        recommendation=recommendation,
+    )
 
 
 def _trend(metric: str, label: str, current: float, previous: float) -> NationalIntelligenceTrend:
+    """Build a deterministic period-over-period trend without inventing a zero baseline."""
     if previous == 0:
-        change = None if current == 0 else 100.0
+        change = None if current == 0 else None
     else:
         change = round(((current - previous) / abs(previous)) * 100, 2)
-    if change is None or abs(change) < 1:
+
+    if current == 0 and previous == 0:
         direction = "FLAT"
-    elif change > 0:
+    elif previous == 0:
+        direction = "UP" if current > 0 else "FLAT"
+    elif change is not None and abs(change) < 1:
+        direction = "FLAT"
+    elif current > previous:
         direction = "UP"
     else:
         direction = "DOWN"
+
     if direction == "FLAT":
         interpretation = f"{label} is broadly stable versus the comparison period."
+    elif previous == 0:
+        interpretation = f"{label} is new in the current period; the comparison period had no recorded activity."
     elif direction == "UP":
         interpretation = f"{label} increased by {abs(change):.2f}% versus the comparison period."
     else:
         interpretation = f"{label} decreased by {abs(change):.2f}% versus the comparison period."
-    return NationalIntelligenceTrend(metric=metric, label=label, current=round(current, 2), previous=round(previous, 2), change_percent=change, direction=direction, interpretation=interpretation)
+
+    return NationalIntelligenceTrend(
+        metric=metric,
+        label=label,
+        current=round(current, 2),
+        previous=round(previous, 2),
+        change_percent=change,
+        direction=direction,
+        interpretation=interpretation,
+    )
 
 
 def build_national_intelligence(db, start_date: date, end_date: date, *, actor_user_id) -> NationalIntelligenceResponse:
+    if end_date < start_date:
+        raise ValueError("INVALID_REPORT_DATE_RANGE")
+
     report = build_national_report(db, start_date, end_date, actor_user_id=actor_user_id)
     period_days = (end_date - start_date).days + 1
     comparison_end = start_date - timedelta(days=1)
@@ -85,7 +125,17 @@ def build_national_intelligence(db, start_date: date, end_date: date, *, actor_u
             score += 20
             signals.append("billing recorded with no confirmed payments in period")
         if score:
-            facility_signals.append(NationalFacilitySignal(facility_id=facility.facility_id, facility_code=facility.facility_code, facility_name=facility.facility_name, county=facility.county, score=min(score, 100), severity=_severity(score), signals=signals))
+            facility_signals.append(
+                NationalFacilitySignal(
+                    facility_id=facility.facility_id,
+                    facility_code=facility.facility_code,
+                    facility_name=facility.facility_name,
+                    county=facility.county,
+                    score=min(score, 100),
+                    severity=_severity(score),
+                    signals=signals,
+                )
+            )
     facility_signals.sort(key=lambda item: (-item.score, item.facility_name))
 
     trends = [
@@ -99,34 +149,53 @@ def build_national_intelligence(db, start_date: date, end_date: date, *, actor_u
     county_map: dict[str, dict[str, object]] = {}
     for facility in report.facilities:
         county = (facility.county or "Unspecified").strip() or "Unspecified"
-        entry = county_map.setdefault(county, {"facilities": 0, "review": 0, "encounters": 0, "billed": 0.0, "payments": 0.0, "receivable": 0.0, "scores": []})
+        entry = county_map.setdefault(
+            county,
+            {"facilities": 0, "review": 0, "encounters": 0, "billed": Decimal("0"), "payments": Decimal("0"), "receivable": Decimal("0"), "scores": []},
+        )
         entry["facilities"] = int(entry["facilities"]) + 1
         entry["encounters"] = int(entry["encounters"]) + facility.encounters
-        entry["billed"] = float(entry["billed"]) + float(facility.billed)
-        entry["payments"] = float(entry["payments"]) + float(facility.confirmed_payments)
-        entry["receivable"] = float(entry["receivable"]) + float(facility.claims_receivable)
+        entry["billed"] = entry["billed"] + facility.billed
+        entry["payments"] = entry["payments"] + facility.confirmed_payments
+        entry["receivable"] = entry["receivable"] + facility.claims_receivable
+
     for signal in facility_signals:
         county = (signal.county or "Unspecified").strip() or "Unspecified"
-        entry = county_map.setdefault(county, {"facilities": 0, "review": 0, "encounters": 0, "billed": 0.0, "payments": 0.0, "receivable": 0.0, "scores": []})
+        entry = county_map.setdefault(
+            county,
+            {"facilities": 0, "review": 0, "encounters": 0, "billed": Decimal("0"), "payments": Decimal("0"), "receivable": Decimal("0"), "scores": []},
+        )
         entry["review"] = int(entry["review"]) + 1
         entry["scores"].append(signal.score)
 
     counties: list[NationalCountyIntelligence] = []
     for county, entry in county_map.items():
         scores = [int(x) for x in entry["scores"]]
-        counties.append(NationalCountyIntelligence(
-            county=county,
-            facilities=int(entry["facilities"]),
-            facilities_requiring_review=int(entry["review"]),
-            encounters=int(entry["encounters"]),
-            billed=round(float(entry["billed"]), 2),
-            confirmed_payments=round(float(entry["payments"]), 2),
-            claims_receivable=round(float(entry["receivable"]), 2),
-            average_review_score=round(sum(scores) / len(scores), 2) if scores else 0.0,
-            highest_review_score=max(scores) if scores else 0,
-        ))
+        counties.append(
+            NationalCountyIntelligence(
+                county=county,
+                facilities=int(entry["facilities"]),
+                facilities_requiring_review=int(entry["review"]),
+                encounters=int(entry["encounters"]),
+                billed=float(entry["billed"].quantize(Decimal("0.01"))),
+                confirmed_payments=float(entry["payments"].quantize(Decimal("0.01"))),
+                claims_receivable=float(entry["receivable"].quantize(Decimal("0.01"))),
+                average_review_score=round(sum(scores) / len(scores), 2) if scores else 0.0,
+                highest_review_score=max(scores) if scores else 0,
+            )
+        )
     counties.sort(key=lambda item: (-item.facilities_requiring_review, -item.claims_receivable, item.county))
 
     severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
     alerts.sort(key=lambda item: (severity_order[item.severity], -float(item.value), item.title))
-    return NationalIntelligenceResponse(start_date=start_date.isoformat(), end_date=end_date.isoformat(), comparison_start_date=comparison_start.isoformat(), comparison_end_date=comparison_end.isoformat(), generated_at=datetime.now(timezone.utc).isoformat(), alerts=alerts, facility_signals=facility_signals, trends=trends, counties=counties)
+    return NationalIntelligenceResponse(
+        start_date=start_date.isoformat(),
+        end_date=end_date.isoformat(),
+        comparison_start_date=comparison_start.isoformat(),
+        comparison_end_date=comparison_end.isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        alerts=alerts,
+        facility_signals=facility_signals,
+        trends=trends,
+        counties=counties,
+    )
