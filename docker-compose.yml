@@ -2,26 +2,29 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: afasync
-      POSTGRES_USER: afasync
-      POSTGRES_PASSWORD: afasync
+      POSTGRES_DB: ${POSTGRES_DB:-afasync}
+      POSTGRES_USER: ${POSTGRES_USER:-afasync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U afasync -d afasync"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
 
   api:
     build: ./backend
     environment:
-      ENVIRONMENT: development
-      DATABASE_URL: postgresql+psycopg://afasync:afasync@db:5432/afasync
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-afasync}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-afasync}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
