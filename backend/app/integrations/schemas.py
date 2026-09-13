@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -36,9 +37,9 @@ class IntegrationConfigurationUpdate(BaseModel):
 
 class TransactionCreate(BaseModel):
     transaction_id: str = Field(min_length=1, max_length=120)
-    entity_type: str = Field(min_length=1, max_length=80)
-    entity_id: UUID | None = None
-    direction: str = Field(pattern="^(OUTBOUND|INBOUND)$")
+    entity_type: Literal["CLAIM", "PAYMENT", "PREAUTHORIZATION"]
+    entity_id: UUID
+    direction: Literal["OUTBOUND"] = "OUTBOUND"
     request_reference: str | None = Field(default=None, max_length=150)
 
 
