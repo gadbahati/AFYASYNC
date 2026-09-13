@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -43,8 +44,8 @@ class FacilityResponse(FacilityCreate):
 class NetworkFacilityResponse(FacilityResponse):
     """Facility record exposed to explicitly privileged national operators."""
 
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class DepartmentCreate(BaseModel):
