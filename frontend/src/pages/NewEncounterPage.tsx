@@ -4,6 +4,29 @@ import { api, ApiError } from "../api/client";
 import type { Department, Patient } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 
+ cons COVERAGE_OPTIONS = [
+  {
+    value: "CASH",
+    label: "Cash / uninsured",
+    help: "Patient pays at facility. No AfyaSync membership or SHA claim required.",
+  },
+  {
+    value: "AFYASYNC",
+    label: "AfyaSync membership",
+    help: "Standalone AfyaSync cover. Patient can register on AfyaSync without SHA.",
+  },
+  {
+    value: "SHA",
+    label: "SHA member",
+    help: "Accept SHA without forcing AfyaSync membership. Facility record still runs on AfyaSync.",
+  },
+  {
+    value: "OTHER",
+    label: "Other payer",
+    help: "Corporate or other third-party cover.",
+  },
+] as const;
+
 export function NewEncounterPage() {
   const { patientId } = useParams();
   const auth = useAuth();
@@ -12,6 +35,7 @@ export function NewEncounterPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [departmentId, setDepartmentId] = useState("");
   const [encounterType, setEncounterType] = useState("OUTPATIENT");
+  const [coverageMode, setCoverageMode] = useState<"AFYASYNC" | "SHA" | "CASH" | "OTHER">("CASH");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,6 +74,7 @@ export function NewEncounterPage() {
         facility_id: auth.facilityId,
         department_id: departmentId,
         encounter_type: encounterType,
+        coverage_mode: coverageMode,
         reason: reason.trim() || null,
       });
       navigate(`/encounters/${encounter.id}`);
@@ -59,6 +84,8 @@ export function NewEncounterPage() {
       setSubmitting(false);
     }
   }
+
+  const selectedHelp = COVERAGE_OPTIONS.find((o) => o.value === coverageMode)?.help;
 
   return (
     <div>
@@ -96,6 +123,19 @@ export function NewEncounterPage() {
               <option value="FOLLOW_UP">Follow-up</option>
             </select>
           </label>
+          <label className="full">
+            Coverage for this visit
+            <select
+              required
+              value={coverageMode}
+              onChange={(e) => setCoverageMode(e.target.value as typeof coverageMode)}
+            >
+              {COVERAGE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+          {selectedHelp && <p className="muted full">{selectedHelp}</p>}
           <label className="full">
             Reason
             <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={2000} />
