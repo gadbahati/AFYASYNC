@@ -26,7 +26,7 @@ def test_submit_claim_locks_claim_before_queueing() -> None:
         claim_amount=Decimal("100.00"),
         submitted_at=None,
     )
-    invoice = SimpleNamespace(facility_id=facility_id)
+    invoice = SimpleNamespace(id=invoice_id, facility_id=facility_id)
     payer = SimpleNamespace(id=payer_id, status="ACTIVE", code="TEST-PAYER")
     encounter = SimpleNamespace(id=encounter_id, facility_id=facility_id, patient_id=patient_id, coverage_mode="SHA")
     integration = SimpleNamespace(id=integration_id, status="ACTIVE", provider="TEST-PAYER")
