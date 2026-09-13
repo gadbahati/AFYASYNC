@@ -25,10 +25,11 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: afyasync-api
-          property: host
+        value: https://afyasync-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
 
 databases:
   - name: afyasync-db
