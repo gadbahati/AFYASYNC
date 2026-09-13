@@ -1,7 +1,10 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+CoverageMode = Literal["AFYASYNC", "SHA", "CASH", "OTHER"]
 
 
 class EncounterCreate(BaseModel):
@@ -9,6 +12,8 @@ class EncounterCreate(BaseModel):
     facility_id: UUID
     department_id: UUID
     encounter_type: str = Field(min_length=2, max_length=30)
+    coverage_mode: CoverageMode = "CASH"
+    coverage_id: UUID | None = None
     reason: str | None = Field(default=None, max_length=2000)
 
 
