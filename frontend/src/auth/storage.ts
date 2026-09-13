@@ -20,6 +20,9 @@ export function getFacilityName(): string | null { return read(FACILITY_NAME_KEY
 export function getRememberedUsername(): string | null { return localStorage.getItem(REMEMBERED_USER_KEY); }
 export function isRememberMeEnabled(): boolean { return localStorage.getItem(REMEMBER_KEY) === "1"; }
 
+/** Legacy compatibility: AfyaSync never enables demo-mode data. */
+export function isDemoMode(): false { return false; }
+
 export function setRememberMe(enabled: boolean, username?: string): void {
   if (enabled) {
     localStorage.setItem(REMEMBER_KEY, "1");
