@@ -5,15 +5,23 @@ VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
 
 def _load_revisions() -> dict[str, tuple[str, ...]]:
-    """Parse revision/down_revision out of every migration file without importing Alembic."""
+    """Parse revision/down_revision out of every migration file without importing Alembic.
+
+    Handles both styles found in this repo: each assignment on its own
+    line, and the compact `revision="X"; down_revision="Y"; ...` single-line
+    style used by newer migrations. The anchor is "not start-of-line" (`^`)
+    but "not immediately preceded by an identifier character", so a
+    semicolon-separated `down_revision=` on the same line as `revision=`
+    still matches.
+    """
     revisions: dict[str, tuple[str, ...]] = {}
     for path in sorted(VERSIONS_DIR.glob("*.py")):
         text = path.read_text()
-        rev_match = re.search(r'^revision\s*=\s*["\']([^"\']+)["\']', text, re.M)
+        rev_match = re.search(r'(?<![\w.])revision\s*=\s*["\']([^"\']+)["\']', text)
         if not rev_match:
             continue
         revision = rev_match.group(1)
-        down_match = re.search(r'^down_revision\s*=\s*(.+?)$', text, re.M)
+        down_match = re.search(r'(?<![\w.])down_revision\s*=\s*(.+?)(?:;|$)', text, re.M)
         if not down_match or down_match.group(1).strip() == "None":
             revisions[revision] = ()
             continue
