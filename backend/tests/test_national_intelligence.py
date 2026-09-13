@@ -1,5 +1,5 @@
-from backend.app.reports.national_intelligence import _severity
-from backend.app.reports.national_intelligence_schemas import NationalIntelligenceAlert
+from app.reports.national_intelligence import _severity
+from app.reports.national_intelligence_schemas import NationalIntelligenceAlert
 
 
 def test_intelligence_severity_bands_are_ordered():
