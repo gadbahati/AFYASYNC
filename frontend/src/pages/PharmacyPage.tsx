@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
-import { isDemoMode } from "../auth/storage";
 
 type Medication = { id: string; code: string; name: string; strength: string | null; form: string | null; status: string };
 type InventoryItem = { id: string; facility_id: string; medication_id: string; current_quantity: number; minimum_quantity: number; status: string };
@@ -60,10 +59,7 @@ export function PharmacyPage() {
         <div>
           <p className="eyebrow">Medication workflow</p>
           <h1>Pharmacy</h1>
-          <p className="muted">
-            Live medication catalogue, facility inventory and prescriptions from the API
-            {isDemoMode() ? " (demo session may show empty lists until API is connected)." : "."}
-          </p>
+          <p className="muted">Live medication catalogue, facility inventory and prescriptions from the AfyaSync API.</p>
         </div>
         <button type="button" className="button secondary" onClick={load}>Refresh</button>
       </header>
@@ -89,7 +85,7 @@ export function PharmacyPage() {
                   {meds.map((m) => (
                     <tr key={m.id}><td>{m.code}</td><td>{m.name}</td><td>{m.strength || "—"}</td><td>{m.form || "—"}</td><td>{m.status}</td></tr>
                   ))}
-                  {meds.length === 0 && <tr><td colSpan={5} className="muted">No medications yet.</td></tr>}
+                  {meds.length === 0 && <tr><td colSpan={5} className="muted">No medications yet. Add the first catalogue item above.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -103,7 +99,7 @@ export function PharmacyPage() {
                   {inventory.map((i) => (
                     <tr key={i.id}><td>{i.medication_id}</td><td>{i.current_quantity}</td><td>{i.minimum_quantity}</td><td>{i.status}</td></tr>
                   ))}
-                  {inventory.length === 0 && <tr><td colSpan={4} className="muted">No stock received yet. Use inventory receive API to add batches.</td></tr>}
+                  {inventory.length === 0 && <tr><td colSpan={4} className="muted">No stock received yet. Receive inventory batches through the pharmacy API.</td></tr>}
                 </tbody>
               </table>
             </div>
