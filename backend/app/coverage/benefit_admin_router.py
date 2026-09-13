@@ -19,11 +19,10 @@ from app.coverage.benefit_admin_service import (
 from app.database import get_db
 from app.rbac.models import User
 
-
 BENEFIT_NETWORK_READ = "benefit.network.read"
 BENEFIT_NETWORK_MANAGE = "benefit.network.manage"
 
-router = APIRouter(prefix="/api/v1/benefit-network", tags=["National Benefit Configuration"])
+router = APIRouter(prefix="/benefits", tags=["National Benefit Configuration"])
 
 
 @router.get("/rules", response_model=list[BenefitRuleAdminResponse])
@@ -55,7 +54,7 @@ def create_rule(
             "BENEFIT_SCOPE_REQUIRED": "Provide a service code or service type.",
             "INVALID_BENEFIT_DATES": "Benefit rule end date cannot be before its start date.",
         }
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": code, "message": messages.get(code, code)}) from exc
+        raise HTTPException(status_code=400, detail={"code": code, "message": messages.get(code, code)}) from exc
 
 
 @router.patch("/rules/{rule_id}", response_model=BenefitRuleAdminResponse)
