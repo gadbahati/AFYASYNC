@@ -31,6 +31,7 @@ class FacilityUpdate(BaseModel):
 
 class FacilityStatusUpdate(BaseModel):
     status: Literal["APPLICATION", "ACTIVE", "SUSPENDED", "INACTIVE"]
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class FacilityResponse(FacilityCreate):
