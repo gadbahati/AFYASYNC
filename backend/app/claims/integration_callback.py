@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
+from app.billing.models import Invoice
 from app.claims.models import Claim, ClaimResponse
 from app.claims.service import ClaimsError, record_payer_response
 from app.coverage.models import Payer
@@ -13,7 +14,6 @@ from app.integrations.models import Integration, IntegrationTransaction
 from app.integrations.service import IntegrationError
 
 
-_FINAL_STATUSES = {"REJECTED", "PARTIALLY_PAID", "PAID"}
 _ALLOWED_STATUSES = {"ACCEPTED", "UNDER_REVIEW", "REJECTED", "PARTIALLY_PAID", "PAID"}
 
 
@@ -29,11 +29,7 @@ def process_claim_payer_callback(
     external_reference: str,
     approved_amount: Decimal | None,
 ) -> tuple[Claim, bool]:
-    """Apply a signed payer claim response atomically and idempotently.
-
-    Returns (claim, duplicate) where duplicate=True means the exact external
-    response had already been accepted and no second business event was created.
-    """
+    """Apply a signed payer claim response atomically and idempotently."""
     integration = db.scalar(
         select(Integration)
         .where(Integration.id == integration_id, Integration.facility_id == facility_id)
@@ -52,20 +48,11 @@ def process_claim_payer_callback(
     if status not in _ALLOWED_STATUSES:
         raise ClaimsError("INVALID_CLAIM_RESPONSE_STATUS")
 
-    claim = db.scalar(
-        select(Claim)
-        .where(Claim.id == claim_id)
-        .with_for_update()
-    )
+    claim = db.scalar(select(Claim).where(Claim.id == claim_id).with_for_update())
     if claim is None:
         raise ClaimsError("CLAIM_NOT_FOUND")
-
-    invoice_facility = db.scalar(
-        select(Claim.id)
-        .join_from(Claim, __import__("app.billing.models", fromlist=["Invoice"]).Invoice, __import__("app.billing.models", fromlist=["Invoice"]).Invoice.id == Claim.invoice_id)
-        .where(Claim.id == claim.id, __import__("app.billing.models", fromlist=["Invoice"]).Invoice.facility_id == facility_id)
-    )
-    if invoice_facility is None:
+    invoice = db.scalar(select(Invoice).where(Invoice.id == claim.invoice_id))
+    if invoice is None or invoice.facility_id != facility_id:
         raise ClaimsError("FACILITY_ACCESS_DENIED")
 
     payer = db.get(Payer, claim.payer_id)
@@ -91,10 +78,7 @@ def process_claim_payer_callback(
 
     existing = db.scalar(
         select(ClaimResponse)
-        .where(
-            ClaimResponse.claim_id == claim.id,
-            ClaimResponse.external_reference == external_reference,
-        )
+        .where(ClaimResponse.claim_id == claim.id, ClaimResponse.external_reference == external_reference)
         .limit(1)
     )
     if existing is not None:
@@ -111,7 +95,11 @@ def process_claim_payer_callback(
     if status == "PAID" and approved_amount == Decimal("0.00"):
         raise ClaimsError("INVALID_APPROVED_AMOUNT")
 
-    transaction.status = "FAILED" if status == "REJECTED" else "SUCCEEDED" if status in {"ACCEPTED", "PARTIALLY_PAID", "PAID"} else "PENDING"
+    transaction.status = (
+        "FAILED" if status == "REJECTED"
+        else "SUCCEEDED" if status in {"ACCEPTED", "PARTIALLY_PAID", "PAID"}
+        else "PENDING"
+    )
     transaction.external_reference = external_reference
     transaction.response_code = response_code
     transaction.response_data = {
