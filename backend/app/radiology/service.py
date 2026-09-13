@@ -46,6 +46,7 @@ def review_report(db: Session, facility_id: UUID, actor: UUID, report_id: UUID):
     report = db.scalar(select(ImagingReport).join(ImagingOrder, ImagingOrder.id == ImagingReport.order_id).where(ImagingReport.id == report_id, ImagingOrder.facility_id == facility_id).with_for_update())
     if not report: raise ValueError("IMAGING_REPORT_NOT_FOUND")
     if report.report_status == "REVIEWED": raise ValueError("IMAGING_ALREADY_REVIEWED")
+    order = db.get(ImagingOrder, report.order_id)
     report.reviewed_by = actor; report.reviewed_at = datetime.now(timezone.utc); report.report_status = "REVIEWED"
-    record_audit(db, action="IMAGING_REPORT_REVIEWED", resource_type="ImagingReport", result="SUCCESS", user_id=actor, resource_id=str(report.id), facility_id=facility_id, patient_id=report.order_id, commit=False)
+    record_audit(db, action="IMAGING_REPORT_REVIEWED", resource_type="ImagingReport", result="SUCCESS", user_id=actor, resource_id=str(report.id), facility_id=facility_id, patient_id=order.patient_id if order else None, commit=False)
     db.commit(); db.refresh(report); return report
