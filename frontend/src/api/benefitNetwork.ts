@@ -29,7 +29,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     let code = "BENEFIT_NETWORK_REQUEST_FAILED";
     try {
-      const body = await response.json() as { detail?: string | { code?: string } };
+      const body = await response.json() as { detail?: string | { code?: string; message?: string } };
       if (typeof body.detail === "string") code = body.detail;
       else if (body.detail?.code) code = body.detail.code;
     } catch {}
@@ -43,13 +43,13 @@ export async function getNetworkBenefitRules(filters?: { payerId?: string; payer
   if (filters?.payerId) q.set("payer_id", filters.payerId);
   if (filters?.payerPlanId) q.set("payer_plan_id", filters.payerPlanId);
   if (filters?.status) q.set("rule_status", filters.status);
-  return request(`/api/v1/payer-network/benefits/rules${q.toString() ? `?${q}` : ""}`);
+  return request(`/api/v1/benefit-network/rules${q.toString() ? `?${q}` : ""}`);
 }
 
 export async function createNetworkBenefitRule(payload: NetworkBenefitRuleInput): Promise<NetworkBenefitRule> {
-  return request("/api/v1/payer-network/benefits/rules", { method: "POST", body: JSON.stringify(payload) });
+  return request("/api/v1/benefit-network/rules", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export async function updateNetworkBenefitRuleStatus(ruleId: string, status: "ACTIVE" | "INACTIVE", reason: string): Promise<NetworkBenefitRule> {
-  return request(`/api/v1/payer-network/benefits/rules/${ruleId}/status`, { method: "PATCH", body: JSON.stringify({ status, reason }) });
+  return request(`/api/v1/benefit-network/rules/${ruleId}/status`, { method: "PATCH", body: JSON.stringify({ status, reason }) });
 }
