@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, JSON, Numeric, String, func
+from sqlalchemy import DateTime, ForeignKey, JSON, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,6 +10,9 @@ from app.database import Base
 
 class PreAuthorization(Base):
     __tablename__ = "preauthorizations"
+    __table_args__ = (
+        UniqueConstraint("facility_id", "idempotency_key", name="uq_preauthorization_facility_idempotency"),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     authorization_number: Mapped[str] = mapped_column(String(80), unique=True, index=True)
@@ -26,6 +29,7 @@ class PreAuthorization(Base):
     requested_amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     approved_amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     external_reference: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(150), nullable=True)
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
