@@ -1,10 +1,8 @@
 from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
 from app.admissions.models import Admission
 from app.audit.service import record_audit
 from app.auth.dependencies import get_token_payload, require_permission
@@ -16,6 +14,7 @@ from app.pharmacy.permissions import PHARMACY_CREATE_MEDICATION, PHARMACY_CREATE
 from app.pharmacy.schemas import DispenseRequest, DispenseResponse, InventoryReceive, InventoryResponse, MedicationCreate, MedicationResponse, PrescriptionCreate, PrescriptionResponse
 from app.pharmacy.service import PharmacyError, dispense_prescription
 from app.rbac.models import Staff, User
+from app.wards.service import release_bed
 
 router = APIRouter(prefix="/api/v1/pharmacy", tags=["Pharmacy"])
 
@@ -84,8 +83,11 @@ def dispense(prescription_id: UUID, payload: DispenseRequest, db: Session = Depe
     admission = db.scalar(select(Admission).where(Admission.encounter_id == encounter.id, Admission.facility_id == facility_id).with_for_update())
     if admission is not None and admission.status == "ADMITTED":
         close_encounter(db, encounter.id, actor_user_id=user.id, commit=False)
+        assignment = db.scalar(select(__import__('app.wards.models', fromlist=['BedAssignment']).BedAssignment).where(__import__('app.wards.models', fromlist=['BedAssignment']).BedAssignment.admission_id == admission.id, __import__('app.wards.models', fromlist=['BedAssignment']).BedAssignment.released_at.is_(None)).with_for_update())
+        if assignment is not None:
+            release_bed(db, facility_id, user.id, assignment.bed_id, commit=False)
         admission.status = "DISCHARGED"; admission.discharged_at = datetime.now(timezone.utc)
-        record_audit(db, action="PATIENT_RELEASED_AFTER_PHARMACY", resource_type="ADMISSION", resource_id=str(admission.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"prescription_id": str(prescription_id), "encounter_id": str(encounter.id), "status": admission.status}, commit=False)
+        record_audit(db, action="PATIENT_RELEASED_AFTER_PHARMACY", resource_type="ADMISSION", resource_id=str(admission.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"prescription_id": str(prescription_id), "encounter_id": str(encounter.id), "bed_released": assignment is not None}, commit=False)
         db.commit()
     prescription = db.get(Prescription, prescription_id)
     return DispenseResponse(prescription_id=prescription.id, status=prescription.status, movements_created=len(movements), charges_created=charges_created)
