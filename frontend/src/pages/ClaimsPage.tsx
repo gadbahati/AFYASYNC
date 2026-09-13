@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
+import { listClaimRejections, sandboxRejectClaim } from "../api/claimsExtra";
 
 type Claim = {
   id: string;
@@ -42,7 +43,7 @@ export function ClaimsPage() {
     setError(null);
     Promise.all([
       api.listClaims().catch(() => [] as Claim[]),
-      api.listClaimRejections().catch(() => [] as RejectionItem[]),
+      listClaimRejections().catch(() => [] as RejectionItem[]),
     ])
       .then(([c, r]) => {
         setClaims(c);
@@ -103,7 +104,7 @@ export function ClaimsPage() {
     setBusy(true);
     setError(null);
     try {
-      await api.sandboxRejectClaim(id, { response_code: "COV001", response_message: "Coverage not verified (sandbox)" });
+      await sandboxRejectClaim(id, { response_code: "COV001", response_message: "Coverage not verified (sandbox)" });
       setMessage("Sandbox rejection recorded — see workbench for fix guidance");
       load();
     } catch (err) {
