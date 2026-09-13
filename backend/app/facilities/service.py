@@ -8,6 +8,12 @@ from app.audit.service import record_audit
 from app.facilities.models import Department, Facility
 
 _ALLOWED_FACILITY_STATUSES = {"APPLICATION", "ACTIVE", "SUSPENDED", "INACTIVE"}
+_FACILITY_STATUS_TRANSITIONS = {
+    "APPLICATION": {"ACTIVE", "INACTIVE"},
+    "ACTIVE": {"SUSPENDED", "INACTIVE"},
+    "SUSPENDED": {"ACTIVE", "INACTIVE"},
+    "INACTIVE": {"APPLICATION"},
+}
 _ALLOWED_DEPARTMENT_STATUSES = {"ACTIVE", "INACTIVE"}
 _FACILITY_ID_ALLOCATION_ATTEMPTS = 3
 
@@ -17,47 +23,19 @@ def _next_facility_id(db: Session) -> str:
     return f"FAC-{count + 1:06d}"
 
 
-def create_facility(
-    db: Session,
-    data: dict,
-    *,
-    actor_user_id: UUID | None = None,
-) -> Facility:
-    """Create a facility with a collision-safe human-readable facility ID.
-
-    The UUID primary key remains the authoritative database identity. The
-    FAC-XXXXXX identifier is a human-facing identifier, so allocation based on
-    a row count can race when two facilities are created concurrently. The
-    unique database constraint is the final arbiter; a failed allocation is
-    retried from a fresh savepoint so concurrent creators converge on the next
-    available identifier without losing the surrounding transaction.
-    """
+def create_facility(db: Session, data: dict, *, actor_user_id: UUID | None = None) -> Facility:
     for attempt in range(_FACILITY_ID_ALLOCATION_ATTEMPTS):
         facility = Facility(facility_id=_next_facility_id(db), **data)
         try:
             with db.begin_nested():
                 db.add(facility)
                 db.flush()
-                record_audit(
-                    db,
-                    action="CREATE_FACILITY",
-                    resource_type="FACILITY",
-                    resource_id=str(facility.id),
-                    result="SUCCESS",
-                    user_id=actor_user_id,
-                    facility_id=facility.id,
-                    metadata={"facility_id": facility.facility_id, "name": facility.name},
-                    commit=False,
-                )
+                record_audit(db, action="CREATE_FACILITY", resource_type="FACILITY", resource_id=str(facility.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility.id, metadata={"facility_id": facility.facility_id, "name": facility.name}, commit=False)
         except IntegrityError:
             if attempt == _FACILITY_ID_ALLOCATION_ATTEMPTS - 1:
                 raise
             continue
-
-        db.commit()
-        db.refresh(facility)
-        return facility
-
+        db.commit(); db.refresh(facility); return facility
     raise RuntimeError("FACILITY_ID_ALLOCATION_FAILED")
 
 
@@ -66,14 +44,7 @@ def list_facilities(db: Session, limit: int = 50) -> list[Facility]:
     return list(db.scalars(select(Facility).order_by(Facility.name).limit(limit)))
 
 
-def list_network_facilities(
-    db: Session,
-    *,
-    limit: int = 100,
-    status_filter: str | None = None,
-    county: str | None = None,
-) -> list[Facility]:
-    """List facilities for explicitly privileged national network operations."""
+def list_network_facilities(db: Session, *, limit: int = 100, status_filter: str | None = None, county: str | None = None) -> list[Facility]:
     limit = min(max(limit, 1), 200)
     stmt = select(Facility).order_by(Facility.name)
     if status_filter:
@@ -89,13 +60,7 @@ def get_facility(db: Session, facility_id: UUID) -> Facility | None:
     return db.get(Facility, facility_id)
 
 
-def update_facility(
-    db: Session,
-    facility_id: UUID,
-    data: dict,
-    *,
-    actor_user_id: UUID | None = None,
-) -> Facility:
+def update_facility(db: Session, facility_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> Facility:
     facility = db.get(Facility, facility_id)
     if facility is None:
         raise ValueError("FACILITY_NOT_FOUND")
@@ -105,29 +70,11 @@ def update_facility(
     for field, value in changes.items():
         setattr(facility, field, value)
     db.flush()
-    record_audit(
-        db,
-        action="UPDATE_FACILITY",
-        resource_type="FACILITY",
-        resource_id=str(facility.id),
-        result="SUCCESS",
-        user_id=actor_user_id,
-        facility_id=facility_id,
-        metadata={"changed_fields": sorted(changes.keys())},
-        commit=False,
-    )
-    db.commit()
-    db.refresh(facility)
-    return facility
+    record_audit(db, action="UPDATE_FACILITY", resource_type="FACILITY", resource_id=str(facility.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, metadata={"changed_fields": sorted(changes.keys())}, commit=False)
+    db.commit(); db.refresh(facility); return facility
 
 
-def update_facility_status(
-    db: Session,
-    facility_id: UUID,
-    status: str,
-    *,
-    actor_user_id: UUID | None = None,
-) -> Facility:
+def update_facility_status(db: Session, facility_id: UUID, status: str, *, actor_user_id: UUID | None = None) -> Facility:
     if status not in _ALLOWED_FACILITY_STATUSES:
         raise ValueError("INVALID_FACILITY_STATUS")
     facility = db.get(Facility, facility_id)
@@ -135,82 +82,33 @@ def update_facility_status(
         raise ValueError("FACILITY_NOT_FOUND")
     if facility.status == status:
         raise ValueError("FACILITY_STATUS_UNCHANGED")
+    if status not in _FACILITY_STATUS_TRANSITIONS.get(facility.status, set()):
+        raise ValueError("INVALID_FACILITY_STATUS_TRANSITION")
     previous = facility.status
     facility.status = status
     db.flush()
-    record_audit(
-        db,
-        action="UPDATE_FACILITY_STATUS",
-        resource_type="FACILITY",
-        resource_id=str(facility.id),
-        result="SUCCESS",
-        user_id=actor_user_id,
-        facility_id=facility_id,
-        metadata={"previous_status": previous, "new_status": status},
-        commit=False,
-    )
-    db.commit()
-    db.refresh(facility)
-    return facility
+    record_audit(db, action="UPDATE_FACILITY_STATUS", resource_type="FACILITY", resource_id=str(facility.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, metadata={"previous_status": previous, "new_status": status}, commit=False)
+    db.commit(); db.refresh(facility); return facility
 
 
-def create_department(
-    db: Session,
-    facility_id: UUID,
-    data: dict,
-    *,
-    actor_user_id: UUID | None = None,
-) -> Department:
+def create_department(db: Session, facility_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> Department:
     facility = db.get(Facility, facility_id)
     if facility is None:
         raise ValueError("FACILITY_NOT_FOUND")
-
-    existing = db.scalar(
-        select(Department).where(
-            Department.facility_id == facility_id,
-            Department.code == data["code"],
-        )
-    )
+    existing = db.scalar(select(Department).where(Department.facility_id == facility_id, Department.code == data["code"]))
     if existing is not None:
         raise ValueError("DEPARTMENT_CODE_EXISTS")
-
     department = Department(facility_id=facility_id, **data)
-    db.add(department)
-    db.flush()
-    record_audit(
-        db,
-        action="CREATE_DEPARTMENT",
-        resource_type="DEPARTMENT",
-        resource_id=str(department.id),
-        result="SUCCESS",
-        user_id=actor_user_id,
-        facility_id=facility_id,
-        metadata={"name": department.name, "code": department.code},
-        commit=False,
-    )
-    db.commit()
-    db.refresh(department)
-    return department
+    db.add(department); db.flush()
+    record_audit(db, action="CREATE_DEPARTMENT", resource_type="DEPARTMENT", resource_id=str(department.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, metadata={"name": department.name, "code": department.code}, commit=False)
+    db.commit(); db.refresh(department); return department
 
 
 def list_departments(db: Session, facility_id: UUID) -> list[Department]:
-    return list(
-        db.scalars(
-            select(Department)
-            .where(Department.facility_id == facility_id)
-            .order_by(Department.name)
-        )
-    )
+    return list(db.scalars(select(Department).where(Department.facility_id == facility_id).order_by(Department.name)))
 
 
-def update_department_status(
-    db: Session,
-    facility_id: UUID,
-    department_id: UUID,
-    status: str,
-    *,
-    actor_user_id: UUID | None = None,
-) -> Department:
+def update_department_status(db: Session, facility_id: UUID, department_id: UUID, status: str, *, actor_user_id: UUID | None = None) -> Department:
     if status not in _ALLOWED_DEPARTMENT_STATUSES:
         raise ValueError("INVALID_DEPARTMENT_STATUS")
     department = db.get(Department, department_id)
@@ -218,20 +116,6 @@ def update_department_status(
         raise ValueError("DEPARTMENT_NOT_FOUND")
     if department.status == status:
         raise ValueError("DEPARTMENT_STATUS_UNCHANGED")
-    previous = department.status
-    department.status = status
-    db.flush()
-    record_audit(
-        db,
-        action="UPDATE_DEPARTMENT_STATUS",
-        resource_type="DEPARTMENT",
-        resource_id=str(department.id),
-        result="SUCCESS",
-        user_id=actor_user_id,
-        facility_id=facility_id,
-        metadata={"previous_status": previous, "new_status": status},
-        commit=False,
-    )
-    db.commit()
-    db.refresh(department)
-    return department
+    previous = department.status; department.status = status; db.flush()
+    record_audit(db, action="UPDATE_DEPARTMENT_STATUS", resource_type="DEPARTMENT", resource_id=str(department.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, metadata={"previous_status": previous, "new_status": status}, commit=False)
+    db.commit(); db.refresh(department); return department
