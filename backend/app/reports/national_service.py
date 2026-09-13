@@ -64,7 +64,7 @@ def build_national_report(db: Session, start_date: date, end_date: date, *, acto
         facilities.append(NationalFacilitySummary(facility_id=facility.id, facility_code=facility.facility_id, facility_name=facility.name, county=facility.county, encounters=int(facility_encounters), invoices=int(facility_invoice_totals[0]), billed=_money(facility_invoice_totals[1]), confirmed_payments=_money(facility_payments), claims=int(facility_claim_totals[0]), claims_amount=_money(facility_claim_totals[1]), claims_approved=approved, claims_paid=paid, claims_receivable=_money(max(approved - paid, Decimal("0")))))
 
     day_ago = datetime.now(timezone.utc) - timedelta(days=1)
-    open_encounters = db.scalar(select(func.count(Encounter.id)).where(Encounter.status == "OPEN", Facility.id == Encounter.facility_id, Facility.status == "ACTIVE")) or 0
+    open_encounters = db.scalar(select(func.count(Encounter.id)).join(Facility, Facility.id == Encounter.facility_id).where(Encounter.status == "OPEN", Facility.status == "ACTIVE")) or 0
     encounters_24h = db.scalar(select(func.count(Encounter.id)).join(Facility, Facility.id == Encounter.facility_id).where(Encounter.created_at >= day_ago, Facility.status == "ACTIVE")) or 0
     open_invoices = db.scalar(select(func.count(Invoice.id)).join(Facility, Facility.id == Invoice.facility_id).where(Invoice.status.in_(["OPEN", "PARTIAL", "ISSUED", "PENDING"]), Facility.status == "ACTIVE")) or 0
     pending_prescriptions = db.scalar(select(func.count(Prescription.id)).join(Encounter, Encounter.id == Prescription.encounter_id).join(Facility, Facility.id == Encounter.facility_id).where(Prescription.status.in_(["PENDING", "ACTIVE", "PRESCRIBED"]), Facility.status == "ACTIVE")) or 0
