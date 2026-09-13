@@ -5,8 +5,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_facility_context, require_permission
+from app.coverage.models import Payer, PayerPlan
 from app.coverage.permissions import COVERAGE_BENEFIT_WRITE, COVERAGE_READ, COVERAGE_WRITE
-from app.coverage.schemas import BenefitRuleCreate, BenefitRuleResponse, CoverageCreate, CoverageResponse
+from app.coverage.schemas import (
+    BenefitRuleCreate,
+    BenefitRuleResponse,
+    CoverageCreate,
+    CoverageResponse,
+    PayerPlanResponse,
+    PayerResponse,
+)
 from app.coverage.service import create_benefit_rule, create_coverage, get_active_coverage
 from app.database import get_db
 from app.patients.models import PatientFacility
@@ -27,6 +35,35 @@ def _require_patient_enrolled(db: Session, person_id: UUID, facility_id: UUID) -
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PATIENT_NOT_IN_FACILITY")
 
 
+@router.get("/payers", response_model=list[PayerResponse])
+def list_payers(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission(COVERAGE_READ)),
+    __: UUID = Depends(get_facility_context),
+) -> list[PayerResponse]:
+    """List active payers (AFYASYNC, SHA, CASH, others)."""
+    return list(db.scalars(select(Payer).where(Payer.status == "ACTIVE").order_by(Payer.code)))
+
+
+@router.get("/payers/{payer_id}/plans", response_model=list[PayerPlanResponse])
+def list_payer_plans(
+    payer_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission(COVERAGE_READ)),
+    __: UUID = Depends(get_facility_context),
+) -> list[PayerPlanResponse]:
+    payer = db.get(Payer, payer_id)
+    if payer is None or payer.status != "ACTIVE":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PAYER_NOT_FOUND")
+    return list(
+        db.scalars(
+            select(PayerPlan)
+            .where(PayerPlan.payer_id == payer_id, PayerPlan.status == "ACTIVE")
+            .order_by(PayerPlan.code)
+        )
+    )
+
+
 @router.post("", response_model=CoverageResponse, status_code=status.HTTP_201_CREATED)
 def add_coverage(
     payload: CoverageCreate,
@@ -34,7 +71,6 @@ def add_coverage(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(COVERAGE_WRITE)),
 ) -> CoverageResponse:
-    # Staff may only register coverage for patients enrolled at their facility
     _require_patient_enrolled(db, payload.person_id, facility_id)
     try:
         coverage = create_coverage(db, payload, actor_user_id=user.id)
@@ -58,7 +94,6 @@ def active_coverage_self(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[CoverageResponse]:
-    """Patient may view only their own active coverage."""
     if user.person_id != person_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="COVERAGE_ACCESS_DENIED")
     return get_active_coverage(db, person_id)
@@ -71,7 +106,6 @@ def active_coverage_for_facility(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(COVERAGE_READ)),
 ) -> list[CoverageResponse]:
-    """Staff may view coverage for patients enrolled at their facility."""
     _require_patient_enrolled(db, person_id, facility_id)
     return get_active_coverage(db, person_id)
 
