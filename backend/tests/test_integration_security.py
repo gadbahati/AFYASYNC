@@ -1,10 +1,11 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 
 from app.integrations.adapters import HttpJsonAdapter, build_adapter
-from app.integrations.service import IntegrationError, _validate_configuration, update_integration_configuration
+from app.integrations.service import IntegrationError, _validate_configuration, queue_transaction, update_integration_configuration
 
 
 def test_integration_configuration_rejects_persisted_secret() -> None:
@@ -45,3 +46,22 @@ def test_configuration_changes_require_suspension() -> None:
             reason="Operational change",
             actor_user_id="user",
         )
+
+
+def test_queue_rejects_non_outbound_transaction() -> None:
+    integration = SimpleNamespace(id=uuid4(), facility_id=uuid4(), status="ACTIVE")
+    db = MagicMock()
+    db.scalar.return_value = integration
+
+    with pytest.raises(IntegrationError, match="OUTBOUND_TRANSACTION_REQUIRED"):
+        queue_transaction(db, integration.facility_id, integration.id, "TX-1", "CLAIM", uuid4(), "INBOUND", None)
+
+
+def test_queue_rejects_entity_from_another_facility() -> None:
+    facility_id = uuid4()
+    integration = SimpleNamespace(id=uuid4(), facility_id=facility_id, status="ACTIVE")
+    db = MagicMock()
+    db.scalar.side_effect = [integration, None]
+
+    with pytest.raises(IntegrationError, match="ENTITY_NOT_FOUND_OR_FACILITY_MISMATCH"):
+        queue_transaction(db, facility_id, integration.id, "TX-2", "PAYMENT", uuid4(), "OUTBOUND", None)
