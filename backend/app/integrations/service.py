@@ -10,7 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
+from app.billing.models import Invoice, Payment
+from app.claims.models import Claim
+from app.coverage.models import Payer
 from app.integrations.models import Integration, IntegrationTransaction
+from app.preauthorizations.models import PreAuthorization
 
 
 class IntegrationError(ValueError):
@@ -24,6 +28,7 @@ _ALLOWED_STATUS_TRANSITIONS = {
     "INACTIVE": {"ACTIVE"},
 }
 _SENSITIVE_CONFIG_KEYS = {"secret", "callback_secret", "password", "token", "api_key", "apikey", "private_key", "client_secret"}
+_ALLOWED_OUTBOUND_ENTITY_TYPES = {"CLAIM", "PAYMENT", "PREAUTHORIZATION"}
 
 
 def _validate_configuration(configuration: dict) -> dict:
@@ -100,6 +105,19 @@ def update_integration_configuration(db: Session, integration_id: UUID, facility
     return integration
 
 
+def _validate_outbound_entity(db: Session, facility_id: UUID, entity_type: str, entity_id: UUID) -> None:
+    if entity_type == "CLAIM":
+        exists = db.scalar(select(Claim.id).join(Invoice, Invoice.id == Claim.invoice_id).where(Claim.id == entity_id, Invoice.facility_id == facility_id))
+    elif entity_type == "PAYMENT":
+        exists = db.scalar(select(Payment.id).where(Payment.id == entity_id, Payment.facility_id == facility_id))
+    elif entity_type == "PREAUTHORIZATION":
+        exists = db.scalar(select(PreAuthorization.id).where(PreAuthorization.id == entity_id, PreAuthorization.facility_id == facility_id))
+    else:
+        raise IntegrationError("UNSUPPORTED_OUTBOUND_ENTITY")
+    if exists is None:
+        raise IntegrationError("ENTITY_NOT_FOUND_OR_FACILITY_MISMATCH")
+
+
 def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, transaction_id: str, entity_type: str, entity_id: UUID | None, direction: str, request_reference: str | None, *, commit: bool = False) -> IntegrationTransaction:
     integration = db.scalar(select(Integration).where(Integration.id == integration_id, Integration.facility_id == facility_id).with_for_update())
     if integration is None:
@@ -109,10 +127,16 @@ def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, tran
     normalized_transaction_id = transaction_id.strip()
     if not normalized_transaction_id:
         raise IntegrationError("TRANSACTION_ID_REQUIRED")
+    normalized_entity_type = entity_type.strip().upper()
+    if direction.strip().upper() != "OUTBOUND":
+        raise IntegrationError("OUTBOUND_TRANSACTION_REQUIRED")
+    if normalized_entity_type not in _ALLOWED_OUTBOUND_ENTITY_TYPES or entity_id is None:
+        raise IntegrationError("UNSUPPORTED_OUTBOUND_ENTITY")
+    _validate_outbound_entity(db, facility_id, normalized_entity_type, entity_id)
     existing = db.scalar(select(IntegrationTransaction).where(IntegrationTransaction.integration_id == integration_id, IntegrationTransaction.transaction_id == normalized_transaction_id).limit(1))
     if existing is not None:
         return existing
-    transaction = IntegrationTransaction(integration_id=integration_id, transaction_id=normalized_transaction_id, entity_type=entity_type.strip().upper(), entity_id=entity_id, direction=direction, request_reference=request_reference, status="PENDING", attempt_count=0, response_data={})
+    transaction = IntegrationTransaction(integration_id=integration_id, transaction_id=normalized_transaction_id, entity_type=normalized_entity_type, entity_id=entity_id, direction="OUTBOUND", request_reference=request_reference, status="PENDING", attempt_count=0, response_data={})
     db.add(transaction)
     db.flush()
     if commit:
