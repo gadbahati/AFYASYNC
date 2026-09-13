@@ -16,6 +16,19 @@ services:
       retries: 10
       start_period: 10s
 
+  migrate:
+    build: ./backend
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-afasync}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-afasync}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build: ./backend
     environment:
@@ -23,11 +36,25 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-afasync}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-afasync}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: ./backend
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-afasync}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-afasync}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-5}
+    command: ["python", "-m", "app.integrations.worker_runner"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:
