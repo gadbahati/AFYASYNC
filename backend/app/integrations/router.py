@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
 from app.billing.service import BillingError, process_payment_callback
-from app.claims.service import ClaimsError, process_payer_callback
+from app.claims.integration_callback import process_claim_payer_callback
+from app.claims.service import ClaimsError
 from app.database import get_db
 from app.integrations.models import Integration
 from app.integrations.preauthorization_callback import PreAuthorizationCallbackError, process_preauthorization_callback
@@ -71,11 +72,23 @@ def preauthorization_callback(integration_id: UUID, authorization_id: UUID, payl
 def payer_callback(integration_id: UUID, claim_id: UUID, payload: PayerCallbackCreate, db: Session = Depends(get_db), x_afasync_timestamp: str = Header(..., alias="X-AfyaSync-Timestamp"), x_afasync_signature: str = Header(..., alias="X-AfyaSync-Signature")):
     try:
         integration = db.get(Integration, integration_id)
-        if integration is None: raise IntegrationError("INTEGRATION_NOT_FOUND")
+        if integration is None:
+            raise IntegrationError("INTEGRATION_NOT_FOUND")
         verify_callback_signature(integration, x_afasync_timestamp, x_afasync_signature, payload.model_dump(mode="json"))
-        claim = process_payer_callback(db, integration.facility_id, integration_id, claim_id, payload.status, payload.response_code, payload.response_message, payload.external_reference, payload.approved_amount, actor_user_id=None)
-        return {"claim_id": claim.id, "claim_number": claim.claim_id, "status": claim.status, "approved_amount": claim.approved_amount, "paid_amount": claim.paid_amount}
-    except (IntegrationError, ClaimsError) as exc: raise _error(exc) from exc
+        claim, duplicate = process_claim_payer_callback(
+            db,
+            facility_id=integration.facility_id,
+            integration_id=integration_id,
+            claim_id=claim_id,
+            status=payload.status,
+            response_code=payload.response_code,
+            response_message=payload.response_message,
+            external_reference=payload.external_reference,
+            approved_amount=payload.approved_amount,
+        )
+        return {"claim_id": claim.id, "claim_number": claim.claim_id, "status": claim.status, "approved_amount": claim.approved_amount, "paid_amount": claim.paid_amount, "duplicate": duplicate}
+    except (IntegrationError, ClaimsError) as exc:
+        raise _error(exc) from exc
 
 
 @router.post("/{integration_id}/payments/{payment_id}/callback", response_model=dict)
