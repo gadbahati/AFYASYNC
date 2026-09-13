@@ -41,6 +41,24 @@ class TransactionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TransactionMonitorOut(BaseModel):
+    id: UUID
+    integration_id: UUID
+    transaction_id: str
+    entity_type: str
+    entity_id: UUID | None
+    direction: str
+    request_reference: str | None
+    status: str
+    attempt_count: int
+    last_attempt_at: object | None
+    external_reference: str | None
+    response_code: str | None
+    created_at: object
+    updated_at: object
+    model_config = {"from_attributes": True}
+
+
 class PayerCallbackCreate(BaseModel):
     status: str = Field(min_length=2, max_length=30)
     response_code: str | None = Field(default=None, max_length=80)
