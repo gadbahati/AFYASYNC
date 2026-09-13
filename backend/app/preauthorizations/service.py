@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
@@ -34,14 +35,19 @@ def _coverage(db: Session, patient_id: UUID, coverage_id: UUID, payer_id: UUID) 
     return coverage
 
 
-def request_preauthorization(db: Session, *, facility_id: UUID, actor_user_id: UUID, payload) -> PreAuthorization:
+def request_preauthorization(db: Session, *, facility_id: UUID, actor_user_id: UUID, payload, idempotency_key: str | None = None) -> PreAuthorization:
+    if idempotency_key:
+        existing = db.scalar(select(PreAuthorization).where(PreAuthorization.facility_id == facility_id, PreAuthorization.idempotency_key == idempotency_key))
+        if existing is not None:
+            return existing
+
     membership = db.scalar(select(PatientFacility.id).where(PatientFacility.patient_id == payload.patient_id, PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE"))
     if membership is None:
         raise PreAuthorizationError("PATIENT_NOT_IN_FACILITY")
 
     coverage = _coverage(db, payload.patient_id, payload.coverage_id, payload.payer_id)
     try:
-        eligibility = check_coverage_eligibility(db, patient_id=payload.patient_id, coverage_id=coverage.id, service_code=payload.requested_services[0] if payload.requested_services else None, service_type=payload.department)
+        eligibility = check_coverage_eligibility(db, patient_id=payload.patient_id, coverage_id=coverage.id, service_code=payload.requested_services[0] if payload.requested_services else None, service_type=payload.department, actor_user_id=actor_user_id, facility_id=facility_id)
     except EligibilityError as exc:
         raise PreAuthorizationError(str(exc)) from exc
     if not eligibility.get("eligible"):
@@ -72,10 +78,19 @@ def request_preauthorization(db: Session, *, facility_id: UUID, actor_user_id: U
         department=payload.department,
         requested_services=payload.requested_services,
         requested_amount=payload.requested_amount,
+        idempotency_key=idempotency_key,
         status="PENDING",
     )
     db.add(authorization)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        if idempotency_key:
+            existing = db.scalar(select(PreAuthorization).where(PreAuthorization.facility_id == facility_id, PreAuthorization.idempotency_key == idempotency_key))
+            if existing is not None:
+                return existing
+        raise PreAuthorizationError("PREAUTHORIZATION_CREATE_FAILED") from exc
     record_audit(db, action="REQUEST_PREAUTHORIZATION", resource_type="PREAUTHORIZATION", resource_id=str(authorization.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=payload.patient_id, metadata={"authorization_number": authorization.authorization_number, "care_setting": payload.care_setting, "benefit_package_code": payload.benefit_package_code, "benefit_rule_id": str(eligibility["benefit_rule_id"])}, commit=False)
     db.commit()
     db.refresh(authorization)
