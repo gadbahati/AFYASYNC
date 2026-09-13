@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -64,6 +65,25 @@ def create_facility(
 def list_facilities(db: Session, limit: int = 50) -> list[Facility]:
     limit = min(max(limit, 1), 100)
     return list(db.scalars(select(Facility).order_by(Facility.name).limit(limit)))
+
+
+def list_network_facilities(
+    db: Session,
+    *,
+    limit: int = 100,
+    status_filter: str | None = None,
+    county: str | None = None,
+) -> list[Facility]:
+    """List facilities for explicitly privileged national network operations."""
+    limit = min(max(limit, 1), 200)
+    stmt = select(Facility).order_by(Facility.name)
+    if status_filter:
+        if status_filter not in _ALLOWED_FACILITY_STATUSES:
+            raise ValueError("INVALID_FACILITY_STATUS")
+        stmt = stmt.where(Facility.status == status_filter)
+    if county:
+        stmt = stmt.where(func.lower(Facility.county) == county.strip().lower())
+    return list(db.scalars(stmt.limit(limit)))
 
 
 def get_facility(db: Session, facility_id: UUID) -> Facility | None:
