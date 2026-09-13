@@ -94,10 +94,7 @@ export function Layout() {
             <span className="topbar-kicker">AfyaSync national health platform</span>
             <span className="topbar-title">Facility operations</span>
           </div>
-          <div className="topbar-status" title="The interface is connected to the configured AfyaSync API">
-            <span className="status-dot" aria-hidden="true" />
-            API connected
-          </div>
+          <div className="topbar-context">{auth.facilityName || "Facility workspace"}</div>
         </header>
         <div className="content-inner">
           <Outlet />
