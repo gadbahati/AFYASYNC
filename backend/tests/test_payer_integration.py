@@ -27,16 +27,15 @@ def test_payer_callback_updates_integration_transaction_and_claim() -> None:
     db.scalar.side_effect = [integration, claim, invoice, transaction, None]
     db.get.return_value = payer
 
-    with patch("app.claims.service.record_payer_response", return_value=claim) as record_response:
-        with patch("app.claims.integration_callback.record_payer_response", return_value=claim):
-            result = process_payer_callback(db, facility_id, integration_id, claim_id, "ACCEPTED", "200", "Accepted by payer", "PAYER-12345", Decimal("125.00"))
+    with patch("app.claims.integration_callback.record_payer_response", return_value=claim) as record_response:
+        result = process_payer_callback(db, facility_id, integration_id, claim_id, "ACCEPTED", "200", "Accepted by payer", "PAYER-12345", Decimal("125.00"))
 
     assert result is claim
     assert transaction.status == "SUCCEEDED"
     assert transaction.external_reference == "PAYER-12345"
     assert transaction.response_code == "200"
     assert transaction.response_data["status"] == "ACCEPTED"
-    record_response.assert_not_called()
+    record_response.assert_called_once()
 
 
 def test_duplicate_payer_callback_is_rejected_before_claim_mutation() -> None:
@@ -48,7 +47,7 @@ def test_duplicate_payer_callback_is_rejected_before_claim_mutation() -> None:
     claim = SimpleNamespace(id=claim_id, claim_id="CLM-DUP", invoice_id=uuid4(), patient_id=uuid4(), payer_id=payer.id, status="SUBMITTED")
     invoice = SimpleNamespace(id=claim.invoice_id, facility_id=facility_id)
     transaction = SimpleNamespace(id=uuid4(), integration_id=integration_id, entity_type="CLAIM", entity_id=claim_id, direction="OUTBOUND", request_reference=claim.claim_id, status="PENDING")
-    duplicate = SimpleNamespace(id=uuid4())
+    duplicate = SimpleNamespace(id=uuid4(), status="ACCEPTED", response_code=None)
     db = MagicMock()
     db.scalar.side_effect = [integration, claim, invoice, transaction, duplicate]
     db.get.return_value = payer
@@ -66,7 +65,7 @@ def test_payer_callback_rejects_cross_facility_integration() -> None:
     db = MagicMock()
     db.scalar.return_value = None
 
-    with pytest.raises(ClaimsError, match="INTEGRATION_NOT_FOUND"):
+    with pytest.raises(IntegrationError, match="INTEGRATION_NOT_FOUND"):
         process_payer_callback(db, facility_id, integration.id, uuid4(), "ACCEPTED", None, None, "PAYER-X", Decimal("10.00"))
 
 
