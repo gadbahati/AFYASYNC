@@ -4,8 +4,11 @@ from app.reports.national_intelligence_schemas import NationalIntelligenceAlert
 
 def test_intelligence_severity_bands_are_ordered():
     assert _severity(0) == "LOW"
+    assert _severity(19) == "LOW"
     assert _severity(20) == "MEDIUM"
+    assert _severity(44) == "MEDIUM"
     assert _severity(45) == "HIGH"
+    assert _severity(69) == "HIGH"
     assert _severity(70) == "CRITICAL"
 
 
@@ -21,12 +24,20 @@ def test_intelligence_trend_calculates_change_and_direction():
     assert trend.direction == "UP"
 
 
-def test_intelligence_trend_handles_zero_baseline():
+def test_intelligence_trend_handles_zero_baseline_as_new_activity():
     trend = _trend("claims", "Claims", 4, 0)
-    assert trend.change_percent == 100.0
+    assert trend.change_percent is None
     assert trend.direction == "UP"
+    assert "new in the current period" in trend.interpretation
+
+
+def test_intelligence_trend_handles_zero_activity_as_flat():
+    trend = _trend("claims", "Claims", 0, 0)
+    assert trend.change_percent is None
+    assert trend.direction == "FLAT"
 
 
 def test_intelligence_trend_is_flat_for_small_change():
     trend = _trend("claims", "Claims", 100.5, 100)
     assert trend.direction == "FLAT"
+    assert trend.change_percent == 0.5
