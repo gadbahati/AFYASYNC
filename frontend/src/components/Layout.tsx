@@ -2,53 +2,106 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { KenyaFlag } from "./KenyaFlag";
 
+const navGroups = [
+  {
+    label: "Overview",
+    links: [
+      ["/", "Dashboard"],
+      ["/command-centre", "Command centre"],
+      ["/coverage-simulator", "Coverage simulator"],
+    ],
+  },
+  {
+    label: "Patients & care",
+    links: [
+      ["/patients", "Patient register"],
+      ["/patients/new", "Register patient"],
+      ["/patients/sha-lookup", "Coverage lookup"],
+      ["/appointments", "Appointments"],
+      ["/queue", "Clinical queue"],
+      ["/referrals", "Referrals"],
+    ],
+  },
+  {
+    label: "Clinical services",
+    links: [
+      ["/laboratory", "Laboratory"],
+      ["/pharmacy", "Pharmacy"],
+      ["/benefits", "Benefit packages"],
+    ],
+  },
+  {
+    label: "Revenue & financing",
+    links: [
+      ["/billing", "Billing"],
+      ["/claims", "Claims & rework"],
+    ],
+  },
+] as const;
+
 export function Layout() {
   const auth = useAuth();
+
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand brand-row">
           <KenyaFlag />
           <div>
             <strong>AfyaSync</strong>
-            <span className="muted">Staff console</span>
+            <span className="muted">Health platform</span>
           </div>
         </div>
+
+        <div className="facility-context">
+          <span className="facility-context-label">Current facility</span>
+          <strong>{auth.facilityName || "No facility selected"}</strong>
+        </div>
+
         <nav>
-          <div className="nav-section">Overview</div>
-          <NavLink to="/" end>Dashboard</NavLink>
-          <NavLink to="/command-centre">Command centre</NavLink>
-          <NavLink to="/coverage-simulator">Coverage simulator</NavLink>
-
-          <div className="nav-section">Patients</div>
-          <NavLink to="/patients">Patient register</NavLink>
-          <NavLink to="/patients/new">Register patient</NavLink>
-          <NavLink to="/patients/sha-lookup">SHA lookup</NavLink>
-
-          <div className="nav-section">Clinical</div>
-          <NavLink to="/appointments">Appointments</NavLink>
-          <NavLink to="/queue">Queue</NavLink>
-          <NavLink to="/benefits">Benefit packages</NavLink>
-
-          <div className="nav-section">Laboratory & pharmacy</div>
-          <NavLink to="/laboratory">Laboratory</NavLink>
-          <NavLink to="/pharmacy">Pharmacy</NavLink>
-
-          <div className="nav-section">Finance</div>
-          <NavLink to="/billing">Billing</NavLink>
-          <NavLink to="/claims">Claims</NavLink>
-
-          <div className="nav-section">Movement</div>
-          <NavLink to="/referrals">Referrals</NavLink>
+          {navGroups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <div className="nav-section">{group.label}</div>
+              {group.links.map(([to, label]) => (
+                <NavLink key={to} to={to} end={to === "/"}>
+                  <span className="nav-dot" aria-hidden="true" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          ))}
         </nav>
+
         <div className="sidebar-footer">
-          <div className="muted small">{auth.username}</div>
-          <div className="small">{auth.facilityName || "No facility"}</div>
-          <button type="button" className="linkish" onClick={() => void auth.logout()}>Sign out</button>
+          <div className="user-context">
+            <span className="user-avatar" aria-hidden="true">
+              {(auth.username || "U").slice(0, 1).toUpperCase()}
+            </span>
+            <div>
+              <strong>{auth.username || "Staff user"}</strong>
+              <span className="muted small">Authenticated staff</span>
+            </div>
+          </div>
+          <button type="button" className="linkish signout" onClick={() => void auth.logout()}>
+            Sign out
+          </button>
         </div>
       </aside>
+
       <main className="content">
-        <Outlet />
+        <header className="topbar">
+          <div>
+            <span className="topbar-kicker">AfyaSync national health platform</span>
+            <span className="topbar-title">Facility operations</span>
+          </div>
+          <div className="topbar-status" title="The interface is connected to the configured AfyaSync API">
+            <span className="status-dot" aria-hidden="true" />
+            API connected
+          </div>
+        </header>
+        <div className="content-inner">
+          <Outlet />
+        </div>
       </main>
     </div>
   );
