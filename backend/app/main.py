@@ -37,6 +37,8 @@ from app.maternity import models as maternity_models
 from app.maternity.router import router as maternity_router
 from app.child_health import models as child_health_models
 from app.child_health.router import router as child_health_router
+from app.blood_bank import models as blood_bank_models
+from app.blood_bank.router import router as blood_bank_router
 from app.notifications import models as notification_models
 from app.notifications.router import router as notifications_router
 from app.nursing import models as nursing_models
@@ -60,7 +62,7 @@ from app.radiology import models as radiology_models
 from app.radiology.router import router as radiology_router
 from app.theatre import models as theatre_models
 from app.theatre.router import router as theatre_router
-_=(patient_models,coverage_models,facility_models,rbac_models,appointment_models,encounter_models,clinical_models,laboratory_models,pharmacy_models,billing_models,claims_models,integration_models,audit_models,referral_models,notification_models,auth_models,benefit_models,admission_models,preauthorization_models,emergency_models,nursing_models,ward_models,PatientMovement,radiology_models,theatre_models,maternity_models,child_health_models)
+_=(patient_models,coverage_models,facility_models,rbac_models,appointment_models,encounter_models,clinical_models,laboratory_models,pharmacy_models,billing_models,claims_models,integration_models,audit_models,referral_models,notification_models,auth_models,benefit_models,admission_models,preauthorization_models,emergency_models,nursing_models,ward_models,PatientMovement,radiology_models,theatre_models,maternity_models,child_health_models,blood_bank_models)
 app=FastAPI(title=settings.app_name,version=settings.app_version,description="AfyaSync healthcare platform API")
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
  async def dispatch(self,request:Request,call_next):
@@ -75,7 +77,7 @@ def initialize_database():
   with SessionLocal() as db:
    try: ensure_demo_admin(db)
    except Exception: db.rollback()
-app.include_router(auth_router.router);app.include_router(patients_router);app.include_router(coverage_router);app.include_router(benefits_router);app.include_router(admissions_router);app.include_router(preauthorizations_router);app.include_router(emergency_router);app.include_router(nursing_router);app.include_router(wards_router);app.include_router(ward_movement_router);app.include_router(radiology_router);app.include_router(theatre_router);app.include_router(maternity_router);app.include_router(child_health_router);app.include_router(facilities_router);app.include_router(appointments_router);app.include_router(encounters_router);app.include_router(clinical_router);app.include_router(laboratory_router);app.include_router(pharmacy_router);app.include_router(billing_router);app.include_router(claims_router);app.include_router(integrations_router);app.include_router(referrals_router);app.include_router(notifications_router);app.include_router(portal_router);app.include_router(reports_router)
+app.include_router(auth_router.router);app.include_router(patients_router);app.include_router(coverage_router);app.include_router(benefits_router);app.include_router(admissions_router);app.include_router(preauthorizations_router);app.include_router(emergency_router);app.include_router(nursing_router);app.include_router(wards_router);app.include_router(ward_movement_router);app.include_router(radiology_router);app.include_router(theatre_router);app.include_router(maternity_router);app.include_router(child_health_router);app.include_router(blood_bank_router);app.include_router(facilities_router);app.include_router(appointments_router);app.include_router(encounters_router);app.include_router(clinical_router);app.include_router(laboratory_router);app.include_router(pharmacy_router);app.include_router(billing_router);app.include_router(claims_router);app.include_router(integrations_router);app.include_router(referrals_router);app.include_router(notifications_router);app.include_router(portal_router);app.include_router(reports_router)
 @app.get("/health",tags=["System"])
 def health_check(): return {"success":True,"data":{"service":"afasync-api","status":"healthy","environment":settings.environment,"version":settings.app_version},"message":"AfyaSync API is running"}
 @app.get("/ready",tags=["System"])
