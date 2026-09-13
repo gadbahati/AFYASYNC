@@ -35,9 +35,14 @@ export function PatientsPage() {
       <header className="page-header">
         <div>
           <h1>Patients</h1>
-          <p className="muted">Facility-scoped active enrollments ({total})</p>
+          <p className="muted">
+            Facility-scoped enrollments ({total}). Standalone registration always works. SHA members use lookup — no forced AfyaSync membership.
+          </p>
         </div>
-        <Link className="button" to="/patients/new">Register patient</Link>
+        <div className="actions">
+          <Link className="button secondary" to="/patients/sha-lookup">SHA member lookup</Link>
+          <Link className="button" to="/patients/new">Register patient</Link>
+        </div>
       </header>
 
       {loading && <p>Loading patients…</p>}
