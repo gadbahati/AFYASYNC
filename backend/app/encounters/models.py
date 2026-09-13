@@ -16,6 +16,10 @@ class Encounter(Base):
     facility_id: Mapped[UUID] = mapped_column(ForeignKey("facilities.id", ondelete="RESTRICT"), index=True)
     department_id: Mapped[UUID] = mapped_column(ForeignKey("departments.id", ondelete="RESTRICT"), index=True)
     encounter_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # AFYASYNC = standalone membership/benefits; SHA = national scheme accepted without AfyaSync membership;
+    # CASH = self-pay; OTHER = third-party/other payer
+    coverage_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="CASH", index=True)
+    coverage_id: Mapped[UUID | None] = mapped_column(ForeignKey("coverage.id", ondelete="SET NULL"), nullable=True, index=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN", index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
