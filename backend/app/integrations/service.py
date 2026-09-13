@@ -3,7 +3,7 @@ import hmac
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -38,28 +38,10 @@ def _validate_configuration(configuration: dict) -> dict:
 
 def create_integration(db: Session, facility_id: UUID, name: str, integration_type: str, provider: str, configuration: dict) -> Integration:
     configuration = _validate_configuration(configuration)
-    integration = Integration(
-        facility_id=facility_id,
-        name=name.strip(),
-        integration_type=integration_type.strip().upper(),
-        provider=provider.strip().upper(),
-        configuration=configuration,
-        status="ACTIVE",
-    )
+    integration = Integration(facility_id=facility_id, name=name.strip(), integration_type=integration_type.strip().upper(), provider=provider.strip().upper(), configuration=configuration, status="ACTIVE")
     db.add(integration)
     db.commit()
     db.refresh(integration)
-    record_audit(
-        db,
-        action="CREATE_INTEGRATION",
-        resource_type="INTEGRATION",
-        resource_id=str(integration.id),
-        result="SUCCESS",
-        user_id=None,
-        facility_id=facility_id,
-        metadata={"integration_type": integration.integration_type, "provider": integration.provider},
-        commit=True,
-    )
     return integration
 
 
@@ -90,17 +72,7 @@ def update_integration_status(db: Session, integration_id: UUID, facility_id: UU
     previous = integration.status
     integration.status = target
     db.flush()
-    record_audit(
-        db,
-        action="UPDATE_INTEGRATION_STATUS",
-        resource_type="INTEGRATION",
-        resource_id=str(integration.id),
-        result="SUCCESS",
-        user_id=actor_user_id,
-        facility_id=facility_id,
-        metadata={"previous_status": previous, "new_status": target, "reason": reason},
-        commit=False,
-    )
+    record_audit(db, action="UPDATE_INTEGRATION_STATUS", resource_type="INTEGRATION", resource_id=str(integration.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, metadata={"previous_status": previous, "new_status": target, "reason": reason}, commit=False)
     db.commit()
     db.refresh(integration)
     return integration
@@ -115,7 +87,7 @@ def queue_transaction(db: Session, facility_id: UUID, integration_id: UUID, tran
     existing = db.scalar(select(IntegrationTransaction).where(IntegrationTransaction.integration_id == integration_id, IntegrationTransaction.transaction_id == transaction_id).limit(1))
     if existing is not None:
         return existing
-    transaction = IntegrationTransaction(integration_id=integration_id, transaction_id=transaction_id, entity_type=entity_type.strip().upper(), entity_id=entity_id, direction=direction, request_reference=request_reference, status="PENDING", attempt_count=0, response_data={})
+    transaction = IntegrationTransaction(integration_id=integration_id, transaction_id=transaction_id.strip(), entity_type=entity_type.strip().upper(), entity_id=entity_id, direction=direction, request_reference=request_reference, status="PENDING", attempt_count=0, response_data={})
     db.add(transaction)
     db.flush()
     if commit:
