@@ -4,6 +4,7 @@ services:
     runtime: docker
     rootDir: backend
     plan: free
+    preDeployCommand: alembic upgrade head
     healthCheckPath: /health
     envVars:
       - key: ENVIRONMENT
