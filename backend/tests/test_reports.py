@@ -14,7 +14,8 @@ def test_facility_report_aggregates_real_facility_scoped_metrics() -> None:
     db.scalar.side_effect = [12, 7, Decimal("1250.50"), Decimal("900.25")]
     db.execute.side_effect = [
         SimpleNamespace(one=lambda: (Decimal("2000.00"), Decimal("1200.00"), Decimal("800.00"))),
-        SimpleNamespace(one=lambda: (4, Decimal("1100.00"), Decimal("950.00"), Decimal("700.00"))),
+        SimpleNamespace(all=lambda: [("SUBMITTED", 4, Decimal("1100.00"), Decimal("950.00"), Decimal("700.00"))]),
+        SimpleNamespace(all=lambda: []),
     ]
 
     facility_id = uuid4()
@@ -32,6 +33,8 @@ def test_facility_report_aggregates_real_facility_scoped_metrics() -> None:
     assert result["claims_amount"] == Decimal("1100.00")
     assert result["claims_approved"] == Decimal("950.00")
     assert result["claims_paid"] == Decimal("700.00")
+    assert result["claims_receivable"] == Decimal("250.00")
+    assert result["claim_statuses"][0]["status"] == "SUBMITTED"
     db.commit.assert_called_once()
 
 
