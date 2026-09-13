@@ -17,6 +17,29 @@ services:
           name: afyasync-db
           property: connectionString
 
+  - type: worker
+    name: afyasync-worker
+    runtime: docker
+    rootDir: backend
+    plan: free
+    startCommand: python -m app.integrations.worker_runner
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: afyasync-api
+          envVarKey: JWT_SECRET
+      - key: DATABASE_URL
+        fromDatabase:
+          name: afyasync-db
+          property: connectionString
+      - key: CORS_ORIGINS
+        value: https://afyasync-web.onrender.com
+      - key: WORKER_POLL_SECONDS
+        value: "5"
+
   - type: web
     name: afyasync-web
     runtime: static
