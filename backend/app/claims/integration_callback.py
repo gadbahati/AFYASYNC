@@ -108,12 +108,12 @@ def process_claim_payer_callback(
         raise ClaimsError("APPROVED_AMOUNT_REQUIRED")
     if status == "REJECTED" and approved_amount not in (None, Decimal("0.00")):
         raise ClaimsError("REJECTED_AMOUNT_MUST_BE_ZERO")
-    if status == "ACCEPTED" and approved_amount == Decimal("0.00"):
-        raise ClaimsError("INVALID_APPROVED_AMOUNT")
-    if status == "PAID" and approved_amount == Decimal("0.00"):
+    if status in {"ACCEPTED", "PAID"} and approved_amount == Decimal("0.00"):
         raise ClaimsError("INVALID_APPROVED_AMOUNT")
 
-    transaction.status = "SUCCEEDED" if status in {"ACCEPTED", "PARTIALLY_PAID", "PAID"} else "FAILED" if status == "REJECTED" else "PENDING"
+    # A valid payer rejection is a successful transport/callback outcome, not
+    # a failed integration transaction. The business rejection lives on Claim.
+    transaction.status = "SUCCEEDED"
     transaction.external_reference = external_reference
     transaction.response_code = response_code
     transaction.response_data = {
