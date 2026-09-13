@@ -38,3 +38,6 @@ class ImagingReport(Base):
     findings: Mapped[str] = mapped_column(Text)
     impression: Mapped[str | None] = mapped_column(Text)
     reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reviewed_by: Mapped[UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    report_status: Mapped[str] = mapped_column(String(30), default="FINAL")
