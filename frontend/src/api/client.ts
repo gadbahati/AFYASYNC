@@ -14,7 +14,7 @@ const DEMO_LAB_TESTS: LabTest[] = [
   { id: "lt1", code: "FBC", name: "Full Blood Count", description: "Haematology profile including haemoglobin, white cell count and platelet count.", category: "Haematology", sample_type: "EDTA blood", price: 500, status: "ACTIVE" },
   { id: "lt2", code: "MALARIA-RDT", name: "Malaria Rapid Diagnostic Test", description: "Rapid screening for malaria infection from a blood specimen.", category: "Parasitology", sample_type: "Whole blood", price: 300, status: "ACTIVE" },
   { id: "lt3", code: "RBS", name: "Random Blood Sugar", description: "Blood glucose measurement used for assessment of glycaemic status.", category: "Chemistry", sample_type: "Fluoride blood", price: 250, status: "ACTIVE" },
-  { id: "lt4", code: "URINALYSIS", name: "Urinalysis", description: "Routine physical, chemical and microscopic examination of urine.", category: "Clinical Chemistry", sample_type: "Urine", price: 350, status: "ACTIVE" },
+  { id: "lt4", code: "URINALYSIS", name: "Urinalysis", description: "Routine physical, chemical and microscopic examination of urine.", category: "Clinical Chemistry", sample_type: "Serum", price: 350, status: "ACTIVE" },
   { id: "lt5", code: "WIDAL", name: "Widal Test", description: "Serological test for antibodies associated with enteric fever; interpret with clinical findings.", category: "Serology", sample_type: "Serum", price: 400, status: "ACTIVE" },
 ];
 export const api = {
@@ -60,4 +60,19 @@ export const api = {
   listQueues() { if (isDemoMode()) return Promise.resolve([{ id: "queue1", facility_id: "f1", department_id: "d1", name: "OPD queue", status: "ACTIVE" } satisfies Queue]); return request<Queue[]>("/api/v1/appointments/queues"); },
   listQueueEntries(queueId?: string) { if (isDemoMode()) return Promise.resolve(DEMO_QUEUE_ENTRIES); return request<QueueEntry[]>(`/api/v1/appointments/queues/entries${queueId ? `?queue_id=${queueId}` : ""}`); },
   updateQueueEntryStatus(entryId: string, newStatus: string) { if (isDemoMode()) { const entry = DEMO_QUEUE_ENTRIES.find((e) => e.id === entryId); if (!entry) return Promise.reject(new ApiError(404, "QUEUE_ENTRY_NOT_FOUND")); entry.status = newStatus; return Promise.resolve(entry); } return request<QueueEntry>(`/api/v1/appointments/queues/entries/${entryId}/${newStatus}`, { method: "PATCH" }); },
+  // Pharmacy
+  listMedications() { if (isDemoMode()) return Promise.resolve([]); return request<Array<{ id: string; code: string; name: string; strength: string | null; form: string | null; status: string }>>("/api/v1/pharmacy/medications"); },
+  createMedication(payload: { code: string; name: string; strength?: string | null; form?: string | null; generic_name?: string | null; unit?: string | null }) { return request("/api/v1/pharmacy/medications", { method: "POST", body: JSON.stringify(payload) }); },
+  listPharmacyInventory() { if (isDemoMode()) return Promise.resolve([]); return request<Array<{ id: string; facility_id: string; medication_id: string; current_quantity: number; minimum_quantity: number; status: string }>>("/api/v1/pharmacy/inventory"); },
+  listPrescriptions(status?: string) { if (isDemoMode()) return Promise.resolve([]); const q = status ? `?status=${encodeURIComponent(status)}` : ""; return request<Array<{ id: string; prescription_id: string; encounter_id: string; patient_id: string; status: string; created_at: string }>>(`/api/v1/pharmacy/prescriptions${q}`); },
+  // Billing
+  listBillingServices() { if (isDemoMode()) return Promise.resolve([]); return request<Array<{ id: string; code: string; name: string; service_type: string; price: number; status: string }>>("/api/v1/billing/services"); },
+  createBillingService(payload: { code: string; name: string; service_type: string; price: number; department_id?: string | null }) { return request("/api/v1/billing/services", { method: "POST", body: JSON.stringify(payload) }); },
+  listInvoices() { if (isDemoMode()) return Promise.resolve([]); return request<Array<{ id: string; invoice_id: string; patient_id: string; encounter_id: string; total_amount: number; patient_amount: number; payer_amount: number; status: string }>>("/api/v1/billing/invoices"); },
+  recordPayment(payload: { invoice_id: string; amount: number; payment_method: string; provider?: string | null; external_reference?: string | null }) { return request("/api/v1/billing/payments", { method: "POST", body: JSON.stringify(payload) }); },
+  // Claims
+  listClaims() { if (isDemoMode()) return Promise.resolve([]); return request<Array<{ id: string; claim_id: string; invoice_id: string; payer_id: string; claim_amount: number; approved_amount: number; paid_amount: number; status: string }>>("/api/v1/claims"); },
+  createClaim(invoice_id: string) { return request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id }) }); },
+  validateClaim(claim_id: string) { return request<{ claim_id: string; valid: boolean; errors: string[] }>(`/api/v1/claims/${claim_id}/validate`, { method: "POST" }); },
+  submitClaim(claim_id: string) { return request<{ claim_id: string; status: string; message: string }>(`/api/v1/claims/${claim_id}/submit`, { method: "POST" }); },
 };
