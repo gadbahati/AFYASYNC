@@ -22,17 +22,21 @@ class NationalReferralItem(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
 
 
 class NationalReferralStatusCount(BaseModel):
     status: str
     count: int = Field(ge=0)
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class NationalReferralPriorityCount(BaseModel):
     priority: str
     count: int = Field(ge=0)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class NationalReferralResponse(BaseModel):
@@ -42,3 +46,5 @@ class NationalReferralResponse(BaseModel):
     offset: int = Field(ge=0, le=10000)
     status_counts: list[NationalReferralStatusCount]
     priority_counts: list[NationalReferralPriorityCount]
+
+    model_config = ConfigDict(extra="forbid")
