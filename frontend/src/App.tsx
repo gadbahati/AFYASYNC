@@ -11,6 +11,7 @@ import { CoverageSimulatorPage } from "./pages/CoverageSimulatorPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { IntegrationOperationsPage } from "./pages/IntegrationOperationsPage";
 import { ShaLookupPage } from "./pages/ShaLookupPage";
+import { SHAEligibilityPage } from "./pages/SHAEligibilityPage";
 import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
 import { PharmacyPage } from "./pages/PharmacyPage";
 import { EncounterDetailPage } from "./pages/EncounterDetailPage";
@@ -45,6 +46,7 @@ export default function App() {
       <Route path="/national-payers" element={<NationalPayerNetworkPage />} />
       <Route path="/national-benefits" element={<NationalBenefitConfigurationPage />} />
       <Route path="/coverage-simulator" element={<CoverageSimulatorPage />} />
+      <Route path="/coverage/sha-eligibility" element={<SHAEligibilityPage />} />
       <Route path="/integrations" element={<IntegrationOperationsPage />} />
       <Route path="/patients" element={<PatientsPage />} />
       <Route path="/patients/new" element={<NewPatientPage />} />
