@@ -44,7 +44,7 @@ class SupplyPlanningResponse(BaseModel):
     recommendations: list[SupplyReplenishmentRecommendation] = Field(default_factory=list, max_length=200)
     total_recommendations: int = Field(ge=0, le=200)
     generated_from_live_inventory: bool = True
-    input_rows_considered: int = Field(ge=0, le=50_000)
+    input_rows_considered: int = Field(default=0, ge=0, le=50_000)
     input_rows_truncated: bool = False
 
     @model_validator(mode="after")
