@@ -55,6 +55,7 @@ from app.notifications import models as notification_models
 from app.notifications.router import router as notifications_router
 from app.nursing import models as nursing_models
 from app.nursing.router import router as nursing_router
+from app.national_capacity.router import router as national_capacity_router
 from app.national_supply.router import router as national_supply_router
 from app.national_supply.planning_router import router as national_supply_planning_router
 from app.national_referrals.router import router as national_referrals_router
@@ -94,28 +95,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
- app.add_middleware(
-  CORSMiddleware,
-  allow_origins=_cors_origins,
-  allow_credentials=True,
-  allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allow_headers=[
-   "Authorization",
-   "Content-Type",
-   "Idempotency-Key",
-   "X-AfyaSync-Timestamp",
-   "X-AfyaSync-Signature",
-   "X-Request-ID",
-  ],
- )
+ app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"])
 app.add_middleware(SecurityHeadersMiddleware)
 
 @app.on_event("startup")
 def initialize_database():
- # Never use create_all against a migrated production schema (CITEXT / drift risk).
  if settings.environment != "production":
   Base.metadata.create_all(bind=engine)
- # One-shot universal admin: set SEED_UNIVERSAL_ADMIN=1 on Railway, redeploy once, then remove the flag.
  import os
  if os.getenv("SEED_UNIVERSAL_ADMIN", "").strip().lower() in {"1", "true", "yes"}:
   from app.scripts.seed_universal_admin import seed_universal_admin
@@ -165,42 +151,22 @@ app.include_router(interoperability_router)
 app.include_router(national_supply_router)
 app.include_router(national_supply_planning_router)
 app.include_router(national_referrals_router)
+app.include_router(national_capacity_router)
 
 @app.get("/health", tags=["System"])
 def health_check():
- return {
-  "success": True,
-  "data": {
-   "service": "afasync-api",
-   "status": "healthy",
-   "environment": settings.environment,
-   "version": settings.app_version,
-  },
-  "message": "AfyaSync API is running",
- }
+ return {"success": True, "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version}, "message": "AfyaSync API is running"}
 
 @app.get("/ready", tags=["System"])
 def readiness_check(response: Response):
  try:
   with SessionLocal() as db:
    db.execute(text("SELECT 1"))
-  return {
-   "success": True,
-   "data": {"service": "afasync-api", "status": "ready", "database": "ok"},
-   "message": "AfyaSync API is ready",
-  }
+  return {"success": True, "data": {"service": "afasync-api", "status": "ready", "database": "ok"}, "message": "AfyaSync API is ready"}
  except Exception:
   response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-  return {
-   "success": False,
-   "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"},
-   "message": "AfyaSync API is not ready",
-  }
+  return {"success": False, "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"}, "message": "AfyaSync API is not ready"}
 
 @app.get("/api/v1", tags=["System"])
 def api_root():
- return {
-  "success": True,
-  "data": {"name": settings.app_name, "version": settings.app_version},
-  "message": "AfyaSync API v1",
- }
+ return {"success": True, "data": {"name": settings.app_name, "version": settings.app_version}, "message": "AfyaSync API v1"}
