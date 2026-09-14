@@ -37,7 +37,7 @@ def test_production_requires_explicit_cors_origin() -> None:
     with pytest.raises(ValueError, match="CORS_ORIGINS"): _production(cors_origins="")
 
 def test_production_rejects_local_cors_origin() -> None:
-    with pytest.raises(ValueError, match="local development origins"): _production(cors_origins="http://localhost:5173")
+    with pytest.raises(ValueError, match="HTTPS origins"): _production(cors_origins="http://localhost:5173")
 
 def test_production_rejects_cors_path() -> None:
     with pytest.raises(ValueError, match="CORS_ORIGINS"): _production(cors_origins="https://app.example.com/path")
