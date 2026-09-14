@@ -5,9 +5,12 @@ from app.auth.dependencies import require_national_permission
 from app.database import get_db
 from app.patients.national_identity_schemas import NationalIdentityResolution
 from app.patients.national_identity_service import resolve_national_identity
+from app.patients.national_record_locator_schemas import NationalRecordLocatorRequest, NationalRecordLocatorResponse
+from app.patients.national_record_locator_service import locate_national_records
 from app.rbac.models import User
 
 NATIONAL_IDENTITY_READ = "identity.national.read"
+NATIONAL_RECORD_LOCATE = "records.national.locate"
 
 router = APIRouter(prefix="/api/v1/national/identity", tags=["National Identity"])
 
@@ -22,6 +25,26 @@ def resolve_identity(
     if identity is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "AFYA_ID_NOT_FOUND", "message": "No AfyaSync identity matched the supplied Afya ID."},
+            detail={"code": "AFYA_ID_NOT_FOUND", "message": "No active AfyaSync identity matched the supplied Afya ID."},
         )
     return identity
+
+
+@router.post("/locate", response_model=NationalRecordLocatorResponse)
+def locate_records(
+    payload: NationalRecordLocatorRequest,
+    user: User = Depends(require_national_permission(NATIONAL_RECORD_LOCATE)),
+    db: Session = Depends(get_db),
+) -> NationalRecordLocatorResponse:
+    result = locate_national_records(
+        db,
+        payload.afya_id,
+        access_reason=payload.access_reason,
+        actor_user_id=user.id,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "AFYA_ID_NOT_FOUND", "message": "No active AfyaSync record matched the supplied Afya ID."},
+        )
+    return result
