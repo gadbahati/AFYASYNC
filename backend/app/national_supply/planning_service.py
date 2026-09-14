@@ -6,35 +6,19 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.facilities.models import Facility
-from app.national_supply.planning_schemas import (
-    SupplyDonor,
-    SupplyPlanningResponse,
-    SupplyReplenishmentRecommendation,
-)
+from app.national_supply.planning_schemas import SupplyDonor, SupplyPlanningResponse, SupplyReplenishmentRecommendation
 from app.pharmacy.models import InventoryItem, Medication
 
 
-def get_supply_planning(
-    db: Session,
-    *,
-    actor_user_id: UUID,
-    county: str | None = None,
-    medication_code: str | None = None,
-    limit: int = 100,
-) -> SupplyPlanningResponse:
+def get_supply_planning(db: Session, *, actor_user_id: UUID, county: str | None = None, medication_code: str | None = None, limit: int = 100) -> SupplyPlanningResponse:
     limit = min(max(limit, 1), 200)
     county_value = county.strip() if county else None
     medication_value = medication_code.strip() if medication_code else None
-
     stmt = (
         select(InventoryItem, Facility, Medication)
         .join(Facility, Facility.id == InventoryItem.facility_id)
         .join(Medication, Medication.id == InventoryItem.medication_id)
-        .where(
-            Facility.status == "ACTIVE",
-            InventoryItem.status == "ACTIVE",
-            Medication.status == "ACTIVE",
-        )
+        .where(Facility.status == "ACTIVE", InventoryItem.status == "ACTIVE", Medication.status == "ACTIVE")
         .order_by(Facility.county.asc().nulls_last(), Facility.name.asc(), Medication.code.asc())
     )
     if county_value:
@@ -49,7 +33,7 @@ def get_supply_planning(
 
     recommendations: list[SupplyReplenishmentRecommendation] = []
     for medication_rows in grouped.values():
-        donors = []
+        donor_pool = []
         shortages = []
         for inventory, facility, medication in medication_rows:
             current = max(float(inventory.current_quantity or 0), 0.0)
@@ -57,25 +41,24 @@ def get_supply_planning(
             if current < minimum:
                 shortages.append((inventory, facility, medication, minimum - current))
             elif current > minimum:
-                donors.append((inventory, facility, medication, current - minimum))
+                donor_pool.append({"inventory": inventory, "facility": facility, "surplus": current - minimum})
+        donor_pool.sort(key=lambda value: (-value["surplus"], str(value["facility"].id)))
 
-        donors.sort(key=lambda value: (-value[3], str(value[1].id)))
         for inventory, facility, medication, shortage in shortages:
             remaining = shortage
             donor_views = []
-            for donor_inventory, donor_facility, _, surplus in donors:
-                if donor_facility.id == facility.id or remaining <= 0:
+            for donor in donor_pool:
+                if donor["facility"].id == facility.id or donor["surplus"] <= 0 or remaining <= 0:
                     continue
-                allocation = min(remaining, surplus)
-                if allocation <= 0:
-                    continue
+                allocation = min(remaining, donor["surplus"])
                 donor_views.append(SupplyDonor(
-                    facility_id=donor_facility.id,
-                    facility_code=donor_facility.facility_id,
-                    facility_name=donor_facility.name,
-                    county=donor_facility.county,
+                    facility_id=donor["facility"].id,
+                    facility_code=donor["facility"].facility_id,
+                    facility_name=donor["facility"].name,
+                    county=donor["facility"].county,
                     available_surplus=allocation,
                 ))
+                donor["surplus"] -= allocation
                 remaining -= allocation
                 if len(donor_views) == 10:
                     break
@@ -101,21 +84,5 @@ def get_supply_planning(
         if len(recommendations) >= limit:
             break
 
-    record_audit(
-        db,
-        action="VIEW_NATIONAL_SUPPLY_PLAN",
-        resource_type="NATIONAL_SUPPLY_PLAN",
-        result="SUCCESS",
-        user_id=actor_user_id,
-        metadata={
-            "county_filter": county_value,
-            "medication_code_filter": medication_value,
-            "limit": limit,
-            "returned": len(recommendations),
-        },
-        commit=True,
-    )
-    return SupplyPlanningResponse(
-        recommendations=recommendations,
-        total_recommendations=len(recommendations),
-    )
+    record_audit(db, action="VIEW_NATIONAL_SUPPLY_PLAN", resource_type="NATIONAL_SUPPLY_PLAN", result="SUCCESS", user_id=actor_user_id, metadata={"county_filter": county_value, "medication_code_filter": medication_value, "limit": limit, "returned": len(recommendations)}, commit=True)
+    return SupplyPlanningResponse(recommendations=recommendations, total_recommendations=len(recommendations))
