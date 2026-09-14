@@ -36,6 +36,7 @@ from app.facilities.router import router as facilities_router
 from app.insight.router import router as insight_router
 from app.integrations import models as integration_models
 from app.integrations.router import router as integrations_router
+from app.interoperability.router import router as interoperability_router
 from app.laboratory import models as laboratory_models
 from app.laboratory.router import router as laboratory_router
 from app.maternity import models as maternity_models
@@ -86,17 +87,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
   response.headers.setdefault("Referrer-Policy","no-referrer")
   response.headers.setdefault("Permissions-Policy","geolocation=(), microphone=(), camera=()")
   response.headers.setdefault("Cache-Control","no-store")
-  if settings.environment == "production":
-   response.headers.setdefault("Strict-Transport-Security","max-age=31536000; includeSubDomains")
+  if settings.environment == "production": response.headers.setdefault("Strict-Transport-Security","max-age=31536000; includeSubDomains")
   return response
 _cors_origins=settings.cors_origin_list()
 if _cors_origins: app.add_middleware(CORSMiddleware,allow_origins=_cors_origins,allow_credentials=True,allow_methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"],allow_headers=["Authorization","Content-Type","Idempotency-Key","X-AfyaSync-Timestamp","X-AfyaSync-Signature","X-Request-ID"])
 app.add_middleware(SecurityHeadersMiddleware)
 @app.on_event("startup")
 def initialize_database():
- if settings.environment!="production":
-  Base.metadata.create_all(bind=engine)
-app.include_router(auth_router.router);app.include_router(patients_router);app.include_router(national_identity_router);app.include_router(coverage_router);app.include_router(sha_eligibility_router);app.include_router(payer_network_router);app.include_router(benefits_router);app.include_router(admissions_router);app.include_router(preauthorizations_router);app.include_router(emergency_router);app.include_router(nursing_router);app.include_router(wards_router);app.include_router(ward_movement_router);app.include_router(radiology_router);app.include_router(theatre_router);app.include_router(maternity_router);app.include_router(child_health_router);app.include_router(blood_bank_router);app.include_router(patient_safety_router);app.include_router(dietetics_router);app.include_router(infection_control_router);app.include_router(facilities_router);app.include_router(appointments_router);app.include_router(encounters_router);app.include_router(clinical_router);app.include_router(laboratory_router);app.include_router(pharmacy_router);app.include_router(billing_router);app.include_router(claims_router);app.include_router(claim_preflight_router);app.include_router(integrations_router);app.include_router(referrals_router);app.include_router(notifications_router);app.include_router(portal_router);app.include_router(reports_router);app.include_router(insight_router)
+ if settings.environment!="production": Base.metadata.create_all(bind=engine)
+app.include_router(auth_router.router);app.include_router(patients_router);app.include_router(national_identity_router);app.include_router(coverage_router);app.include_router(sha_eligibility_router);app.include_router(payer_network_router);app.include_router(benefits_router);app.include_router(admissions_router);app.include_router(preauthorizations_router);app.include_router(emergency_router);app.include_router(nursing_router);app.include_router(wards_router);app.include_router(ward_movement_router);app.include_router(radiology_router);app.include_router(theatre_router);app.include_router(maternity_router);app.include_router(child_health_router);app.include_router(blood_bank_router);app.include_router(patient_safety_router);app.include_router(dietetics_router);app.include_router(infection_control_router);app.include_router(facilities_router);app.include_router(appointments_router);app.include_router(encounters_router);app.include_router(clinical_router);app.include_router(laboratory_router);app.include_router(pharmacy_router);app.include_router(billing_router);app.include_router(claims_router);app.include_router(claim_preflight_router);app.include_router(integrations_router);app.include_router(referrals_router);app.include_router(notifications_router);app.include_router(portal_router);app.include_router(reports_router);app.include_router(insight_router);app.include_router(interoperability_router)
 @app.get("/health",tags=["System"])
 def health_check(): return {"success":True,"data":{"service":"afasync-api","status":"healthy","environment":settings.environment,"version":settings.app_version},"message":"AfyaSync API is running"}
 @app.get("/ready",tags=["System"])
