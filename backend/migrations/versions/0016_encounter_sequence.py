@@ -14,12 +14,15 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("CREATE SEQUENCE afasync_encounter_seq START WITH 1 INCREMENT BY 1 MINVALUE 1")
+    # Keep empty installations valid: setval() cannot accept zero when the
+    # sequence MINVALUE is one.  If no matching encounter exists, initialize
+    # the sequence at one and mark it unused so the first nextval() returns 1.
     op.execute(
         """
         SELECT setval(
             'afasync_encounter_seq',
-            COALESCE(MAX(CAST(SUBSTRING(encounter_id FROM 14) AS BIGINT)), 0),
-            true
+            GREATEST(COALESCE(MAX(CAST(SUBSTRING(encounter_id FROM 14) AS BIGINT)), 0), 1),
+            COALESCE(MAX(CAST(SUBSTRING(encounter_id FROM 14) AS BIGINT)), 0) > 0
         )
         FROM encounters
         WHERE encounter_id ~ '^ENC-[0-9]{8}-[0-9]+$'
