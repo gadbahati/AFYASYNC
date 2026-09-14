@@ -1,0 +1,10 @@
+{
+  "name": "AfyaSync",
+  "short_name": "AfyaSync",
+  "description": "AfyaSync healthcare operating platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0a4438",
+  "icons": []
+}
