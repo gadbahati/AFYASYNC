@@ -25,4 +25,6 @@ export type SupplyPlanningResponse = {
   recommendations: SupplyReplenishmentRecommendation[];
   total_recommendations: number;
   generated_from_live_inventory: boolean;
+  input_rows_considered: number;
+  input_rows_truncated: boolean;
 };
