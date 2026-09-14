@@ -15,7 +15,7 @@ depends_on = None
 
 
 def _uuid():
-    return sa.Column(postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()"))
+    return sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()"))
 
 
 def upgrade() -> None:
