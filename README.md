@@ -29,6 +29,7 @@ Active platform development with production-readiness controls and a national he
 - National reporting and operational command-centre intelligence
 - Authorised payer integrations with signed callbacks, idempotency, retry handling, and transaction monitoring
 - Audit trails and facility isolation throughout sensitive workflows
+- Production observability with request IDs and privacy-safe aggregate runtime metrics
 
 ## Repository structure
 
@@ -55,6 +56,7 @@ afasync/
 - Production secrets are never committed to Git.
 - Schema changes are applied through Alembic rather than application startup table creation.
 - Healthcare delivery must remain usable without a payer integration being available.
+- Operational telemetry must not contain patient payloads or patient identifiers.
 
 ## Main care and financing flow
 
@@ -69,6 +71,9 @@ Coverage-enabled financing extends through:
 - `docs/PRODUCTION_DEPLOYMENT.md` — deployment topology, configuration, migrations, backups, rollback, and smoke testing
 - `docs/PRODUCTION_OPERATIONS.md` — operational checks and incident handling
 - `docs/PILOT_READINESS_CHECKLIST.md` — governance, security, clinical, financing, integration, and go-live checks
+- `docs/NATIONAL_SECURITY_RELIABILITY.md` — national security and reliability controls
+- `docs/PRODUCTION_PILOT_RUNBOOK.md` — deployment, onboarding, integration testing and pilot gates
+- `docs/ROADMAP_11_15.md` — engineering gates through item 22
 
 ## Security
 
