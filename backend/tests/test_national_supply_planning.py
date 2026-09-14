@@ -7,6 +7,7 @@ from app.national_supply.planning_schemas import SupplyPlanningResponse, SupplyR
 
 
 def _recommendation(**overrides):
+    donor_id = uuid4()
     values = {
         "facility_id": uuid4(),
         "facility_code": "F1",
@@ -19,7 +20,13 @@ def _recommendation(**overrides):
         "minimum_quantity": 10,
         "shortage_quantity": 10,
         "suggested_transfer_quantity": 10,
-        "donors": [],
+        "donors": [{
+            "facility_id": donor_id,
+            "facility_code": "F2",
+            "facility_name": "Donor Facility",
+            "county": None,
+            "available_surplus": 10,
+        }],
     }
     values.update(overrides)
     return SupplyReplenishmentRecommendation(**values)
@@ -32,7 +39,7 @@ def test_supply_planning_rejects_negative_shortage():
 
 def test_supply_planning_rejects_transfer_above_shortage():
     with pytest.raises(ValidationError):
-        _recommendation(suggested_transfer_quantity=11, donors=[])
+        _recommendation(suggested_transfer_quantity=11)
 
 
 def test_supply_planning_requires_donors_to_cover_transfer():
