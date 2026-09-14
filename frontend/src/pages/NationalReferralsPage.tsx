@@ -1,37 +1,46 @@
-import { useEffect, useState } from "react";
-import { getNationalReferrals } from "../api/nationalReferralsApi";
-import type { NationalReferralItem } from "../api/nationalReferrals";
+import { useEffect, useRef, useState } from "react";
+import { getNationalReferralMetrics, getNationalReferrals } from "../api/nationalReferralsApi";
+import type { NationalReferralItem, NationalReferralMetrics } from "../api/nationalReferrals";
 
 const statuses = ["", "CREATED", "SENT", "ACCEPTED", "IN_PROGRESS", "COMPLETED", "DECLINED", "CANCELLED"];
 const priorities = ["", "ROUTINE", "URGENT", "EMERGENCY"];
 
 export function NationalReferralsPage() {
   const [items, setItems] = useState<NationalReferralItem[]>([]);
+  const [metrics, setMetrics] = useState<NationalReferralMetrics | null>(null);
   const [county, setCounty] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [statusCounts, setStatusCounts] = useState<{ status: string; count: number }[]>([]);
-  const [priorityCounts, setPriorityCounts] = useState<{ priority: string; count: number }[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const requestRef = useRef(0);
 
   async function load() {
+    const requestId = ++requestRef.current;
     setLoading(true); setError("");
     try {
-      const result = await getNationalReferrals({ county, status, priority, startDate, endDate });
-      setItems(result.items); setTotal(result.total); setStatusCounts(result.status_counts); setPriorityCounts(result.priority_counts);
-    } catch (err) { setError(err instanceof Error ? err.message : "NATIONAL_REFERRAL_REQUEST_FAILED"); }
-    finally { setLoading(false); }
+      const [result, performance] = await Promise.all([
+        getNationalReferrals({ county, status, priority, startDate, endDate }),
+        getNationalReferralMetrics({ county, startDate, endDate }),
+      ]);
+      if (requestId !== requestRef.current) return;
+      setItems(result.items); setTotal(result.total); setMetrics(performance);
+    } catch (err) {
+      if (requestId !== requestRef.current) return;
+      setError(err instanceof Error ? err.message : "NATIONAL_REFERRAL_REQUEST_FAILED");
+    } finally {
+      if (requestId === requestRef.current) setLoading(false);
+    }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); return () => { requestRef.current += 1; }; }, []);
 
   return <section className="page-stack">
     <header className="page-heading">
-      <div><p className="eyebrow">National care coordination</p><h1>Referral network</h1><p className="muted">Operational referral routing across active facilities. Patient identity and clinical referral content are intentionally excluded.</p></div>
+      <div><p className="eyebrow">National care coordination</p><h1>Referral network</h1><p className="muted">Operational referral routing and network performance across active facilities. Patient identity and clinical referral content are excluded.</p></div>
       <button type="button" className="button secondary" onClick={() => void load()} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button>
     </header>
     <article className="card">
@@ -47,8 +56,13 @@ export function NationalReferralsPage() {
     {error && <div className="error-banner" role="alert">{error === "PERMISSION_DENIED" ? "National referral visibility permission required." : error}</div>}
     <div className="metrics-grid">
       <article className="card metric-card"><span className="muted">Matching referrals</span><strong>{total.toLocaleString()}</strong></article>
-      <article className="card metric-card"><span className="muted">Emergency</span><strong>{priorityCounts.find(item => item.priority === "EMERGENCY")?.count ?? 0}</strong></article>
-      <article className="card metric-card"><span className="muted">In progress</span><strong>{statusCounts.find(item => item.status === "IN_PROGRESS")?.count ?? 0}</strong></article>
+      <article className="card metric-card"><span className="muted">Active</span><strong>{metrics?.active.toLocaleString() ?? "—"}</strong></article>
+      <article className="card metric-card"><span className="muted">Completion rate</span><strong>{metrics ? `${metrics.completion_rate.toFixed(1)}%` : "—"}</strong></article>
+      <article className="card metric-card"><span className="muted">Acceptance rate</span><strong>{metrics ? `${metrics.acceptance_rate.toFixed(1)}%` : "—"}</strong></article>
+    </div>
+    <div className="two-column-grid">
+      <article className="card"><div className="card-header"><div><h2>Open referral age</h2><p className="muted">Active referrals grouped by elapsed age.</p></div></div>{metrics?.aging.map(bucket => <div className="metric-row" key={bucket.bucket}><span>{bucket.bucket}</span><strong>{bucket.count.toLocaleString()}</strong></div>) ?? <p className="muted">No performance data.</p>}</article>
+      <article className="card"><div className="card-header"><div><h2>Route pressure</h2><p className="muted">Highest-volume active routes, without patient-level data.</p></div></div>{metrics?.routes.length ? <div className="table-wrap"><table><thead><tr><th>Route</th><th>Total</th><th>Active</th></tr></thead><tbody>{metrics.routes.slice(0, 10).map(route => <tr key={`${route.source_facility_id}-${route.destination_facility_id}`}><td><strong>{route.source_facility_name}</strong><div className="muted small">→ {route.destination_facility_name}</div></td><td>{route.total.toLocaleString()}</td><td>{route.active.toLocaleString()}</td></tr>)}</tbody></table></div> : <p className="muted">No route data.</p>}</article>
     </div>
     <article className="card">
       <div className="card-header"><div><h2>Referral routing queue</h2><p className="muted">Latest operational records from active source and destination facilities.</p></div></div>
