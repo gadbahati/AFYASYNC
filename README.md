@@ -17,7 +17,7 @@ Active platform development with production-readiness controls and a national he
 - Web: React + TypeScript
 - Background jobs: dedicated integration worker
 - Authentication: JWT access/refresh sessions with rotation and revocation
-- Deployment: Docker / Render configuration included
+- Deployment: Docker / Railway / Render configuration included
 - Schema management: Alembic migrations
 
 ## Core platform capabilities
