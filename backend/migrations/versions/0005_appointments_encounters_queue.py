@@ -15,7 +15,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_sequence("afasync_encounter_seq", start=1)
+    # Alembic's Operations facade does not expose create_sequence directly;
+    # execute the SQLAlchemy DDL explicitly so this migration works on the
+    # production Alembic version used by the service.
+    op.execute(sa.schema.CreateSequence(sa.Sequence("afasync_encounter_seq", start=1)))
 
     op.create_table(
         "encounters",
@@ -115,4 +118,4 @@ def downgrade() -> None:
     for name in ("encounter_id", "status", "department_id", "facility_id", "patient_id"):
         op.drop_index(f"ix_encounters_{name}", table_name="encounters")
     op.drop_table("encounters")
-    op.drop_sequence("afasync_encounter_seq")
+    op.execute(sa.schema.DropSequence(sa.Sequence("afasync_encounter_seq")))
