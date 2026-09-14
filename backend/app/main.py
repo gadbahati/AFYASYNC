@@ -61,6 +61,7 @@ from app.national_capacity.router import router as national_capacity_router
 from app.national_supply.router import router as national_supply_router
 from app.national_supply.planning_router import router as national_supply_planning_router
 from app.national_referrals.router import router as national_referrals_router
+from app.observability.router import router as observability_router
 from app.patients import models as patient_models
 from app.patients.national_identity_router import router as national_identity_router
 from app.patients.router import router as patients_router
@@ -91,7 +92,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception:
-            return JSONResponse(status_code=500, content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"}, headers={"X-Request-ID": request_id})
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"},
+                headers={"X-Request-ID": request_id},
+            )
         response.headers["X-Request-ID"] = request_id
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
@@ -101,19 +106,27 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
         response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
         response.headers.setdefault("Cache-Control", "no-store")
-        if settings.environment == "production": response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        if settings.environment == "production":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
 
 
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
-    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"],
+    )
 app.add_middleware(SecurityHeadersMiddleware)
 
 
 @app.on_event("startup")
 def initialize_database():
-    if settings.environment != "production": Base.metadata.create_all(bind=engine)
+    if settings.environment != "production":
+        Base.metadata.create_all(bind=engine)
     import os
     seed_requested = os.getenv("SEED_UNIVERSAL_ADMIN", "").strip().lower() in {"1", "true", "yes"}
     if seed_requested and settings.environment == "production":
@@ -165,6 +178,7 @@ app.include_router(national_supply_router)
 app.include_router(national_supply_planning_router)
 app.include_router(national_referrals_router)
 app.include_router(national_capacity_router)
+app.include_router(observability_router)
 
 
 @app.get("/health", tags=["System"])
@@ -175,7 +189,8 @@ def health_check():
 @app.get("/ready", tags=["System"])
 def readiness_check(response: Response):
     try:
-        with SessionLocal() as db: db.execute(text("SELECT 1"))
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
         return {"success": True, "data": {"service": "afasync-api", "status": "ready", "database": "ok"}, "message": "AfyaSync API is ready"}
     except Exception:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
