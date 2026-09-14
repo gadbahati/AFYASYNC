@@ -2,6 +2,7 @@ from datetime import date
 from uuid import uuid4
 
 from app.patients.national_identity_schemas import NationalIdentityResolution
+from app.patients.national_identity_service import _audit_identifier
 
 
 def test_national_identity_resolution_contains_only_minimum_identity_fields():
@@ -22,6 +23,8 @@ def test_national_identity_resolution_contains_only_minimum_identity_fields():
     assert "phone" not in result.model_fields
     assert "national_id_number" not in result.model_fields
     assert "address" not in result.model_fields
+    assert "emergency_contact_phone" not in result.model_fields
+    assert "next_of_kin_phone" not in result.model_fields
 
 
 def test_national_identity_resolution_rejects_negative_facility_count():
@@ -39,3 +42,11 @@ def test_national_identity_resolution_rejects_negative_facility_count():
         assert "active_facility_count" in str(exc)
     else:
         raise AssertionError("negative active facility count must be rejected")
+
+
+def test_audit_identifier_is_deterministic_and_non_reversible():
+    first = _audit_identifier("AF-00000001")
+    second = _audit_identifier("AF-00000001")
+    assert first == second
+    assert len(first) == 64
+    assert first != "AF-00000001"
