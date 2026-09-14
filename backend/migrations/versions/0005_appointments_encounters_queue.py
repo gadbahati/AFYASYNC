@@ -1,6 +1,6 @@
 """add appointments encounters and queues
 
-Revision ID: 0005_appointments_encounters_queue
+Revision ID: 0005_appointments_encounters
 Revises: 0004_rbac
 """
 
@@ -8,16 +8,16 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "0005_appointments_encounters_queue"
+revision = "0005_appointments_encounters"
 down_revision = "0004_rbac"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    # Alembic's Operations facade does not expose create_sequence directly;
-    # execute the SQLAlchemy DDL explicitly so this migration works on the
-    # production Alembic version used by the service.
+    # The Alembic version table defaults to varchar(32); keep revision IDs
+    # within that limit. Create the sequence through SQLAlchemy DDL because
+    # the installed Alembic Operations facade has no create_sequence method.
     op.execute(sa.schema.CreateSequence(sa.Sequence("afasync_encounter_seq", start=1)))
 
     op.create_table(
