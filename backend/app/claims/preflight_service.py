@@ -21,11 +21,16 @@ def preflight_claim(
     facility_id: UUID,
     actor_user_id: UUID,
 ):
-    invoice = db.scalar(select(Invoice).where(Invoice.id == invoice_id))
+    # Scope the initial lookup to the caller's facility. This prevents invoice-ID
+    # probing from distinguishing another facility's records.
+    invoice = db.scalar(
+        select(Invoice).where(
+            Invoice.id == invoice_id,
+            Invoice.facility_id == facility_id,
+        )
+    )
     if invoice is None:
         raise ClaimsError("INVOICE_NOT_FOUND")
-    if invoice.facility_id != facility_id:
-        raise ClaimsError("FACILITY_ACCESS_DENIED")
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -45,11 +50,13 @@ def preflight_claim(
     elif (getattr(encounter, "coverage_mode", None) or "CASH") == "CASH":
         errors.append("CASH_ENCOUNTER_NO_CLAIM")
 
-    enrolled = db.scalar(select(PatientFacility.id).where(
-        PatientFacility.patient_id == invoice.patient_id,
-        PatientFacility.facility_id == facility_id,
-        PatientFacility.status == "ACTIVE",
-    ))
+    enrolled = db.scalar(
+        select(PatientFacility.id).where(
+            PatientFacility.patient_id == invoice.patient_id,
+            PatientFacility.facility_id == facility_id,
+            PatientFacility.status == "ACTIVE",
+        )
+    )
     if enrolled is None:
         errors.append("PATIENT_NOT_IN_FACILITY")
 
@@ -75,11 +82,15 @@ def preflight_claim(
     elif payer.status != "ACTIVE":
         errors.append("PAYER_NOT_ACTIVE")
 
-    existing_claim = db.scalar(select(Claim.id).where(Claim.invoice_id == invoice.id).limit(1))
+    existing_claim = db.scalar(
+        select(Claim.id).where(Claim.invoice_id == invoice.id).limit(1)
+    )
     if existing_claim is not None:
         errors.append("CLAIM_ALREADY_EXISTS")
 
-    items = list(db.scalars(select(InvoiceItem).where(InvoiceItem.invoice_id == invoice.id)).all())
+    items = list(
+        db.scalars(select(InvoiceItem).where(InvoiceItem.invoice_id == invoice.id)).all()
+    )
     if not items:
         errors.append("CLAIM_ITEMS_REQUIRED")
 
@@ -98,7 +109,11 @@ def preflight_claim(
         if charge is None:
             errors.append("CHARGE_NOT_FOUND")
             continue
-        if charge.facility_id != facility_id or charge.encounter_id != invoice.encounter_id or charge.patient_id != invoice.patient_id:
+        if (
+            charge.facility_id != facility_id
+            or charge.encounter_id != invoice.encounter_id
+            or charge.patient_id != invoice.patient_id
+        ):
             errors.append("CHARGE_SCOPE_MISMATCH")
             continue
         service = db.get(Service, charge.service_id)
@@ -142,6 +157,7 @@ def preflight_claim(
         commit=True,
     )
     from app.claims.preflight_schemas import ClaimPreflightResponse
+
     return ClaimPreflightResponse(
         invoice_id=invoice.id,
         ready=not deduped_errors,
