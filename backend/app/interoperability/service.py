@@ -8,6 +8,13 @@ from app.patients.models import AfyaIdentity, PatientFacility, Person
 from app.interoperability.schemas import FHIRPatientResource
 
 
+def _fhir_gender(sex: str | None) -> str | None:
+    if not sex:
+        return None
+    value = sex.strip().lower()
+    return {"female": "female", "male": "male", "other": "other", "unknown": "unknown"}.get(value, "unknown")
+
+
 def get_fhir_patient(
     db: Session,
     *,
@@ -45,9 +52,9 @@ def get_fhir_patient(
 
     return FHIRPatientResource(
         id=person.id,
-        identifier=[{"system": "AfyaSync", "value": identity.afya_id}],
+        identifier=[{"system": "urn:afyasync:afya-id", "value": identity.afya_id}],
         name=[{"use": "official", "family": person.last_name, "given": [x for x in [person.first_name, person.middle_name] if x]}],
         birthDate=person.date_of_birth,
-        gender=person.sex,
-        active=person.status == "ACTIVE",
+        gender=_fhir_gender(person.sex),
+        active=True,
     )
