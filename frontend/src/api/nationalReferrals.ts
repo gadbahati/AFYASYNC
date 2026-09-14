@@ -25,3 +25,25 @@ export type NationalReferralResponse = {
   status_counts: { status: string; count: number }[];
   priority_counts: { priority: string; count: number }[];
 };
+
+export type NationalReferralMetrics = {
+  total: number;
+  active: number;
+  completed: number;
+  declined: number;
+  acceptance_rate: number;
+  completion_rate: number;
+  aging: { bucket: string; count: number }[];
+  routes: {
+    source_facility_id: string;
+    source_facility_code: string;
+    source_facility_name: string;
+    destination_facility_id: string;
+    destination_facility_code: string;
+    destination_facility_name: string;
+    total: number;
+    active: number;
+    completed: number;
+    declined: number;
+  }[];
+};
