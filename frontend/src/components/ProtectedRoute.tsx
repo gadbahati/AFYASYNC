@@ -10,6 +10,8 @@ export function ProtectedRoute() {
     return <div className="auth-page"><div className="card auth-card"><p className="muted">Checking your secure session…</p></div></div>;
   }
 
+  // Never mount protected pages without a real access token. This prevents
+  // child pages from firing protected API requests and rendering AUTH_REQUIRED.
   if (!getAccessToken() || !auth.username) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
