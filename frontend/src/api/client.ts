@@ -2,6 +2,7 @@ import type { Admission, ApiErrorBody, Appointment, AuthMe, BenefitPackage, Clin
 import { clearSession, getAccessToken, getRefreshToken, setSession } from "../auth/storage";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const AUTH_EXPIRED_EVENT = "afyasync:auth-expired";
 
 export class ApiError extends Error {
   status: number;
@@ -19,6 +20,11 @@ function parseDetail(body: ApiErrorBody | null): string {
   return body.detail.code || body.detail.message || "REQUEST_FAILED";
 }
 
+function notifyAuthExpired(): void {
+  clearSession();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+}
+
 let refreshPromise: Promise<boolean> | null = null;
 
 async function tryRefresh(): Promise<boolean> {
@@ -26,11 +32,11 @@ async function tryRefresh(): Promise<boolean> {
   if (!refresh) return false;
   try {
     const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: refresh }) });
-    if (!res.ok) { clearSession(); return false; }
+    if (!res.ok) { notifyAuthExpired(); return false; }
     const data = (await res.json()) as TokenResponse;
     setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
     return true;
-  } catch { clearSession(); return false; }
+  } catch { notifyAuthExpired(); return false; }
 }
 
 async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
@@ -42,14 +48,20 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   let res: Response;
   try { res = await fetch(`${API_BASE}${path}`, { ...init, headers }); }
   catch { throw new ApiError(0, "API_UNREACHABLE"); }
+
   if (res.status === 401 && retry) {
     if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null; });
     if (await refreshPromise) return request<T>(path, init, false);
   }
+
   if (!res.ok) {
     let body: ApiErrorBody | null = null;
     try { body = (await res.json()) as ApiErrorBody; } catch {}
-    throw new ApiError(res.status, parseDetail(body));
+    const code = parseDetail(body);
+    if (res.status === 401 && path !== "/api/v1/auth/login" && path !== "/api/v1/auth/refresh" && path !== "/api/v1/auth/logout") {
+      notifyAuthExpired();
+    }
+    throw new ApiError(res.status, code);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -117,5 +129,5 @@ export const api = {
   sandboxRejectClaim(claim_id: string, payload: { response_code?: string; response_message?: string; external_reference?: string } = {}) { return request<any>(`/api/v1/claims/${claim_id}/sandbox-reject`, { method: "POST", body: JSON.stringify(payload) }); },
   commandCentre() { return request<any>("/api/v1/insight/command-centre"); },
   fraudRadar() { return request<any>("/api/v1/insight/fraud-radar"); },
-  simulateCoverage(payload: { coverage_mode: string; patient_id?: string | null; membership_number?: string | null; lines: Array<{ code: string; description: string; quantity: number; unit_price: number }> }) { return request<any>("/api/v1/insight/coverage/simulate", { method: "POST", body: JSON.stringify(payload) }); },
+  simulateCoverage(payload: { coverage_mode: string; patient_id?: string | null; membership_number?: string | null; lines: Array<{ code: string; description: string; quantity: number; unit_price: number }> }) { return request<any>("/..." ) as any; }
 };
