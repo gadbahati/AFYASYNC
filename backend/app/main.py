@@ -91,11 +91,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception:
-            return JSONResponse(
-                status_code=500,
-                content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"},
-                headers={"X-Request-ID": request_id},
-            )
+            return JSONResponse(status_code=500, content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"}, headers={"X-Request-ID": request_id})
         response.headers["X-Request-ID"] = request_id
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
@@ -105,35 +101,27 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
         response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
         response.headers.setdefault("Cache-Control", "no-store")
-        if settings.environment == "production":
-            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        if settings.environment == "production": response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
 
 
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"],
-    )
+    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"])
 app.add_middleware(SecurityHeadersMiddleware)
 
 
 @app.on_event("startup")
 def initialize_database():
-    if settings.environment != "production":
-        Base.metadata.create_all(bind=engine)
+    if settings.environment != "production": Base.metadata.create_all(bind=engine)
     import os
-    if os.getenv("SEED_UNIVERSAL_ADMIN", "").strip().lower() in {"1", "true", "yes"}:
+    seed_requested = os.getenv("SEED_UNIVERSAL_ADMIN", "").strip().lower() in {"1", "true", "yes"}
+    if seed_requested and settings.environment == "production":
+        raise RuntimeError("SEED_UNIVERSAL_ADMIN is forbidden in production")
+    if seed_requested:
         from app.scripts.seed_universal_admin import seed_universal_admin
-        try:
-            result = seed_universal_admin()
-            print("SEED_UNIVERSAL_ADMIN:", result)
-        except Exception as exc:
-            print("SEED_UNIVERSAL_ADMIN failed:", type(exc).__name__, exc)
+        result = seed_universal_admin()
+        print("SEED_UNIVERSAL_ADMIN:", result)
 
 
 app.include_router(auth_router.router)
@@ -187,8 +175,7 @@ def health_check():
 @app.get("/ready", tags=["System"])
 def readiness_check(response: Response):
     try:
-        with SessionLocal() as db:
-            db.execute(text("SELECT 1"))
+        with SessionLocal() as db: db.execute(text("SELECT 1"))
         return {"success": True, "data": {"service": "afasync-api", "status": "ready", "database": "ok"}, "message": "AfyaSync API is ready"}
     except Exception:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
