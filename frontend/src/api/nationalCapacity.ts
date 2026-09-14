@@ -3,6 +3,10 @@ export type NationalCapacity = {
   active_departments: number;
   scheduled_appointments: number;
   waiting_queue_entries: number;
+  total_beds: number;
+  available_beds: number;
+  occupied_beds: number;
+  emergency_waiting: number;
   facilities: Array<{
     facility_id: string;
     facility_code: string;
@@ -11,5 +15,9 @@ export type NationalCapacity = {
     departments: number;
     scheduled_appointments: number;
     waiting_queue_entries: number;
+    total_beds: number;
+    available_beds: number;
+    occupied_beds: number;
+    emergency_waiting: number;
   }>;
 };
