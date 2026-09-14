@@ -5,7 +5,7 @@ services:
     rootDir: backend
     plan: starter
     preDeployCommand: alembic upgrade head
-    healthCheckPath: /health
+    healthCheckPath: /ready
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -17,6 +17,8 @@ services:
         fromDatabase:
           name: afyasync-db
           property: connectionString
+      - key: UVICORN_WORKERS
+        value: "2"
 
   - type: worker
     name: afyasync-worker

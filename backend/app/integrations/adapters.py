@@ -68,10 +68,7 @@ class HttpJsonAdapter:
                 data = json.loads(raw) if raw else {}
             except json.JSONDecodeError:
                 data = {"body": raw[:2000]}
-            if exc.code == 429 or exc.code >= 500:
-                status = "RETRYING"
-            else:
-                status = "FAILED"
+            status = "RETRYING" if exc.code == 429 or exc.code >= 500 else "FAILED"
             return AdapterResult(status=status, response_code=str(exc.code), response_data=data if isinstance(data, dict) else {"body": data})
         except (URLError, TimeoutError, OSError):
             return AdapterResult(status="RETRYING", response_code="TRANSPORT_ERROR", response_data={})
@@ -92,6 +89,9 @@ def build_adapter(configuration: dict | None) -> IntegrationAdapter:
         if not isinstance(timeout, int):
             raise ValueError("INVALID_ADAPTER_TIMEOUT")
         return HttpJsonAdapter(endpoint=endpoint, credential_env=credential_env, timeout_seconds=timeout)
+    if adapter_type == "sha_edi":
+        from app.integrations.sha_connector import build_sha_edi_adapter
+        return build_sha_edi_adapter(configuration)
     if adapter_type == "unconfigured":
         return UnconfiguredAdapter()
     raise ValueError("UNSUPPORTED_ADAPTER_TYPE")
