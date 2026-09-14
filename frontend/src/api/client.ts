@@ -48,19 +48,15 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   let res: Response;
   try { res = await fetch(`${API_BASE}${path}`, { ...init, headers }); }
   catch { throw new ApiError(0, "API_UNREACHABLE"); }
-
   if (res.status === 401 && retry) {
     if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null; });
     if (await refreshPromise) return request<T>(path, init, false);
   }
-
   if (!res.ok) {
     let body: ApiErrorBody | null = null;
     try { body = (await res.json()) as ApiErrorBody; } catch {}
     const code = parseDetail(body);
-    if (res.status === 401 && path !== "/api/v1/auth/login" && path !== "/api/v1/auth/refresh" && path !== "/api/v1/auth/logout") {
-      notifyAuthExpired();
-    }
+    if (res.status === 401 && path !== "/api/v1/auth/login" && path !== "/api/v1/auth/refresh" && path !== "/api/v1/auth/logout") notifyAuthExpired();
     throw new ApiError(res.status, code);
   }
   if (res.status === 204) return undefined as T;
@@ -129,5 +125,5 @@ export const api = {
   sandboxRejectClaim(claim_id: string, payload: { response_code?: string; response_message?: string; external_reference?: string } = {}) { return request<any>(`/api/v1/claims/${claim_id}/sandbox-reject`, { method: "POST", body: JSON.stringify(payload) }); },
   commandCentre() { return request<any>("/api/v1/insight/command-centre"); },
   fraudRadar() { return request<any>("/api/v1/insight/fraud-radar"); },
-  simulateCoverage(payload: { coverage_mode: string; patient_id?: string | null; membership_number?: string | null; lines: Array<{ code: string; description: string; quantity: number; unit_price: number }> }) { return request<any>("/..." ) as any; }
+  simulateCoverage(payload: { coverage_mode: string; patient_id?: string | null; membership_number?: string | null; lines: Array<{ code: string; description: string; quantity: number; unit_price: number }> }) { return request<any>("/api/v1/insight/coverage/simulate", { method: "POST", body: JSON.stringify(payload) }); },
 };
