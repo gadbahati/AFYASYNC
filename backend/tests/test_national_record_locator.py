@@ -8,6 +8,7 @@ from app.patients.national_record_locator_schemas import (
     NationalRecordLocatorRequest,
     NationalRecordLocatorResponse,
 )
+from app.patients.national_record_locator_service import _audit_identifier, _reason_metadata
 
 
 def test_locator_request_requires_a_meaningful_access_reason():
@@ -54,3 +55,12 @@ def test_locator_facility_metadata_is_bounded():
             county=None,
             enrollment_status="ACTIVE",
         )
+
+
+def test_locator_audit_does_not_persist_free_text_reason():
+    reason = "Continuity of care for an active referral"
+    metadata = _reason_metadata(reason)
+    assert metadata["access_reason_hash"] == _audit_identifier(reason)
+    assert metadata["access_reason_length"] == len(reason)
+    assert "access_reason" not in metadata
+    assert reason not in str(metadata)
