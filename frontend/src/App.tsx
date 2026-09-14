@@ -16,6 +16,7 @@ import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
 import { PharmacyPage } from "./pages/PharmacyPage";
 import { EncounterDetailPage } from "./pages/EncounterDetailPage";
 import { FacilitySelectPage } from "./pages/FacilitySelectPage";
+import { LoginPage } from "./pages/LoginPage";
 import { NationalBenefitConfigurationPage } from "./pages/NationalBenefitConfigurationPage";
 import { NationalCommandCentrePage } from "./pages/NationalCommandCentrePage";
 import { NationalFacilitiesPage } from "./pages/NationalFacilitiesPage";
@@ -38,6 +39,7 @@ import { InteroperabilityClinicalPage } from "./pages/InteroperabilityClinicalPa
 
 export default function App() {
   return <AuthProvider><BrowserRouter><Routes>
+    <Route path="/login" element={<LoginPage />} />
     <Route path="/select-facility" element={<FacilitySelectPage />} />
     <Route element={<ProtectedRoute />}><Route element={<Layout />}>
       <Route path="/" element={<DashboardPage />} />
