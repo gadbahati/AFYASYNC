@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     db_pool_recycle_seconds: int = 1800
     worker_poll_seconds: float = 5.0
     cors_origins: str = _DEFAULT_CORS_ORIGINS
+    ussd_webhook_secret: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
