@@ -1,5 +1,7 @@
-import { FormEvent, useState } from "react";
-import { getClinicalSummary, FHIRClinicalSummary } from "../api/interoperability";
+import { useState } from "react";
+import type { FormEvent } from "react";
+import { getClinicalSummary } from "../api/interoperability";
+import type { FHIRClinicalSummary } from "../api/interoperability";
 
 export function InteroperabilityClinicalPage() {
   const [patientId, setPatientId] = useState("");
