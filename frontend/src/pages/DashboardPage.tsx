@@ -3,16 +3,23 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { FacilityReport } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { getAccessToken } from "../auth/storage";
 import { KenyaFlag } from "../components/KenyaFlag";
 
 export function DashboardPage() {
   const auth = useAuth();
   const [report, setReport] = useState<FacilityReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Dashboard data is facility-scoped. Never issue the report request until
+    // the authenticated session and facility context are fully established.
+    if (!auth.ready || !auth.username || !auth.facilityId || !getAccessToken()) return;
+
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     api.facilityReport().then((data) => {
       if (!cancelled) setReport(data);
     }).catch((err) => {
@@ -21,7 +28,7 @@ export function DashboardPage() {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [auth.ready, auth.username, auth.facilityId]);
 
   return (
     <div className="dashboard">
@@ -66,47 +73,14 @@ export function DashboardPage() {
           </div>
 
           <section className="report-grid">
-            <ReportTable
-              title="Claims by status"
-              headers={["Status", "Claims", "Billed", "Approved", "Paid"]}
-              rows={report.claim_statuses.map((item) => [
-                item.status,
-                String(item.count),
-                formatMoney(item.amount),
-                formatMoney(item.approved_amount),
-                formatMoney(item.paid_amount),
-              ])}
-              empty="No claims were updated in this period."
-            />
-            <ReportTable
-              title="Payer performance"
-              headers={["Payer", "Claims", "Billed", "Approved", "Receivable"]}
-              rows={report.payer_claims.map((item) => [
-                item.payer_name,
-                String(item.claims),
-                formatMoney(item.amount),
-                formatMoney(item.approved_amount),
-                formatMoney(item.receivable),
-              ])}
-              empty="No payer claims were recorded in this period."
-            />
+            <ReportTable title="Claims by status" headers={["Status", "Claims", "Billed", "Approved", "Paid"]} rows={report.claim_statuses.map((item) => [item.status, String(item.count), formatMoney(item.amount), formatMoney(item.approved_amount), formatMoney(item.paid_amount)])} empty="No claims were updated in this period." />
+            <ReportTable title="Payer performance" headers={["Payer", "Claims", "Billed", "Approved", "Receivable"]} rows={report.payer_claims.map((item) => [item.payer_name, String(item.claims), formatMoney(item.amount), formatMoney(item.approved_amount), formatMoney(item.receivable)])} empty="No payer claims were recorded in this period." />
           </section>
 
           <section className="card monitor-panel">
             <h3 style={{ marginTop: 0 }}>Operational areas</h3>
-            <p className="muted" style={{ marginBottom: 8 }}>
-              Open a clinical or financing workspace to work with live facility records.
-            </p>
-            <p>
-              <Link to="/patients">Patients</Link>{" · "}
-              <Link to="/appointments">Appointments</Link>{" · "}
-              <Link to="/queue">Clinical queue</Link>{" · "}
-              <Link to="/laboratory">Lab</Link>{" · "}
-              <Link to="/pharmacy">Pharmacy</Link>{" · "}
-              <Link to="/billing">Billing</Link>{" · "}
-              <Link to="/claims">Claims &amp; rework</Link>{" · "}
-              <Link to="/referrals">Referrals</Link>
-            </p>
+            <p className="muted" style={{ marginBottom: 8 }}>Open a clinical or financing workspace to work with live facility records.</p>
+            <p><Link to="/patients">Patients</Link>{" · "}<Link to="/appointments">Appointments</Link>{" · "}<Link to="/queue">Clinical queue</Link>{" · "}<Link to="/laboratory">Lab</Link>{" · "}<Link to="/pharmacy">Pharmacy</Link>{" · "}<Link to="/billing">Billing</Link>{" · "}<Link to="/claims">Claims &amp; rework</Link>{" · "}<Link to="/referrals">Referrals</Link></p>
           </section>
         </>
       )}
@@ -121,33 +95,9 @@ function formatMoney(value: string | number): string {
 }
 
 function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="stat-card">
-      <div className="muted small">{label}</div>
-      <div className="stat-value">{value}</div>
-    </div>
-  );
+  return <div className="stat-card"><div className="muted small">{label}</div><div className="stat-value">{value}</div></div>;
 }
 
 function ReportTable({ title, headers, rows, empty }: { title: string; headers: string[]; rows: string[][]; empty: string }) {
-  return (
-    <section className="card report-card">
-      <div className="report-card-header">
-        <div>
-          <h3 style={{ margin: 0 }}>{title}</h3>
-          <p className="muted small">Calculated from facility records for the selected reporting window.</p>
-        </div>
-      </div>
-      {rows.length === 0 ? <p className="muted">{empty}</p> : (
-        <div className="table-wrap">
-          <table>
-            <thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
-            <tbody>{rows.map((row, index) => (
-              <tr key={`${row[0]}-${index}`}>{row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`}>{cell}</td>)}</tr>
-            ))}</tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
+  return <section className="card report-card"><div className="report-card-header"><div><h3 style={{ margin: 0 }}>{title}</h3><p className="muted small">Calculated from facility records for the selected reporting window.</p></div></div>{rows.length === 0 ? <p className="muted">{empty}</p> : <div className="table-wrap"><table><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${row[0]}-${index}`}>{row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`}>{cell}</td>)}</tr>)}</tbody></table></div>}</section>;
 }
