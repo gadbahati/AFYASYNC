@@ -83,6 +83,7 @@ from app.radiology.router import router as radiology_router
 from app.wards import models as ward_models
 from app.wards.router import router as wards_router
 from app.wards.movement_router import router as ward_movement_router
+from app.ussd.router import router as ussd_router
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
@@ -116,10 +117,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception:
             runtime_metrics.request(error=True)
-            response = JSONResponse(
-                status_code=500,
-                content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"},
-            )
+            response = JSONResponse(status_code=500, content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"})
             self._apply_headers(response, request_id)
             return response
         runtime_metrics.request(error=response.status_code >= 500)
@@ -129,13 +127,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"],
-    )
+    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"])
 app.add_middleware(SecurityHeadersMiddleware)
 
 
@@ -195,6 +187,7 @@ app.include_router(national_supply_planning_router)
 app.include_router(national_referrals_router)
 app.include_router(national_capacity_router)
 app.include_router(observability_router)
+app.include_router(ussd_router)
 
 
 @app.get("/health", tags=["System"])
