@@ -3,7 +3,7 @@ from threading import Lock
 
 
 class RuntimeMetrics:
-    """Small process-local operational counters; do not store patient identifiers."""
+    """Process-local aggregate operational counters; never store request payloads or patient identifiers."""
 
     def __init__(self) -> None:
         self._lock = Lock()
@@ -19,7 +19,14 @@ class RuntimeMetrics:
 
     def snapshot(self) -> dict:
         with self._lock:
-            return {"started_at": self._started_at.isoformat(), "requests": self._requests, "errors": self._errors}
+            requests = self._requests
+            errors = self._errors
+            return {
+                "started_at": self._started_at.isoformat(),
+                "requests": requests,
+                "errors": errors,
+                "error_rate": round(errors / requests, 4) if requests else 0.0,
+            }
 
 
 runtime_metrics = RuntimeMetrics()
