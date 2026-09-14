@@ -19,6 +19,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { NationalBenefitConfigurationPage } from "./pages/NationalBenefitConfigurationPage";
 import { NationalCommandCentrePage } from "./pages/NationalCommandCentrePage";
 import { NationalFacilitiesPage } from "./pages/NationalFacilitiesPage";
+import { NationalIdentityPage } from "./pages/NationalIdentityPage";
 import { NationalIntelligencePage } from "./pages/NationalIntelligencePage";
 import { NationalPayerNetworkPage } from "./pages/NationalPayerNetworkPage";
 import { NationalStaffPage } from "./pages/NationalStaffPage";
@@ -38,6 +39,7 @@ export default function App() {
       <Route path="/command-centre" element={<CommandCentrePage />} />
       <Route path="/national-command-centre" element={<NationalCommandCentrePage />} />
       <Route path="/national-intelligence" element={<NationalIntelligencePage />} />
+      <Route path="/national-identity" element={<NationalIdentityPage />} />
       <Route path="/national-facilities" element={<NationalFacilitiesPage />} />
       <Route path="/national-staff" element={<NationalStaffPage />} />
       <Route path="/national-payers" element={<NationalPayerNetworkPage />} />
