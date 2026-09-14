@@ -1,11 +1,11 @@
 import hashlib
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
-from app.patients.models import AfyaIdentity, PatientFacility, Person
+from app.patients.models import AfyaIdentity, Person
 from app.patients.national_identity_schemas import NationalIdentityResolution
 
 
@@ -43,15 +43,18 @@ def resolve_national_identity(
         return None
 
     person, identity = row
-    active_facility_count = int(
-        db.scalar(
-            select(func.count(PatientFacility.id)).where(
-                PatientFacility.patient_id == person.id,
-                PatientFacility.status == "ACTIVE",
-            )
+    if identity.status != "ACTIVE":
+        record_audit(
+            db,
+            action="NATIONAL_IDENTITY_LOOKUP",
+            resource_type="AFYA_ID",
+            resource_id=_audit_identifier(normalized),
+            result="IDENTITY_INACTIVE",
+            user_id=actor_user_id,
+            metadata={"matched": False, "identity_status": identity.status},
+            commit=True,
         )
-        or 0
-    )
+        return None
 
     record_audit(
         db,
@@ -61,7 +64,7 @@ def resolve_national_identity(
         result="SUCCESS",
         user_id=actor_user_id,
         patient_id=person.id,
-        metadata={"identity_status": identity.status, "active_facility_count": active_facility_count},
+        metadata={"identity_status": identity.status},
         commit=True,
     )
     return NationalIdentityResolution(
@@ -73,6 +76,5 @@ def resolve_national_identity(
         date_of_birth=person.date_of_birth,
         sex=person.sex,
         patient_status=person.status,
-        active_facility_count=active_facility_count,
         identity_status=identity.status,
     )
