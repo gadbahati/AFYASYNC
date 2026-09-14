@@ -14,8 +14,13 @@ def _audit_identifier(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _reason_metadata(reason: str) -> dict[str, str]:
-    return {"access_reason": reason.strip()}
+def _reason_metadata(reason: str) -> dict[str, str | int]:
+    """Prove a purpose was supplied without persisting free-text purpose content."""
+    normalized = reason.strip()
+    return {
+        "access_reason_hash": _audit_identifier(normalized),
+        "access_reason_length": len(normalized),
+    }
 
 
 def locate_national_records(
@@ -99,11 +104,7 @@ def locate_national_records(
         result="SUCCESS",
         user_id=actor_user_id,
         patient_id=person.id,
-        metadata={
-            "facility_count": len(facilities),
-            "facility_ids": [str(item.facility_id) for item in facilities],
-            **_reason_metadata(reason),
-        },
+        metadata={"facility_count": len(facilities), **_reason_metadata(reason)},
         commit=True,
     )
 
