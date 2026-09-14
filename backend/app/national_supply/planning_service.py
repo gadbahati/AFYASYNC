@@ -28,6 +28,15 @@ def _non_negative_quantity(value: object) -> float | None:
     return quantity
 
 
+def _empty_plan_response(*, input_rows: int, truncated: bool) -> SupplyPlanningResponse:
+    return SupplyPlanningResponse(
+        recommendations=[],
+        total_recommendations=0,
+        input_rows_considered=min(input_rows, MAX_INPUT_ROWS + 1),
+        input_rows_truncated=truncated,
+    )
+
+
 def get_supply_planning(
     db: Session,
     *,
@@ -55,7 +64,7 @@ def get_supply_planning(
             Facility.name.asc(),
             InventoryItem.id.asc(),
         )
-        .limit(MAX_INPUT_ROWS)
+        .limit(MAX_INPUT_ROWS + 1)
     )
     if county_value:
         stmt = stmt.where(Facility.county == county_value)
@@ -63,6 +72,26 @@ def get_supply_planning(
         stmt = stmt.where(Medication.code == medication_value)
 
     rows = db.execute(stmt).all()
+    truncated = len(rows) > MAX_INPUT_ROWS
+    if truncated:
+        record_audit(
+            db,
+            action="VIEW_NATIONAL_SUPPLY_PLAN",
+            resource_type="NATIONAL_SUPPLY_PLAN",
+            result="INPUT_TOO_LARGE",
+            user_id=actor_user_id,
+            metadata={
+                "county_filter": county_value,
+                "medication_code_filter": medication_value,
+                "limit": limit,
+                "input_rows": len(rows),
+                "input_row_limit": MAX_INPUT_ROWS,
+                "returned": 0,
+            },
+            commit=True,
+        )
+        return _empty_plan_response(input_rows=len(rows), truncated=True)
+
     grouped: dict[UUID, list[tuple[InventoryItem, Facility, Medication]]] = defaultdict(list)
     invalid_inventory_rows = 0
     for inventory, facility, medication in rows:
@@ -171,5 +200,5 @@ def get_supply_planning(
         recommendations=recommendations,
         total_recommendations=len(recommendations),
         input_rows_considered=len(rows),
-        input_rows_truncated=len(rows) >= MAX_INPUT_ROWS,
+        input_rows_truncated=False,
     )
