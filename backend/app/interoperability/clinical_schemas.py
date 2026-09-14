@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.interoperability.schemas import FHIRPatientResource
+
 
 class FHIREncounterResource(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -26,7 +28,3 @@ class FHIRBundleResource(BaseModel):
     type: str = "searchset"
     total: int = Field(ge=0, le=101)
     entry: list[FHIRBundleEntry] = Field(default_factory=list, max_length=101)
-
-
-# Imported after model declaration to keep the union readable without circular imports.
-from app.interoperability.schemas import FHIRPatientResource  # noqa: E402
