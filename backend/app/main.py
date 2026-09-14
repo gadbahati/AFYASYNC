@@ -62,6 +62,7 @@ from app.national_supply.router import router as national_supply_router
 from app.national_supply.planning_router import router as national_supply_planning_router
 from app.national_referrals.router import router as national_referrals_router
 from app.observability.router import router as observability_router
+from app.observability.service import runtime_metrics
 from app.patients import models as patient_models
 from app.patients.national_identity_router import router as national_identity_router
 from app.patients.router import router as patients_router
@@ -92,11 +93,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception:
+            runtime_metrics.request(error=True)
             return JSONResponse(
                 status_code=500,
                 content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"},
                 headers={"X-Request-ID": request_id},
             )
+        runtime_metrics.request(error=response.status_code >= 500)
         response.headers["X-Request-ID"] = request_id
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
