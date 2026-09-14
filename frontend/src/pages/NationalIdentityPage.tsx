@@ -1,38 +1,67 @@
 import { useState, type FormEvent } from "react";
-import { resolveNationalIdentity, NationalIdentityApiError } from "../api/nationalIdentityApi";
+import { locateNationalRecords, resolveNationalIdentity, NationalIdentityApiError } from "../api/nationalIdentityApi";
 import type { NationalIdentityResolution } from "../api/nationalIdentity";
+import type { NationalRecordLocatorResponse } from "../api/nationalRecordLocator";
 
 function displayDate(value: string | null) {
   if (!value) return "Not recorded";
   return new Intl.DateTimeFormat("en-KE", { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`));
 }
 
+function requestError(err: unknown, notFoundMessage: string) {
+  if (!(err instanceof NationalIdentityApiError)) return "NATIONAL_IDENTITY_REQUEST_FAILED";
+  if (err.code === "AFYA_ID_NOT_FOUND") return notFoundMessage;
+  if (err.code === "PERMISSION_DENIED") return "The required national permission is not assigned to this workspace.";
+  if (err.code === "API_UNREACHABLE") return "The national identity service is currently unavailable.";
+  if (err.code === "API_NOT_CONFIGURED") return "The national API is not configured for this deployment.";
+  return err.code;
+}
+
 export function NationalIdentityPage() {
   const [afyaId, setAfyaId] = useState("");
+  const [accessReason, setAccessReason] = useState("");
   const [identity, setIdentity] = useState<NationalIdentityResolution | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [locator, setLocator] = useState<NationalRecordLocatorResponse | null>(null);
+  const [loadingIdentity, setLoadingIdentity] = useState(false);
+  const [loadingLocator, setLoadingLocator] = useState(false);
   const [error, setError] = useState("");
 
   async function resolve(event: FormEvent) {
     event.preventDefault();
     const normalized = afyaId.trim().toUpperCase();
     if (!normalized) return;
-    setLoading(true); setError(""); setIdentity(null);
+    setLoadingIdentity(true); setError(""); setIdentity(null); setLocator(null);
     try {
       setIdentity(await resolveNationalIdentity(normalized));
     } catch (err) {
-      if (err instanceof NationalIdentityApiError) {
-        setError(err.code === "AFYA_ID_NOT_FOUND" ? "No active AfyaSync identity matched that Afya ID." : err.code === "PERMISSION_DENIED" ? "National identity permission is required for this workspace." : err.code === "API_UNREACHABLE" ? "The national identity service is currently unavailable." : err.code);
-      } else setError("NATIONAL_IDENTITY_REQUEST_FAILED");
-    } finally { setLoading(false); }
+      setError(requestError(err, "No active AfyaSync identity matched that Afya ID."));
+    } finally { setLoadingIdentity(false); }
+  }
+
+  async function locate(event: FormEvent) {
+    event.preventDefault();
+    const normalized = afyaId.trim().toUpperCase();
+    const reason = accessReason.trim();
+    if (!normalized || reason.length < 5) return;
+    setLoadingLocator(true); setError(""); setLocator(null);
+    try {
+      setLocator(await locateNationalRecords(normalized, reason));
+    } catch (err) {
+      setError(requestError(err, "No active AfyaSync record matched that Afya ID."));
+    } finally { setLoadingLocator(false); }
   }
 
   return <section className="page-stack">
-    <div className="page-header"><div><p className="eyebrow">National health identity</p><h1>Identity resolution</h1><p className="muted">Resolve an active AfyaSync identity using the minimum identity data required for authorised care and interoperability.</p></div></div>
+    <div className="page-header"><div><p className="eyebrow">National health identity</p><h1>Identity & record locator</h1><p className="muted">Resolve minimum identity data and, when explicitly authorised, locate the AfyaSync facilities holding a patient's active record.</p></div></div>
     <div className="card"><div className="card-header"><div><h2>Resolve Afya ID</h2><p className="muted">Every lookup is audited. Do not use this service for curiosity, bulk enumeration, or unauthorised access.</p></div></div>
-      <form className="form-grid" onSubmit={resolve}><label>Afya ID<input value={afyaId} onChange={(e) => setAfyaId(e.target.value.toUpperCase())} maxLength={20} minLength={1} required placeholder="Enter Afya ID" autoComplete="off" aria-label="Afya ID" /></label><div className="form-actions"><button disabled={loading || !afyaId.trim()}>{loading ? "Resolving…" : "Resolve identity"}</button></div></form>
+      <form className="form-grid" onSubmit={resolve}><label>Afya ID<input value={afyaId} onChange={(e) => setAfyaId(e.target.value.toUpperCase())} maxLength={20} minLength={1} required placeholder="Enter Afya ID" autoComplete="off" aria-label="Afya ID" /></label><div className="form-actions"><button disabled={loadingIdentity || !afyaId.trim()}>{loadingIdentity ? "Resolving…" : "Resolve identity"}</button></div></form>
       {error && <div className="error-banner" role="alert">{error}</div>}
     </div>
     {identity && <div className="card"><div className="card-header"><div><p className="eyebrow">Identity match</p><h2>{identity.first_name} {identity.middle_name ? `${identity.middle_name} ` : ""}{identity.last_name}</h2><p className="muted">{identity.afya_id}</p></div><span className="status-badge">{identity.identity_status}</span></div><div className="stats-grid"><div className="metric-card"><span>Date of birth</span><strong>{displayDate(identity.date_of_birth)}</strong></div><div className="metric-card"><span>Sex</span><strong>{identity.sex || "Not recorded"}</strong></div><div className="metric-card"><span>Patient status</span><strong>{identity.patient_status}</strong></div></div><p className="muted small">This view intentionally excludes national ID numbers, phone numbers, addresses, facility locations, next-of-kin details, and clinical records.</p></div>}
+    <div className="card"><div className="card-header"><div><p className="eyebrow">Continuity of care</p><h2>Locate patient records</h2><p className="muted">This separate national privilege reveals only active facility routing metadata. A reason is mandatory and every request is audited.</p></div></div>
+      <form className="form-grid" onSubmit={locate}><label>Afya ID<input value={afyaId} onChange={(e) => setAfyaId(e.target.value.toUpperCase())} maxLength={20} minLength={1} required placeholder="Enter Afya ID" autoComplete="off" aria-label="Afya ID for record locator" /></label><label>Access reason<textarea value={accessReason} onChange={(e) => setAccessReason(e.target.value)} minLength={5} maxLength={500} required rows={3} placeholder="Why is this record location required?" aria-label="Access reason" /></label><div className="form-actions"><button disabled={loadingLocator || !afyaId.trim() || accessReason.trim().length < 5}>{loadingLocator ? "Locating…" : "Locate records"}</button></div></form>
+      {locator && <div className="table-wrap"><table><thead><tr><th>Facility</th><th>Facility code</th><th>County</th><th>Enrollment</th></tr></thead><tbody>{locator.facilities.length ? locator.facilities.map((facility) => <tr key={facility.facility_id}><td>{facility.facility_name}</td><td>{facility.facility_code}</td><td>{facility.county || "Not recorded"}</td><td>{facility.enrollment_status}</td></tr>) : <tr><td colSpan={4}>No active facility record was located.</td></tr>}</tbody></table></div>}
+      <p className="muted small">The locator does not return clinical notes, diagnoses, laboratory results, prescriptions, claims, billing, contact details, or national ID numbers. Use the facility's existing authorised clinical workflow for any subsequent record access.</p>
+    </div>
   </section>;
 }
