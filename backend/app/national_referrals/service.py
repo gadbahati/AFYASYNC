@@ -57,10 +57,7 @@ def get_national_referrals(
     destination = aliased(Facility)
     department = aliased(Department)
 
-    conditions = [
-        source.status == "ACTIVE",
-        destination.status == "ACTIVE",
-    ]
+    conditions = [source.status == "ACTIVE", destination.status == "ACTIVE"]
     if county_value:
         conditions.append((source.county == county_value) | (destination.county == county_value))
     if status_value:
@@ -112,11 +109,11 @@ def get_national_referrals(
         NationalReferralItem(
             id=referral.id,
             referral_id=referral.referral_id,
-            source_facility_id=source_facility.id,
+            source_facility_id=source.id,
             source_facility_code=source.facility_id,
             source_facility_name=source.name,
             source_county=source.county,
-            destination_facility_id=destination.facility.id,
+            destination_facility_id=destination.id,
             destination_facility_code=destination.facility_id,
             destination_facility_name=destination.name,
             destination_county=destination.county,
