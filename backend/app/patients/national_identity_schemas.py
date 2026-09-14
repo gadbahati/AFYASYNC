@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class NationalIdentityResolution(BaseModel):
+    """Minimum identity data permitted from the national resolver."""
+
     model_config = ConfigDict(from_attributes=True)
 
     afya_id: str = Field(min_length=1, max_length=20)
@@ -15,5 +17,4 @@ class NationalIdentityResolution(BaseModel):
     date_of_birth: date | None = None
     sex: str | None = Field(default=None, max_length=30)
     patient_status: str = Field(min_length=1, max_length=30)
-    active_facility_count: int = Field(ge=0)
     identity_status: str = Field(min_length=1, max_length=30)
