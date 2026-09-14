@@ -9,6 +9,10 @@ class NationalCapacityFacility(BaseModel):
     departments: int = Field(ge=0)
     scheduled_appointments: int = Field(ge=0)
     waiting_queue_entries: int = Field(ge=0)
+    total_beds: int = Field(ge=0)
+    available_beds: int = Field(ge=0)
+    occupied_beds: int = Field(ge=0)
+    emergency_waiting: int = Field(ge=0)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -18,6 +22,10 @@ class NationalCapacityResponse(BaseModel):
     active_departments: int = Field(ge=0)
     scheduled_appointments: int = Field(ge=0)
     waiting_queue_entries: int = Field(ge=0)
+    total_beds: int = Field(ge=0)
+    available_beds: int = Field(ge=0)
+    occupied_beds: int = Field(ge=0)
+    emergency_waiting: int = Field(ge=0)
     facilities: list[NationalCapacityFacility]
 
     model_config = ConfigDict(extra="forbid")
