@@ -15,10 +15,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Keep the initial production migration independent of optional PostgreSQL
-    # extensions. Username uniqueness is enforced by the database with a
-    # normal string column; application authentication remains case-aware via
-    # its existing normalization rules.
+    # Production-safe RBAC migration: do not depend on optional PostgreSQL
+    # extensions such as CITEXT. Username uniqueness is enforced by the
+    # database with a normal string column; authentication normalization is
+    # handled by the application layer.
     op.create_table(
         "users",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
