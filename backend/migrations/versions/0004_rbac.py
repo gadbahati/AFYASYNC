@@ -15,6 +15,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # PostgreSQL's CITEXT type is provided by the citext extension. Railway's
+    # managed PostgreSQL does not enable optional extensions automatically, so
+    # make the migration self-contained and safe to run on a fresh database.
+    op.execute("CREATE EXTENSION IF NOT EXISTS citext")
+
     op.create_table(
         "users",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
