@@ -15,11 +15,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # The Alembic version table defaults to varchar(32); keep revision IDs
-    # within that limit. Create the sequence through SQLAlchemy DDL because
-    # the installed Alembic Operations facade has no create_sequence method.
-    op.execute(sa.schema.CreateSequence(sa.Sequence("afasync_encounter_seq", start=1)))
-
     op.create_table(
         "encounters",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -118,4 +113,3 @@ def downgrade() -> None:
     for name in ("encounter_id", "status", "department_id", "facility_id", "patient_id"):
         op.drop_index(f"ix_encounters_{name}", table_name="encounters")
     op.drop_table("encounters")
-    op.execute(sa.schema.DropSequence(sa.Sequence("afasync_encounter_seq")))
