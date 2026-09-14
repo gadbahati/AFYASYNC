@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.encounters.models import Encounter
-from app.interoperability.clinical_schemas import FHIRBundleEntry, FHIRBundleResource, FHIREncounterResource
+from app.interoperability.clinical_schemas import (
+    FHIRBundleEntry,
+    FHIRBundleResource,
+    FHIREncounterResource,
+)
 from app.interoperability.service import get_fhir_patient
 
 
@@ -27,17 +31,21 @@ def get_fhir_clinical_bundle(
         facility_id=facility_id,
         actor_user_id=actor_user_id,
     )
-    encounters = list(db.scalars(
-        select(Encounter)
-        .where(
-            Encounter.patient_id == patient_id,
-            Encounter.facility_id == facility_id,
+    encounters = list(
+        db.scalars(
+            select(Encounter)
+            .where(
+                Encounter.patient_id == patient_id,
+                Encounter.facility_id == facility_id,
+            )
+            .order_by(Encounter.started_at.desc(), Encounter.id.desc())
+            .limit(100)
         )
-        .order_by(Encounter.started_at.desc(), Encounter.id.desc())
-        .limit(100)
-    ))
+    )
 
-    entries = [FHIRBundleEntry(fullUrl=f"urn:uuid:{patient.id}", resource=patient)]
+    entries = [
+        FHIRBundleEntry(fullUrl=f"urn:uuid:{patient.id}", resource=patient)
+    ]
     entries.extend(
         FHIRBundleEntry(
             fullUrl=f"urn:uuid:{encounter.id}",
