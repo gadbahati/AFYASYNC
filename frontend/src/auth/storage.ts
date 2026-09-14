@@ -5,12 +5,12 @@ const FACILITY_NAME_KEY = "afyasync.facility_name";
 const REMEMBER_KEY = "afyasync.remember";
 const REMEMBERED_USER_KEY = "afyasync.remembered_username";
 
-function store(): Storage {
-  return localStorage.getItem(REMEMBER_KEY) === "1" ? localStorage : sessionStorage;
-}
+// Authentication tokens are intentionally kept in sessionStorage only. The
+// remember-me preference persists only the username, never bearer credentials.
+const store = (): Storage => sessionStorage;
 
 function read(key: string): string | null {
-  return localStorage.getItem(key) ?? sessionStorage.getItem(key);
+  return sessionStorage.getItem(key);
 }
 
 export function getAccessToken(): string | null { return read(ACCESS_KEY); }

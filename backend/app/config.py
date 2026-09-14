@@ -1,4 +1,5 @@
 from functools import lru_cache
+import re
 from urllib.parse import urlparse
 
 from pydantic import field_validator, model_validator
@@ -21,6 +22,7 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_pool_timeout_seconds: int = 30
     db_pool_recycle_seconds: int = 1800
+    worker_poll_seconds: float = 5.0
     cors_origins: str = _DEFAULT_CORS_ORIGINS
 
     model_config = SettingsConfigDict(
@@ -52,13 +54,23 @@ class Settings(BaseSettings):
             raise ValueError("Numeric setting must be positive")
         return value
 
+    @field_validator("worker_poll_seconds")
+    @classmethod
+    def validate_worker_poll(cls, value: float) -> float:
+        if value <= 0 or value > 300:
+            raise ValueError("WORKER_POLL_SECONDS must be greater than 0 and at most 300")
+        return value
+
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
         if self.environment == "production":
-            if not self.jwt_secret or self.jwt_secret == _DEFAULT_JWT_SECRET:
+            secret = self.jwt_secret.strip()
+            if not secret or secret == _DEFAULT_JWT_SECRET:
                 raise ValueError("JWT_SECRET must be set to a strong non-default value when ENVIRONMENT=production")
-            if len(self.jwt_secret) < 32:
+            if len(secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
+            if len(set(secret)) < 8 or re.fullmatch(r"(.)\1+", secret):
+                raise ValueError("JWT_SECRET is too predictable for production")
             if self.jwt_algorithm != "HS256":
                 raise ValueError("JWT_ALGORITHM must be HS256 for the configured shared-secret token implementation")
             parsed_db = urlparse(self.database_url)

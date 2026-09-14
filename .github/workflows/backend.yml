@@ -39,28 +39,34 @@ jobs:
           import os
           from app.config import Settings
 
+          secure_secret = "vR7!qP2#sL9@xC4$mN8%tK6^wF3&zH5*"
+          base = {
+              "ENVIRONMENT": "production",
+              "JWT_SECRET": secure_secret,
+              "CORS_ORIGINS": "https://app.example.com",
+              "DATABASE_URL": "postgresql+psycopg://user:password@db.internal:5432/afasync",
+          }
           cases = [
-              {"JWT_SECRET": "change-this-development-secret", "CORS_ORIGINS": "https://app.example.com"},
-              {"JWT_SECRET": "a" * 31, "CORS_ORIGINS": "https://app.example.com"},
-              {"JWT_SECRET": "a" * 32, "CORS_ORIGINS": "http://untrusted.example.com"},
-              {"JWT_SECRET": "a" * 32, "CORS_ORIGINS": "https://app.example.com", "DATABASE_URL": "postgresql+psycopg://afasync:afasync@localhost:5432/afasync"},
+              {**base, "JWT_SECRET": "change-this-development-secret"},
+              {**base, "JWT_SECRET": "a" * 31},
+              {**base, "JWT_SECRET": "a" * 32},
+              {**base, "CORS_ORIGINS": "http://untrusted.example.com"},
+              {**base, "DATABASE_URL": "sqlite:///afasync.db"},
           ]
           for values in cases:
-              os.environ.update({"ENVIRONMENT": "production", **values})
+              os.environ.clear()
+              os.environ.update(values)
               try:
                   Settings()
               except Exception:
                   continue
-              raise SystemExit(f"FAIL: insecure production configuration was accepted: {values}")
+              raise SystemExit("FAIL: insecure production configuration was accepted")
 
-          os.environ.update({
-              "ENVIRONMENT": "production",
-              "JWT_SECRET": "a" * 32,
-              "CORS_ORIGINS": "https://app.example.com",
-              "DATABASE_URL": "postgresql+psycopg://user:password@db.internal:5432/afasync",
-          })
+          os.environ.clear()
+          os.environ.update(base)
           configured = Settings()
           assert configured.cors_origin_list() == ["https://app.example.com"]
+          assert configured.worker_poll_seconds == 5.0
           print("Production configuration guards passed")
           PY
 
@@ -78,6 +84,9 @@ jobs:
           print("Alembic head:", heads[0])
           print("Migration revisions:", len(list(script.walk_revisions())))
           PY
+
+      - name: Validate installed dependency metadata
+        run: python -m pip check
 
       - name: Run tests with coverage
         run: pytest -q --tb=short --cov=app --cov-report=term-missing

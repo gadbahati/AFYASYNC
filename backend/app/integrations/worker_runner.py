@@ -2,25 +2,15 @@ import logging
 import os
 import time
 
+from app.config import settings
 from app.database import SessionLocal
 from app.integrations.worker import list_retryable_transactions, process_pending_transaction
 
 logger = logging.getLogger("afasync.integration_worker")
 
 
-def _poll_seconds() -> float:
-    raw = os.getenv("WORKER_POLL_SECONDS", "5")
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ValueError("WORKER_POLL_SECONDS must be numeric") from exc
-    if value <= 0:
-        raise ValueError("WORKER_POLL_SECONDS must be positive")
-    return min(value, 300.0)
-
-
 def run() -> None:
-    poll_seconds = _poll_seconds()
+    poll_seconds = settings.worker_poll_seconds
     logger.info("AfyaSync integration worker started; poll interval=%ss", poll_seconds)
     while True:
         processed = 0
