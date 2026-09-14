@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class BenefitAdjudicationRequest(BaseModel):
@@ -9,6 +9,12 @@ class BenefitAdjudicationRequest(BaseModel):
     service_code: str | None = Field(default=None, min_length=1, max_length=80)
     service_type: str | None = Field(default=None, min_length=1, max_length=60)
     requested_amount: float = Field(gt=0, le=10_000_000)
+
+    @model_validator(mode="after")
+    def require_service_scope(self) -> "BenefitAdjudicationRequest":
+        if not self.service_code and not self.service_type:
+            raise ValueError("SERVICE_SCOPE_REQUIRED")
+        return self
 
 
 class BenefitAdjudicationResponse(BaseModel):
