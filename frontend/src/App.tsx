@@ -26,6 +26,7 @@ import { NationalPayerNetworkPage } from "./pages/NationalPayerNetworkPage";
 import { NationalStaffPage } from "./pages/NationalStaffPage";
 import { NationalSupplyPage } from "./pages/NationalSupplyPage";
 import { NationalSupplyPlanningPage } from "./pages/NationalSupplyPlanningPage";
+import { NationalReferralsPage } from "./pages/NationalReferralsPage";
 import { NewEncounterPage } from "./pages/NewEncounterPage";
 import { NewPatientPage } from "./pages/NewPatientPage";
 import { PatientDetailPage } from "./pages/PatientDetailPage";
@@ -51,6 +52,7 @@ export default function App() {
       <Route path="/national-benefits" element={<NationalBenefitConfigurationPage />} />
       <Route path="/national-supply" element={<NationalSupplyPage />} />
       <Route path="/national-supply/planning" element={<NationalSupplyPlanningPage />} />
+      <Route path="/national/referrals" element={<NationalReferralsPage />} />
       <Route path="/coverage-simulator" element={<CoverageSimulatorPage />} />
       <Route path="/coverage/sha-eligibility" element={<SHAEligibilityPage />} />
       <Route path="/integrations" element={<IntegrationOperationsPage />} />
