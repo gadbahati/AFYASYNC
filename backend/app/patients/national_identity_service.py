@@ -1,3 +1,4 @@
+import hashlib
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -6,6 +7,11 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.patients.models import AfyaIdentity, PatientFacility, Person
 from app.patients.national_identity_schemas import NationalIdentityResolution
+
+
+def _audit_identifier(value: str) -> str:
+    """Return a deterministic non-reversible identifier for audit trails."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def resolve_national_identity(
@@ -28,7 +34,7 @@ def resolve_national_identity(
             db,
             action="NATIONAL_IDENTITY_LOOKUP",
             resource_type="AFYA_ID",
-            resource_id=normalized[:20],
+            resource_id=_audit_identifier(normalized),
             result="NOT_FOUND",
             user_id=actor_user_id,
             metadata={"matched": False},
@@ -55,7 +61,7 @@ def resolve_national_identity(
         result="SUCCESS",
         user_id=actor_user_id,
         patient_id=person.id,
-        metadata={"afya_id": identity.afya_id, "active_facility_count": active_facility_count},
+        metadata={"identity_status": identity.status, "active_facility_count": active_facility_count},
         commit=True,
     )
     return NationalIdentityResolution(
