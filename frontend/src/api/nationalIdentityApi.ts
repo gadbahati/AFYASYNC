@@ -1,4 +1,5 @@
 import type { NationalIdentityResolution } from "./nationalIdentity";
+import type { NationalRecordLocatorResponse } from "./nationalRecordLocator";
 import { clearSession, getAccessToken, getRefreshToken, setSession } from "../auth/storage";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -27,34 +28,55 @@ async function refresh(): Promise<boolean> {
   } catch { clearSession(); return false; }
 }
 
-export async function resolveNationalIdentity(afyaId: string): Promise<NationalIdentityResolution> {
-  const normalized = afyaId.trim().toUpperCase();
-  if (!normalized) throw new NationalIdentityApiError(400, "AFYA_ID_REQUIRED");
-  if (normalized.length > 20) throw new NationalIdentityApiError(422, "AFYA_ID_TOO_LONG");
+async function request(path: string, init?: RequestInit): Promise<Response> {
   if (!API_BASE && import.meta.env.PROD) throw new NationalIdentityApiError(0, "API_NOT_CONFIGURED");
-
-  const headers = new Headers();
+  const headers = new Headers(init?.headers);
   const token = getAccessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}/api/v1/national/identity/resolve?afya_id=${encodeURIComponent(normalized)}`, { headers });
+    response = await fetch(`${API_BASE}${path}`, { ...init, headers });
   } catch {
     throw new NationalIdentityApiError(0, "API_UNREACHABLE");
   }
-
   if (response.status === 401) {
     if (!refreshPromise) refreshPromise = refresh().finally(() => { refreshPromise = null; });
-    if (await refreshPromise) return resolveNationalIdentity(normalized);
+    if (await refreshPromise) return request(path, init);
   }
-  if (!response.ok) {
-    let code = "NATIONAL_IDENTITY_REQUEST_FAILED";
-    try {
-      const body = await response.json() as { detail?: string | { code?: string } };
-      if (typeof body.detail === "string") code = body.detail;
-      else if (body.detail?.code) code = body.detail.code;
-    } catch { /* retain generic code */ }
-    throw new NationalIdentityApiError(response.status, code);
-  }
+  return response;
+}
+
+async function parseError(response: Response, fallback: string): Promise<never> {
+  let code = fallback;
+  try {
+    const body = await response.json() as { detail?: string | { code?: string } };
+    if (typeof body.detail === "string") code = body.detail;
+    else if (body.detail?.code) code = body.detail.code;
+  } catch { /* retain generic code */ }
+  throw new NationalIdentityApiError(response.status, code);
+}
+
+export async function resolveNationalIdentity(afyaId: string): Promise<NationalIdentityResolution> {
+  const normalized = afyaId.trim().toUpperCase();
+  if (!normalized) throw new NationalIdentityApiError(400, "AFYA_ID_REQUIRED");
+  if (normalized.length > 20) throw new NationalIdentityApiError(422, "AFYA_ID_TOO_LONG");
+  const response = await request(`/api/v1/national/identity/resolve?afya_id=${encodeURIComponent(normalized)}`);
+  if (!response.ok) return parseError(response, "NATIONAL_IDENTITY_REQUEST_FAILED");
   return await response.json() as NationalIdentityResolution;
+}
+
+export async function locateNationalRecords(afyaId: string, accessReason: string): Promise<NationalRecordLocatorResponse> {
+  const normalized = afyaId.trim().toUpperCase();
+  const reason = accessReason.trim();
+  if (!normalized) throw new NationalIdentityApiError(400, "AFYA_ID_REQUIRED");
+  if (normalized.length > 20) throw new NationalIdentityApiError(422, "AFYA_ID_TOO_LONG");
+  if (reason.length < 5) throw new NationalIdentityApiError(400, "ACCESS_REASON_REQUIRED");
+  if (reason.length > 500) throw new NationalIdentityApiError(422, "ACCESS_REASON_TOO_LONG");
+  const response = await request("/api/v1/national/identity/locate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ afya_id: normalized, access_reason: reason }),
+  });
+  if (!response.ok) return parseError(response, "NATIONAL_RECORD_LOCATOR_FAILED");
+  return await response.json() as NationalRecordLocatorResponse;
 }
