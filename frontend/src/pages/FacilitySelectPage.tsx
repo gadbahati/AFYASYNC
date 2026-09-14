@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
+import { getAccessToken } from "../auth/storage";
 import type { FacilityOption } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 
@@ -9,60 +10,57 @@ export function FacilitySelectPage() {
   const navigate = useNavigate();
   const [facilities, setFacilities] = useState<FacilityOption[]>(auth.pendingFacilities || []);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!auth.pendingFacilities);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (auth.pendingFacilities) return;
+    if (!auth.ready || auth.pendingFacilities || !auth.username || !getAccessToken()) return;
     let cancelled = false;
+    setLoading(true);
     api
       .facilities()
       .then((rows) => {
         if (!cancelled) setFacilities(rows);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.code : "LOAD_FAILED");
+        if (!cancelled) setError(err instanceof ApiError ? err.message || err.code : "Unable to load facilities.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [auth.pendingFacilities]);
+    return () => { cancelled = true; };
+  }, [auth.ready, auth.pendingFacilities, auth.username]);
 
-  if (auth.ready && !auth.username && !auth.pendingFacilities) {
-    return <Navigate to="/login" replace />;
+  if (!auth.ready) {
+    return <div className="auth-page"><div className="card auth-card"><p className="muted">Preparing facility selection…</p></div></div>;
   }
-
-  if (auth.facilityId && !auth.pendingFacilities) {
-    return <Navigate to="/" replace />;
-  }
+  if (!auth.username || !getAccessToken()) return <Navigate to="/login" replace />;
+  if (auth.facilityId && !auth.pendingFacilities) return <Navigate to="/" replace />;
 
   async function choose(facility: FacilityOption) {
     setError(null);
     try {
       await auth.selectFacility(facility);
-      navigate("/");
+      navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.code : "FACILITY_SELECT_FAILED");
+      setError(err instanceof ApiError ? err.message || err.code : "Unable to select facility.");
     }
   }
 
   return (
-    <div className="auth-page">
+    <main className="auth-page" aria-label="Select facility">
       <div className="card auth-card">
-        <h1>Select facility</h1>
-        <p className="muted">Your account is active at more than one facility. Choose where you are working now.</p>
-        {loading && <p>Loading facilities…</p>}
-        {error && <div className="error">{error}</div>}
+        <div className="auth-brand"><div><div className="brand-kicker">AfyaSync workspace</div><h1>Select facility</h1></div></div>
+        <p className="muted">Your staff account has access to more than one facility. Select the facility where you are working now.</p>
+        {loading && <p className="muted">Loading facilities…</p>}
+        {error && <div className="error" role="alert">{error}</div>}
         <ul className="facility-list">
-          {facilities.map((f) => (
-            <li key={f.facility_id}>
-              <button type="button" onClick={() => void choose(f)}>{f.facility_name}</button>
+          {facilities.map((facility) => (
+            <li key={facility.facility_id}>
+              <button type="button" onClick={() => void choose(facility)}>{facility.facility_name}</button>
             </li>
           ))}
         </ul>
       </div>
-    </div>
+    </main>
   );
 }
