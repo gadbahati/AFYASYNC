@@ -3,7 +3,7 @@ import { useAuth } from "../auth/AuthContext";
 import { KenyaFlag } from "./KenyaFlag";
 
 const navGroups = [
-  { label: "Overview", links: [["/", "Dashboard"], ["/command-centre", "Command centre"], ["/national-command-centre", "National command centre"], ["/national-intelligence", "National intelligence"], ["/national-identity", "National identity"], ["/national-facilities", "Facility network"], ["/national-staff", "Staff network"], ["/national-payers", "Payer network"], ["/national-benefits", "Benefit configuration"], ["/national-supply", "Medicine supply"], ["/coverage-simulator", "Coverage simulator"]] },
+  { label: "Overview", links: [["/", "Dashboard"], ["/command-centre", "Command centre"], ["/national-command-centre", "National command centre"], ["/national-intelligence", "National intelligence"], ["/national-identity", "National identity"], ["/national-facilities", "Facility network"], ["/national-staff", "Staff network"], ["/national-payers", "Payer network"], ["/national-benefits", "Benefit configuration"], ["/national-supply", "Medicine supply"], ["/national-supply/planning", "Supply planning"], ["/coverage-simulator", "Coverage simulator"]] },
   { label: "Patients & care", links: [["/patients", "Patient register"], ["/patients/new", "Register patient"], ["/patients/sha-lookup", "Coverage lookup"], ["/coverage/sha-eligibility", "SHA eligibility verification"], ["/appointments", "Appointments"], ["/queue", "Clinical queue"], ["/referrals", "Referrals"]] },
   { label: "Clinical services", links: [["/laboratory", "Laboratory"], ["/pharmacy", "Pharmacy"], ["/benefits", "Benefit packages"]] },
   { label: "Revenue & financing", links: [["/billing", "Billing"], ["/claims", "Claims & rework"], ["/integrations", "Integration operations"]] },
