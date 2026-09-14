@@ -36,11 +36,8 @@ import { ReferralsPage } from "./pages/ReferralsPage";
 import { InteroperabilityPage } from "./pages/InteroperabilityPage";
 import { InteroperabilityClinicalPage } from "./pages/InteroperabilityClinicalPage";
 
-const AUTH_BYPASS = import.meta.env.VITE_DISABLE_AUTH === "true";
-
 export default function App() {
   return <AuthProvider><BrowserRouter><Routes>
-    {AUTH_BYPASS && <Route path="/login" element={<Navigate to="/" replace />} />}
     <Route path="/select-facility" element={<FacilitySelectPage />} />
     <Route element={<ProtectedRoute />}><Route element={<Layout />}>
       <Route path="/" element={<DashboardPage />} />
@@ -76,7 +73,6 @@ export default function App() {
       <Route path="/claims" element={<ClaimsPage />} />
       <Route path="/referrals" element={<ReferralsPage />} />
     </Route></Route>
-    {!AUTH_BYPASS && <Route path="/login" element={<Navigate to="/login" replace />} />}
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></BrowserRouter></AuthProvider>;
 }
