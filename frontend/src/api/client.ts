@@ -6,7 +6,11 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 export class ApiError extends Error {
   status: number;
   code: string;
-  constructor(status: number, code: string, message?: string) { super(message || code); this.status = status; this.code = code; }
+  constructor(status: number, code: string, message?: string) {
+    super(message || code);
+    this.status = status;
+    this.code = code;
+  }
 }
 
 function parseDetail(body: ApiErrorBody | null): string {
@@ -36,7 +40,8 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   const token = getAccessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
-  try { res = await fetch(`${API_BASE}${path}`, { ...init, headers }); } catch { throw new ApiError(0, "API_UNREACHABLE"); }
+  try { res = await fetch(`${API_BASE}${path}`, { ...init, headers }); }
+  catch { throw new ApiError(0, "API_UNREACHABLE"); }
   if (res.status === 401 && retry) {
     if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null; });
     if (await refreshPromise) return request<T>(path, init, false);
@@ -105,11 +110,11 @@ export const api = {
   createClaim(invoice_id: string) { return request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id }) }); },
   validateClaim(claim_id: string) { return request<{ claim_id: string; valid: boolean; errors: string[] }>(`/api/v1/claims/${claim_id}/validate`, { method: "POST" }); },
   submitClaim(claim_id: string) { return request<{ claim_id: string; status: string; message: string }>(`/api/v1/claims/${claim_id}/submit`, { method: "POST" }); },
-  resubmitClaim(claim_id: string) { return request<{ claim_id: string; status: string; message: string }>(`/api/v1/claims/${claim_id}/resubmit`, { method: "POST" }); },
   getClaimRejectionGuide(claim_id: string) { return request<any>(`/api/v1/claims/${claim_id}/rejection-guide`); },
   recordClaimResponse(claim_id: string, payload: { status: "APPROVED" | "REJECTED" | "PARTIALLY_APPROVED"; response_code: string; response_message: string; external_reference: string; approved_amount?: number | null }) { return request<any>(`/api/v1/claims/${claim_id}/response`, { method: "POST", body: JSON.stringify(payload) }); },
   reconcileClaim(claim_id: string, received_amount: number) { return request<any>(`/api/v1/claims/${claim_id}/reconcile`, { method: "POST", body: JSON.stringify({ received_amount }) }); },
   listClaimRejections() { return request<any[]>("/api/v1/claims/workbench/rejections"); },
+  sandboxRejectClaim(claim_id: string, payload: { response_code?: string; response_message?: string; external_reference?: string } = {}) { return request<any>(`/api/v1/claims/${claim_id}/sandbox-reject`, { method: "POST", body: JSON.stringify(payload) }); },
   commandCentre() { return request<any>("/api/v1/insight/command-centre"); },
   fraudRadar() { return request<any>("/api/v1/insight/fraud-radar"); },
   simulateCoverage(payload: { coverage_mode: string; patient_id?: string | null; membership_number?: string | null; lines: Array<{ code: string; description: string; quantity: number; unit_price: number }> }) { return request<any>("/api/v1/insight/coverage/simulate", { method: "POST", body: JSON.stringify(payload) }); },

@@ -32,7 +32,7 @@ export function ClaimsPage() {
   }
   async function onValidate(id: string) { setBusy(true); setError(null); try { const res = await api.validateClaim(id); setMessage(res.valid ? "Claim validated and ready" : `Validation errors: ${res.errors.join(", ")}`); load(); } catch (err) { setError(err instanceof ApiError ? err.code : "VALIDATE_FAILED"); } finally { setBusy(false); } }
   async function onSubmit(id: string) { setBusy(true); setError(null); try { const res = await api.submitClaim(id); setMessage(res.message || `Submitted: ${res.status}`); load(); } catch (err) { setError(err instanceof ApiError ? err.code : "SUBMIT_FAILED"); } finally { setBusy(false); } }
-  async function onResubmit(id: string) { setBusy(true); setError(null); setMessage(null); try { const res = await api.resubmitClaim(id); setMessage(res.message || `Re-submitted: ${res.status}`); load(); } catch (err) { setError(err instanceof ApiError ? err.code : "RESUBMIT_FAILED"); } finally { setBusy(false); } }
+  async function onSandboxReject(id: string) { setBusy(true); setError(null); try { await api.sandboxRejectClaim(id, { response_code: "COV001", response_message: "Coverage not verified (sandbox)" }); setMessage("Sandbox rejection recorded — see workbench for fix guidance"); load(); } catch (err) { setError(err instanceof ApiError ? err.code : "SANDBOX_REJECT_FAILED"); } finally { setBusy(false); } }
 
   async function onResponse(e: FormEvent) {
     e.preventDefault(); if (!responseClaim) return; setBusy(true); setError(null); setMessage(null);
@@ -58,14 +58,14 @@ export function ClaimsPage() {
           {claims.map((c) => <tr key={c.id}><td>{c.claim_id}</td><td>{c.invoice_id}</td><td>{money(c.claim_amount)}</td><td>{money(c.approved_amount)}</td><td>{money(c.paid_amount)}</td><td><span className="status-pill">{c.status}</span></td><td><div className="form-actions">
             <button type="button" className="button secondary" disabled={busy} onClick={() => onValidate(c.id)}>Validate</button>
             <button type="button" disabled={busy} onClick={() => onSubmit(c.id)}>Submit</button>
-            {c.status === "REJECTED" && <button type="button" className="button secondary" disabled={busy} onClick={() => onResubmit(c.id)}>Validate & resubmit</button>}
             {(c.status === "SUBMITTED" || c.status === "PROCESSING") && <button type="button" className="button secondary" disabled={busy} onClick={() => { setResponseClaim(c); setResponse({ status: "APPROVED", code: "", message: "", reference: "", approved: "" }); }}>Payer response</button>}
             {(["APPROVED", "PARTIALLY_APPROVED", "PAID"].includes(c.status)) && <button type="button" className="button secondary" disabled={busy} onClick={() => { setReconcileClaim(c); setReceivedAmount(String(Number(c.approved_amount) - Number(c.paid_amount))); }}>Reconcile</button>}
+            {(c.status === "READY" || c.status === "SUBMITTED") && <button type="button" className="button secondary" disabled={busy} onClick={() => onSandboxReject(c.id)}>Sandbox reject</button>}
           </div></td></tr>)}
           {claims.length === 0 && <tr><td colSpan={7} className="muted">No claims yet for this facility.</td></tr>}
         </tbody></table></div></article>
 
-        <article className="card"><h2>Rejection workbench ({rejections.length})</h2><p className="muted">Rejected claims are mapped to an actionable fix and responsible owner. After the correction is made, re-validation and resubmission use the normal payer workflow.</p><div className="table-wrap"><table><thead><tr><th>Claim</th><th>Code</th><th>Problem</th><th>Fix</th><th>Owner</th><th>Amount</th></tr></thead><tbody>
+        <article className="card"><h2>Rejection workbench ({rejections.length})</h2><p className="muted">Rejections are mapped to an actionable fix and responsible owner.</p><div className="table-wrap"><table><thead><tr><th>Claim</th><th>Code</th><th>Problem</th><th>Fix</th><th>Owner</th><th>Amount</th></tr></thead><tbody>
           {rejections.map((r) => <tr key={r.claim_id}><td>{r.claim_number}</td><td>{r.guide_code}</td><td><strong>{r.guide_title}</strong><br /><small>{r.response_message || "—"}</small></td><td>{r.guide_fix}</td><td>{r.guide_owner}</td><td>{money(r.claim_amount)}</td></tr>)}
           {rejections.length === 0 && <tr><td colSpan={6} className="muted">No rejected claims.</td></tr>}
         </tbody></table></div></article>

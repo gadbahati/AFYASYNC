@@ -3,9 +3,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_facility_context, require_permission
+from app.auth.dependencies import get_facility_context, require_national_permission, require_permission
 from app.database import get_db
 from app.interoperability.clinical_schemas import FHIRBundleResource
+from app.interoperability.dhis2_service import build_dhis2_data_value_set
 from app.interoperability.schemas import FHIRCapabilityResponse, FHIRPatientResource
 from app.interoperability.service import get_fhir_patient
 from app.interoperability.clinical_service import get_fhir_clinical_bundle
@@ -14,6 +15,7 @@ from app.rbac.models import User
 router = APIRouter(prefix="/api/v1/interoperability", tags=["Interoperability"])
 PATIENT_PERMISSION = "interoperability.patient.read"
 CLINICAL_PERMISSION = "interoperability.clinical.read"
+NATIONAL_REPORTS_READ = "reports.national.read"
 
 
 @router.get("/metadata", response_model=FHIRCapabilityResponse)
@@ -45,14 +47,20 @@ def read_clinical_summary(
     user: User = Depends(require_permission(CLINICAL_PERMISSION)),
 ) -> FHIRBundleResource:
     try:
-        return get_fhir_clinical_bundle(
-            db,
-            patient_id=patient_id,
-            facility_id=facility_id,
-            actor_user_id=user.id,
-            access_reason=access_reason,
-        )
+        return get_fhir_clinical_bundle(db, patient_id=patient_id, facility_id=facility_id, actor_user_id=user.id, access_reason=access_reason)
     except ValueError as exc:
         code = str(exc)
         status_code = 403 if code == "PATIENT_NOT_IN_FACILITY" else 404 if code in {"PATIENT_NOT_FOUND", "IDENTITY_NOT_ACTIVE"} else 422
         raise HTTPException(status_code=status_code, detail=code) from exc
+
+
+@router.get("/dhis2/data-value-set")
+def dhis2_data_value_set(
+    period: str = Query(pattern=r"^\d{6}$", description="DHIS2 period in YYYYMM format"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_national_permission(NATIONAL_REPORTS_READ)),
+):
+    try:
+        return build_dhis2_data_value_set(db, period=period, actor_user_id=user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

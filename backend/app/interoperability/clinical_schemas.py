@@ -1,19 +1,25 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FHIREncounterResource(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(populate_by_name=True)
 
     resourceType: str = "Encounter"
     id: UUID
     status: str = Field(min_length=1, max_length=30)
-    class_code: str = Field(min_length=1, max_length=30)
+    class_code: dict[str, str] = Field(alias="class")
     period_start: datetime
     period_end: datetime | None = None
     patient_id: UUID
+    subject: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def build_subject(self):
+        self.subject = {"reference": f"Patient/{self.patient_id}"}
+        return self
 
 
 class FHIRBundleEntry(BaseModel):

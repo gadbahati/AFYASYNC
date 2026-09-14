@@ -84,7 +84,7 @@ class Settings(BaseSettings):
             for origin in origins:
                 parsed = urlparse(origin)
                 if parsed.scheme != "https" or not parsed.netloc or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
-                    raise ValueError("CORS_ORIGINS must contain only explicit HTTPS origins in production; local development origins are not allowed")
+                    raise ValueError("CORS_ORIGINS must contain only explicit HTTPS origins in production")
         return self
 
     def cors_origin_list(self) -> list[str]:

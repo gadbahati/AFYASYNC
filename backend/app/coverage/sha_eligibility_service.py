@@ -9,7 +9,7 @@ from app.coverage.models import Coverage, Payer, PayerPlan
 from app.coverage.sha_eligibility_schemas import SHAEligibilityResponse
 from app.integrations.adapters import AdapterResult, build_adapter
 from app.integrations.models import Integration
-from app.patients.models import AfyaIdentity, PatientFacility
+from app.patients.models import AfyaIdentity, PatientFacility, Person
 
 
 class SHAEligibilityError(ValueError):
@@ -84,7 +84,7 @@ def verify_sha_eligibility(
         raise SHAEligibilityError("SHA_INTEGRATION_NOT_CONFIGURED")
 
     configuration = integration.configuration or {}
-    if configuration.get("adapter_type") not in {"http_json", "sha_edi"}:
+    if configuration.get("adapter_type") != "http_json":
         raise SHAEligibilityError("SHA_CONNECTOR_NOT_CONFIGURED")
 
     db.rollback()

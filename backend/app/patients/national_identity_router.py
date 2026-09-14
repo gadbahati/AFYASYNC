@@ -18,15 +18,19 @@ router = APIRouter(prefix="/api/v1/national/identity", tags=["National Identity"
 @router.get("/resolve", response_model=NationalIdentityResolution)
 def resolve_identity(
     afya_id: str = Query(min_length=1, max_length=20),
+    access_reason: str = Query(min_length=5, max_length=500),
     user: User = Depends(require_national_permission(NATIONAL_IDENTITY_READ)),
     db: Session = Depends(get_db),
 ) -> NationalIdentityResolution:
-    identity = resolve_national_identity(db, afya_id, actor_user_id=user.id)
+    try:
+        identity = resolve_national_identity(db, afya_id, actor_user_id=user.id, access_reason=access_reason)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "INVALID_AFYA_ID":
+            raise HTTPException(status_code=422, detail={"code": code, "message": "Afya ID must use the AfyaSync identifier format."}) from exc
+        raise HTTPException(status_code=422, detail={"code": code, "message": "The national identity request is invalid."}) from exc
     if identity is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "AFYA_ID_NOT_FOUND", "message": "No active AfyaSync identity matched the supplied Afya ID."},
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "AFYA_ID_NOT_FOUND", "message": "No active AfyaSync identity matched the supplied Afya ID."})
     return identity
 
 
@@ -36,15 +40,7 @@ def locate_records(
     user: User = Depends(require_national_permission(NATIONAL_RECORD_LOCATE)),
     db: Session = Depends(get_db),
 ) -> NationalRecordLocatorResponse:
-    result = locate_national_records(
-        db,
-        payload.afya_id,
-        access_reason=payload.access_reason,
-        actor_user_id=user.id,
-    )
+    result = locate_national_records(db, payload.afya_id, access_reason=payload.access_reason, actor_user_id=user.id)
     if result is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "AFYA_ID_NOT_FOUND", "message": "No active AfyaSync record matched the supplied Afya ID."},
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "AFYA_ID_NOT_FOUND", "message": "No active AfyaSync record matched the supplied Afya ID."})
     return result
