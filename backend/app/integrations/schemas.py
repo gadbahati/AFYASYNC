@@ -6,6 +6,9 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+PayerOperation = Literal["ELIGIBILITY", "BENEFITS", "PREAUTHORIZATION", "CLAIM", "PAYMENT"]
+
+
 class IntegrationCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     integration_type: str = Field(min_length=2, max_length=60)
@@ -37,7 +40,7 @@ class IntegrationConfigurationUpdate(BaseModel):
 
 class TransactionCreate(BaseModel):
     transaction_id: str = Field(min_length=1, max_length=120)
-    entity_type: Literal["CLAIM", "PAYMENT", "PREAUTHORIZATION"]
+    entity_type: PayerOperation
     entity_id: UUID
     direction: Literal["OUTBOUND"] = "OUTBOUND"
     request_reference: str | None = Field(default=None, max_length=150)
