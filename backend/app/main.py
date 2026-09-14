@@ -57,6 +57,7 @@ from app.nursing import models as nursing_models
 from app.nursing.router import router as nursing_router
 from app.national_supply.router import router as national_supply_router
 from app.national_supply.planning_router import router as national_supply_planning_router
+from app.national_referrals.router import router as national_referrals_router
 from app.patients import models as patient_models
 from app.patients.national_identity_router import router as national_identity_router
 from app.patients.router import router as patients_router
@@ -122,7 +123,6 @@ def initialize_database():
    result = seed_universal_admin()
    print("SEED_UNIVERSAL_ADMIN:", result)
   except Exception as exc:
-   # Do not crash the API if seed fails; log and continue so health checks stay up.
    print("SEED_UNIVERSAL_ADMIN failed:", type(exc).__name__, exc)
 
 app.include_router(auth_router.router)
@@ -164,6 +164,7 @@ app.include_router(insight_router)
 app.include_router(interoperability_router)
 app.include_router(national_supply_router)
 app.include_router(national_supply_planning_router)
+app.include_router(national_referrals_router)
 
 @app.get("/health", tags=["System"])
 def health_check():
