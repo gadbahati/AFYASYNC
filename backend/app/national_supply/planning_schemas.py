@@ -44,11 +44,13 @@ class SupplyPlanningResponse(BaseModel):
     recommendations: list[SupplyReplenishmentRecommendation] = Field(default_factory=list, max_length=200)
     total_recommendations: int = Field(ge=0, le=200)
     generated_from_live_inventory: bool = True
-    input_rows_considered: int = Field(default=0, ge=0, le=50_000)
+    input_rows_considered: int = Field(default=0, ge=0, le=50_001)
     input_rows_truncated: bool = False
 
     @model_validator(mode="after")
     def validate_total(self) -> "SupplyPlanningResponse":
         if self.total_recommendations != len(self.recommendations):
             raise ValueError("TOTAL_RECOMMENDATIONS_MISMATCH")
+        if self.input_rows_truncated and self.input_rows_considered <= 50_000:
+            raise ValueError("TRUNCATION_FLAG_REQUIRES_INPUT_OVER_LIMIT")
         return self
