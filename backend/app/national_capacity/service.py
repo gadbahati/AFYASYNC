@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.appointments.models import Appointment, Queue, QueueEntry
@@ -38,14 +38,14 @@ def get_national_capacity(db: Session, *, actor_user_id: UUID, county: str | Non
     appointment_counts = dict(db.execute(select(Appointment.facility_id, func.count(Appointment.id)).where(Appointment.facility_id.in_(facility_ids), Appointment.appointment_at >= now, Appointment.appointment_at <= horizon, Appointment.status.in_(_ACTIVE_APPOINTMENT_STATUSES)).group_by(Appointment.facility_id)).all()) if facility_ids else {}
     waiting_counts = dict(db.execute(select(Queue.facility_id, func.count(QueueEntry.id)).join(QueueEntry, QueueEntry.queue_id == Queue.id).where(Queue.facility_id.in_(facility_ids), Queue.status == "ACTIVE", QueueEntry.status == "WAITING").group_by(Queue.facility_id)).all()) if facility_ids else {}
 
-    bed_counts = {}
+    bed_counts: dict[UUID, tuple[int, int, int]] = {}
     if facility_ids:
         bed_rows = db.execute(
             select(
                 Ward.facility_id,
                 func.count(Bed.id),
-                func.sum(func.case((Bed.status == "AVAILABLE", 1), else_=0)),
-                func.sum(func.case((Bed.status == "OCCUPIED", 1), else_=0)),
+                func.sum(case((Bed.status == "AVAILABLE", 1), else_=0)),
+                func.sum(case((Bed.status == "OCCUPIED", 1), else_=0)),
             )
             .join(Bed, Bed.ward_id == Ward.id)
             .where(Ward.facility_id.in_(facility_ids), Ward.status == "ACTIVE")
@@ -53,14 +53,11 @@ def get_national_capacity(db: Session, *, actor_user_id: UUID, county: str | Non
         ).all()
         bed_counts = {facility_id: (int(total or 0), int(available or 0), int(occupied or 0)) for facility_id, total, available, occupied in bed_rows}
 
-    emergency_counts = {}
+    emergency_counts: dict[UUID, int] = {}
     if facility_ids:
         emergency_rows = db.execute(
             select(EmergencyVisit.facility_id, func.count(EmergencyVisit.id))
-            .where(
-                EmergencyVisit.facility_id.in_(facility_ids),
-                EmergencyVisit.status.in_(_ACTIVE_EMERGENCY_STATUSES),
-            )
+            .where(EmergencyVisit.facility_id.in_(facility_ids), EmergencyVisit.status.in_(_ACTIVE_EMERGENCY_STATUSES))
             .group_by(EmergencyVisit.facility_id)
         ).all()
         emergency_counts = dict(emergency_rows)
