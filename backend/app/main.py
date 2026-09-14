@@ -1,3 +1,4 @@
+from re import fullmatch
 from uuid import uuid4
 
 from fastapi import FastAPI, Response, status
@@ -87,19 +88,15 @@ app = FastAPI(title=settings.app_name, version=settings.app_version)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        request_id = request.headers.get("X-Request-ID", "").strip()[:128] or str(uuid4())
-        request.state.request_id = request_id
-        try:
-            response = await call_next(request)
-        except Exception:
-            runtime_metrics.request(error=True)
-            return JSONResponse(
-                status_code=500,
-                content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"},
-                headers={"X-Request-ID": request_id},
-            )
-        runtime_metrics.request(error=response.status_code >= 500)
+    @staticmethod
+    def _request_id(request: Request) -> str:
+        supplied = request.headers.get("X-Request-ID", "").strip()
+        if supplied and len(supplied) <= 128 and fullmatch(r"[A-Za-z0-9._:-]+", supplied):
+            return supplied
+        return str(uuid4())
+
+    @staticmethod
+    def _apply_headers(response, request_id: str) -> None:
         response.headers["X-Request-ID"] = request_id
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
@@ -111,6 +108,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Cache-Control", "no-store")
         if settings.environment == "production":
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = self._request_id(request)
+        request.state.request_id = request_id
+        try:
+            response = await call_next(request)
+        except Exception:
+            runtime_metrics.request(error=True)
+            response = JSONResponse(
+                status_code=500,
+                content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"},
+            )
+            self._apply_headers(response, request_id)
+            return response
+        runtime_metrics.request(error=response.status_code >= 500)
+        self._apply_headers(response, request_id)
         return response
 
 
