@@ -3,6 +3,7 @@ from hmac import compare_digest, new
 from time import time
 
 from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -31,17 +32,16 @@ def _verify(timestamp: str, signature: str, body: bytes) -> None:
         raise HTTPException(status_code=401, detail="INVALID_WEBHOOK_TIMESTAMP") from exc
     if abs(time() - sent) > 300:
         raise HTTPException(status_code=401, detail="WEBHOOK_TIMESTAMP_EXPIRED")
-    payload = f"{timestamp}.".encode() + body
-    expected = new(_secret().encode(), payload, sha256).hexdigest()
+    expected = new(_secret().encode(), f"{timestamp}.".encode() + body, sha256).hexdigest()
     if not compare_digest(expected, signature):
         raise HTTPException(status_code=401, detail="INVALID_WEBHOOK_SIGNATURE")
 
 
-def _response(text: str, end: bool = False) -> str:
-    return ("END " if end else "CON ") + text
+def _response(text: str, end: bool = False) -> PlainTextResponse:
+    return PlainTextResponse(("END " if end else "CON ") + text)
 
 
-@router.post("/callback", response_class=None)
+@router.post("/callback", response_class=PlainTextResponse)
 async def callback(
     request: Request,
     x_afasync_timestamp: str = Header(..., alias="X-AfyaSync-Timestamp"),
@@ -55,14 +55,13 @@ async def callback(
         raise HTTPException(status_code=400, detail="INVALID_USSD_REQUEST") from exc
 
     # Provider-neutral boundary: no patient data is disclosed from an
-    # unauthenticated phone number. Real member services must be wired only
-    # after the telecom provider contract, authentication/PIN policy and
-    # approved service catalogue are configured.
+    # unauthenticated phone number. Real member services require a contracted
+    # provider, approved service catalogue and explicit member authentication.
     choice = payload.text.strip().split("*")[-1] if payload.text.strip() else ""
     if not choice:
         return _response("AfyaSync\n1. Member services\n2. Facility services\n0. Exit")
     if choice == "0":
         return _response("Thank you for using AfyaSync.", end=True)
     if choice in {"1", "2"}:
-        return _response("This service is not activated for this provider yet.", end=True)
+        return _response("This service is not activated for this provider.", end=True)
     return _response("Invalid choice. Please try again.")
