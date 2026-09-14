@@ -4,7 +4,9 @@ from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 from sqlalchemy import text
+
 from app.admissions import models as admission_models
 from app.admissions.router import router as admissions_router
 from app.appointments import models as appointment_models
@@ -81,35 +83,58 @@ from app.wards.movement_router import router as ward_movement_router
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
- async def dispatch(self, request: Request, call_next):
-  response = await call_next(request)
-  response.headers.setdefault("X-Content-Type-Options", "nosniff")
-  response.headers.setdefault("X-Frame-Options", "DENY")
-  response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-  response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-  response.headers.setdefault("Cache-Control", "no-store")
-  if settings.environment == "production":
-   response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-  return response
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID", "").strip()[:128] or str(uuid4())
+        request.state.request_id = request_id
+        try:
+            response = await call_next(request)
+        except Exception:
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"},
+                headers={"X-Request-ID": request_id},
+            )
+        response.headers["X-Request-ID"] = request_id
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+        response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
+        response.headers.setdefault("Cache-Control", "no-store")
+        if settings.environment == "production":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
 
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
- app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"],
+    )
 app.add_middleware(SecurityHeadersMiddleware)
+
 
 @app.on_event("startup")
 def initialize_database():
- if settings.environment != "production":
-  Base.metadata.create_all(bind=engine)
- import os
- if os.getenv("SEED_UNIVERSAL_ADMIN", "").strip().lower() in {"1", "true", "yes"}:
-  from app.scripts.seed_universal_admin import seed_universal_admin
-  try:
-   result = seed_universal_admin()
-   print("SEED_UNIVERSAL_ADMIN:", result)
-  except Exception as exc:
-   print("SEED_UNIVERSAL_ADMIN failed:", type(exc).__name__, exc)
+    if settings.environment != "production":
+        Base.metadata.create_all(bind=engine)
+    import os
+    if os.getenv("SEED_UNIVERSAL_ADMIN", "").strip().lower() in {"1", "true", "yes"}:
+        from app.scripts.seed_universal_admin import seed_universal_admin
+        try:
+            result = seed_universal_admin()
+            print("SEED_UNIVERSAL_ADMIN:", result)
+        except Exception as exc:
+            print("SEED_UNIVERSAL_ADMIN failed:", type(exc).__name__, exc)
+
 
 app.include_router(auth_router.router)
 app.include_router(patients_router)
@@ -153,20 +178,23 @@ app.include_router(national_supply_planning_router)
 app.include_router(national_referrals_router)
 app.include_router(national_capacity_router)
 
+
 @app.get("/health", tags=["System"])
 def health_check():
- return {"success": True, "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version}, "message": "AfyaSync API is running"}
+    return {"success": True, "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version}, "message": "AfyaSync API is running"}
+
 
 @app.get("/ready", tags=["System"])
 def readiness_check(response: Response):
- try:
-  with SessionLocal() as db:
-   db.execute(text("SELECT 1"))
-  return {"success": True, "data": {"service": "afasync-api", "status": "ready", "database": "ok"}, "message": "AfyaSync API is ready"}
- except Exception:
-  response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-  return {"success": False, "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"}, "message": "AfyaSync API is not ready"}
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+        return {"success": True, "data": {"service": "afasync-api", "status": "ready", "database": "ok"}, "message": "AfyaSync API is ready"}
+    except Exception:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"success": False, "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"}, "message": "AfyaSync API is not ready"}
+
 
 @app.get("/api/v1", tags=["System"])
 def api_root():
- return {"success": True, "data": {"name": settings.app_name, "version": settings.app_version}, "message": "AfyaSync API v1"}
+    return {"success": True, "data": {"name": settings.app_name, "version": settings.app_version}, "message": "AfyaSync API v1"}

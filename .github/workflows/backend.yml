@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -25,7 +28,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
 
       - name: Compile application and tests
         run: python -m compileall -q app migrations tests
@@ -36,24 +39,29 @@ jobs:
           import os
           from app.config import Settings
 
-          os.environ["ENVIRONMENT"] = "production"
-          os.environ["JWT_SECRET"] = "change-this-development-secret"
-          os.environ["CORS_ORIGINS"] = "https://app.example.com"
-          try:
-              Settings()
-          except Exception as exc:
-              print("OK: production rejects default JWT secret:", type(exc).__name__)
-          else:
-              raise SystemExit("FAIL: production accepted default JWT secret")
+          cases = [
+              {"JWT_SECRET": "change-this-development-secret", "CORS_ORIGINS": "https://app.example.com"},
+              {"JWT_SECRET": "a" * 31, "CORS_ORIGINS": "https://app.example.com"},
+              {"JWT_SECRET": "a" * 32, "CORS_ORIGINS": "http://untrusted.example.com"},
+              {"JWT_SECRET": "a" * 32, "CORS_ORIGINS": "https://app.example.com", "DATABASE_URL": "postgresql+psycopg://afasync:afasync@localhost:5432/afasync"},
+          ]
+          for values in cases:
+              os.environ.update({"ENVIRONMENT": "production", **values})
+              try:
+                  Settings()
+              except Exception:
+                  continue
+              raise SystemExit(f"FAIL: insecure production configuration was accepted: {values}")
 
-          os.environ["JWT_SECRET"] = "a" * 32
-          os.environ["CORS_ORIGINS"] = ""
-          try:
-              Settings()
-          except Exception as exc:
-              print("OK: production rejects missing CORS origins:", type(exc).__name__)
-          else:
-              raise SystemExit("FAIL: production accepted missing CORS origins")
+          os.environ.update({
+              "ENVIRONMENT": "production",
+              "JWT_SECRET": "a" * 32,
+              "CORS_ORIGINS": "https://app.example.com",
+              "DATABASE_URL": "postgresql+psycopg://user:password@db.internal:5432/afasync",
+          })
+          configured = Settings()
+          assert configured.cors_origin_list() == ["https://app.example.com"]
+          print("Production configuration guards passed")
           PY
 
       - name: Verify migration chain
@@ -71,5 +79,5 @@ jobs:
           print("Migration revisions:", len(list(script.walk_revisions())))
           PY
 
-      - name: Run tests
-        run: pytest -q --tb=short
+      - name: Run tests with coverage
+        run: pytest -q --tb=short --cov=app --cov-report=term-missing

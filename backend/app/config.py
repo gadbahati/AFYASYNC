@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -58,15 +59,24 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET must be set to a strong non-default value when ENVIRONMENT=production")
             if len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
+            if self.jwt_algorithm != "HS256":
+                raise ValueError("JWT_ALGORITHM must be HS256 for the configured shared-secret token implementation")
+            parsed_db = urlparse(self.database_url)
+            if parsed_db.scheme != "postgresql+psycopg":
+                raise ValueError("DATABASE_URL must use the PostgreSQL psycopg driver in production")
+            if self.database_url == "postgresql+psycopg://afasync:afasync@localhost:5432/afasync":
+                raise ValueError("DATABASE_URL must not use the development database in production")
             origins = self.cors_origin_list()
             if not origins:
                 raise ValueError("CORS_ORIGINS must contain at least one trusted browser origin in production")
-            if any(origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1") for origin in origins):
-                raise ValueError("CORS_ORIGINS must not contain local development origins in production")
+            for origin in origins:
+                parsed = urlparse(origin)
+                if parsed.scheme != "https" or not parsed.netloc or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+                    raise ValueError("CORS_ORIGINS must contain only explicit HTTPS origins in production")
         return self
 
     def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        return [origin.strip().rstrip("/") for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache
