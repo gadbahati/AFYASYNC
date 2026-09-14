@@ -31,6 +31,7 @@ import { PatientsPage } from "./pages/PatientsPage";
 import { QueuePage } from "./pages/QueuePage";
 import { ReferralsPage } from "./pages/ReferralsPage";
 import { InteroperabilityPage } from "./pages/InteroperabilityPage";
+import { InteroperabilityClinicalPage } from "./pages/InteroperabilityClinicalPage";
 
 export default function App() {
   return <AuthProvider><BrowserRouter><Routes>
@@ -50,6 +51,7 @@ export default function App() {
       <Route path="/coverage/sha-eligibility" element={<SHAEligibilityPage />} />
       <Route path="/integrations" element={<IntegrationOperationsPage />} />
       <Route path="/interoperability" element={<InteroperabilityPage />} />
+      <Route path="/interoperability/clinical" element={<InteroperabilityClinicalPage />} />
       <Route path="/patients" element={<PatientsPage />} />
       <Route path="/patients/new" element={<NewPatientPage />} />
       <Route path="/patients/sha-lookup" element={<ShaLookupPage />} />
