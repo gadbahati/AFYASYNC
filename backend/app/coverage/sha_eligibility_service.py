@@ -9,7 +9,7 @@ from app.coverage.models import Coverage, Payer, PayerPlan
 from app.coverage.sha_eligibility_schemas import SHAEligibilityResponse
 from app.integrations.adapters import AdapterResult, build_adapter
 from app.integrations.models import Integration
-from app.patients.models import AfyaIdentity, Person
+from app.patients.models import AfyaIdentity, PatientFacility, Person
 
 
 class SHAEligibilityError(ValueError):
@@ -40,6 +40,9 @@ def _normalise_response(result: AdapterResult) -> dict:
         raise SHAEligibilityError("INVALID_SHA_RESPONSE_MEMBERSHIP")
     if membership is not None:
         data = {**data, "membership_number": membership.strip().upper()}
+    external_reference = result.external_reference
+    if external_reference is not None and (not isinstance(external_reference, str) or len(external_reference) > 150):
+        raise SHAEligibilityError("INVALID_SHA_RESPONSE_EXTERNAL_REFERENCE")
     return data
 
 
@@ -55,10 +58,10 @@ def verify_sha_eligibility(
     if not membership:
         raise SHAEligibilityError("MEMBERSHIP_NUMBER_REQUIRED")
 
-    enrolled = db.scalar(select(Person.id).join(Person.facility_links).where(
-        Person.id == person_id,
-        Person.facility_links.property.mapper.class_.facility_id == facility_id,
-        Person.facility_links.property.mapper.class_.status == "ACTIVE",
+    enrolled = db.scalar(select(PatientFacility.id).where(
+        PatientFacility.patient_id == person_id,
+        PatientFacility.facility_id == facility_id,
+        PatientFacility.status == "ACTIVE",
     ))
     if enrolled is None:
         raise SHAEligibilityError("PATIENT_NOT_IN_FACILITY")
@@ -84,22 +87,26 @@ def verify_sha_eligibility(
     if configuration.get("adapter_type") != "http_json":
         raise SHAEligibilityError("SHA_CONNECTOR_NOT_CONFIGURED")
 
-    # Do not keep a database transaction open while the external payer is called.
     db.rollback()
-    adapter = build_adapter(configuration)
-    result = adapter.send(
-        {
-            "operation": "ELIGIBILITY_CHECK",
-            "payer": "SHA",
-            "afya_id": identity.afya_id,
-            "membership_number": membership,
-        },
-        f"SHA-ELIGIBILITY-{person_id}-{membership}",
-    )
-    data = _normalise_response(result)
+    try:
+        adapter = build_adapter(configuration)
+        result = adapter.send(
+            {
+                "operation": "ELIGIBILITY_CHECK",
+                "payer": "SHA",
+                "afya_id": identity.afya_id,
+                "membership_number": membership,
+            },
+            f"SHA-ELIGIBILITY-{person_id}-{membership}",
+        )
+    except ValueError as exc:
+        raise SHAEligibilityError(str(exc)) from exc
+    except Exception as exc:
+        raise SHAEligibilityError("SHA_ELIGIBILITY_UNAVAILABLE") from exc
 
+    data = _normalise_response(result)
     response_membership = data.get("membership_number") or membership
-    if response_membership != membership:
+    if response_membership.strip().upper() != membership:
         raise SHAEligibilityError("SHA_MEMBERSHIP_MISMATCH")
 
     start_date = _parse_date(data.get("start_date"), "start_date")
@@ -112,7 +119,11 @@ def verify_sha_eligibility(
     if plan_code is not None:
         if not isinstance(plan_code, str) or not plan_code.strip() or len(plan_code.strip()) > 50:
             raise SHAEligibilityError("INVALID_SHA_RESPONSE_PLAN")
-        plan = db.scalar(select(PayerPlan).where(PayerPlan.payer_id == payer.id, PayerPlan.code == plan_code.strip(), PayerPlan.status == "ACTIVE"))
+        plan = db.scalar(select(PayerPlan).where(
+            PayerPlan.payer_id == payer.id,
+            PayerPlan.code == plan_code.strip(),
+            PayerPlan.status == "ACTIVE",
+        ))
         if plan is None:
             raise SHAEligibilityError("SHA_PLAN_NOT_CONFIGURED")
         plan_id = plan.id
@@ -137,7 +148,8 @@ def verify_sha_eligibility(
         )
         db.add(coverage)
     else:
-        coverage.payer_plan_id = plan_id or coverage.payer_plan_id
+        if plan_id is not None:
+            coverage.payer_plan_id = plan_id
         coverage.start_date = start_date
         coverage.end_date = end_date
         coverage.verification_status = "VERIFIED" if data["eligible"] else "UNVERIFIED"
