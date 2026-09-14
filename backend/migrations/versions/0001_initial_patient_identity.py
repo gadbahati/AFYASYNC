@@ -53,6 +53,13 @@ def upgrade() -> None:
     op.create_index("ix_afya_identities_person_id", "afya_identities", ["person_id"])
     op.create_index("ix_afya_identities_afya_id", "afya_identities", ["afya_id"])
 
+    # Alembic creates its version table before running the first migration.
+    # The project contains descriptive revision IDs longer than Alembic's
+    # default VARCHAR(32), so widen the table at the first safe point on a
+    # fresh database. This keeps later revisions from failing while recording
+    # their version numbers.
+    op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
+
 
 def downgrade() -> None:
     op.drop_index("ix_afya_identities_afya_id", table_name="afya_identities")
