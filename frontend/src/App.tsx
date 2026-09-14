@@ -16,7 +16,6 @@ import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
 import { PharmacyPage } from "./pages/PharmacyPage";
 import { EncounterDetailPage } from "./pages/EncounterDetailPage";
 import { FacilitySelectPage } from "./pages/FacilitySelectPage";
-import { LoginPage } from "./pages/LoginPage";
 import { NationalBenefitConfigurationPage } from "./pages/NationalBenefitConfigurationPage";
 import { NationalCommandCentrePage } from "./pages/NationalCommandCentrePage";
 import { NationalFacilitiesPage } from "./pages/NationalFacilitiesPage";
@@ -37,9 +36,11 @@ import { ReferralsPage } from "./pages/ReferralsPage";
 import { InteroperabilityPage } from "./pages/InteroperabilityPage";
 import { InteroperabilityClinicalPage } from "./pages/InteroperabilityClinicalPage";
 
+const AUTH_BYPASS = import.meta.env.VITE_DISABLE_AUTH === "true";
+
 export default function App() {
   return <AuthProvider><BrowserRouter><Routes>
-    <Route path="/login" element={<LoginPage />} />
+    {AUTH_BYPASS && <Route path="/login" element={<Navigate to="/" replace />} />}
     <Route path="/select-facility" element={<FacilitySelectPage />} />
     <Route element={<ProtectedRoute />}><Route element={<Layout />}>
       <Route path="/" element={<DashboardPage />} />
@@ -75,6 +76,7 @@ export default function App() {
       <Route path="/claims" element={<ClaimsPage />} />
       <Route path="/referrals" element={<ReferralsPage />} />
     </Route></Route>
+    {!AUTH_BYPASS && <Route path="/login" element={<Navigate to="/login" replace />} />}
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></BrowserRouter></AuthProvider>;
 }
