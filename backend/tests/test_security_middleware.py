@@ -53,7 +53,20 @@ def test_client_request_id_is_preserved():
     assert response.headers["X-Request-ID"] == "test-request-123"
 
 
-def test_unhandled_errors_return_generic_response_with_request_id():
+def test_unsafe_client_request_id_is_replaced():
+    async def call_next(request):
+        assert request.state.request_id != "bad\r\nX-Injected: yes"
+        return Response("ok")
+
+    response = asyncio.run(
+        SecurityHeadersMiddleware(None).dispatch(
+            _request({"X-Request-ID": "bad\r\nX-Injected: yes"}), call_next
+        )
+    )
+    assert response.headers["X-Request-ID"] != "bad\r\nX-Injected: yes"
+
+
+def test_unhandled_errors_return_generic_response_with_security_headers():
     async def call_next(request):
         raise RuntimeError("sensitive internal detail")
 
@@ -64,3 +77,7 @@ def test_unhandled_errors_return_generic_response_with_request_id():
     )
     assert response.status_code == 500
     assert response.headers["X-Request-ID"] == "incident-42"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "sensitive internal detail" not in response.body.decode()
