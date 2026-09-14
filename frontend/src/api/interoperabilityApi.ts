@@ -1,4 +1,4 @@
-import { getAccessToken, refreshAccessToken } from "../auth/storage";
+import { getAccessToken } from "../auth/storage";
 
 export type FHIRPatientResource = {
   resourceType: "Patient";
@@ -13,15 +13,14 @@ export type FHIRPatientResource = {
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 if (!API_BASE && import.meta.env.PROD) throw new Error("VITE_API_BASE_URL is required in production");
 
-async function request(path: string, retry = true): Promise<Response> {
+async function request(path: string): Promise<Response> {
   const token = getAccessToken();
   if (!token) throw new Error("AUTH_REQUIRED");
-  const response = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (response.status === 401 && retry) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) return request(path, false);
+  try {
+    return await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  } catch {
+    throw new Error("API_UNREACHABLE");
   }
-  return response;
 }
 
 export async function getFHIRPatient(patientId: string): Promise<FHIRPatientResource> {
