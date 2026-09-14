@@ -5,16 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_facility_context, require_permission
+from app.coverage.adjudication_schemas import BenefitAdjudicationRequest, BenefitAdjudicationResponse
+from app.coverage.adjudication_service import adjudicate_benefit
 from app.coverage.models import Payer, PayerPlan
 from app.coverage.permissions import COVERAGE_BENEFIT_WRITE, COVERAGE_READ, COVERAGE_WRITE
-from app.coverage.schemas import (
-    BenefitRuleCreate,
-    BenefitRuleResponse,
-    CoverageCreate,
-    CoverageResponse,
-    PayerPlanResponse,
-    PayerResponse,
-)
+from app.coverage.schemas import BenefitRuleCreate, BenefitRuleResponse, CoverageCreate, CoverageResponse, PayerPlanResponse, PayerResponse
 from app.coverage.service import create_benefit_rule, create_coverage, get_active_coverage, verify_coverage
 from app.database import get_db
 from app.patients.models import PatientFacility
@@ -74,6 +69,25 @@ def active_coverage_self(person_id: UUID, db: Session = Depends(get_db), user: U
 def active_coverage_for_facility(person_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(COVERAGE_READ))) -> list[CoverageResponse]:
     _require_patient_enrolled(db, person_id, facility_id)
     return get_active_coverage(db, person_id)
+
+
+@router.post("/adjudicate", response_model=BenefitAdjudicationResponse)
+def adjudicate(payload: BenefitAdjudicationRequest, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(COVERAGE_READ))) -> BenefitAdjudicationResponse:
+    try:
+        return adjudicate_benefit(db, payload=payload, facility_id=facility_id, actor_user_id=user.id)
+    except ValueError as err:
+        code = str(err)
+        mapping = {
+            "COVERAGE_NOT_ACTIVE": (404, "Coverage is not active."),
+            "COVERAGE_NOT_VERIFIED": (409, "Coverage must be verified before benefit adjudication."),
+            "COVERAGE_NOT_YET_ACTIVE": (409, "Coverage is not yet effective."),
+            "COVERAGE_EXPIRED": (409, "Coverage has expired."),
+            "PATIENT_NOT_IN_FACILITY": (404, "Patient is not enrolled at this facility."),
+            "COVERAGE_PLAN_NOT_ACTIVE": (409, "The coverage plan is not active."),
+            "BENEFIT_SCOPE_REQUIRED": (400, "Provide a service code or service type."),
+        }
+        http_status, message = mapping.get(code, (400, code))
+        raise HTTPException(status_code=http_status, detail={"code": code, "message": message}) from err
 
 
 @router.post("/benefit-rules", response_model=BenefitRuleResponse, status_code=status.HTTP_201_CREATED)
