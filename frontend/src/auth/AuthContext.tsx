@@ -15,6 +15,7 @@ type AuthState = {
 };
 
 const AuthContext = createContext<AuthState | null>(null);
+const AUTH_EXPIRED_EVENT = "afyasync:auth-expired";
 
 function isFacilitySelectionRequired(result: LoginResult): result is FacilitySelectionRequired {
   return "requires_facility_selection" in result && result.requires_facility_selection === true;
@@ -26,6 +27,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [facilityId, setFacilityId] = useState<string | null>(getFacilityId());
   const [facilityName, setFacilityName] = useState<string | null>(getFacilityName());
   const [pendingFacilities, setPendingFacilities] = useState<FacilityOption[] | null>(null);
+
+  useEffect(() => {
+    const onAuthExpired = () => {
+      clearSession();
+      setUsername(null);
+      setFacilityId(null);
+      setFacilityName(null);
+      setPendingFacilities(null);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+  }, []);
 
   useEffect(() => {
     const token = getAccessToken();
