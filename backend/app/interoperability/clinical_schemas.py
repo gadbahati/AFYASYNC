@@ -3,8 +3,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.interoperability.schemas import FHIRPatientResource
-
 
 class FHIREncounterResource(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -20,7 +18,7 @@ class FHIREncounterResource(BaseModel):
 
 class FHIRBundleEntry(BaseModel):
     fullUrl: str = Field(min_length=1, max_length=500)
-    resource: FHIRPatientResource | FHIREncounterResource
+    resource: object
 
 
 class FHIRBundleResource(BaseModel):
