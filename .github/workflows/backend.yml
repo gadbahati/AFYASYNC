@@ -30,7 +30,6 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://afasync:afasync@127.0.0.1:5432/afasync
       ENVIRONMENT: development
-      JWT_SECRET: local-ci-only-secret-8f2b4d6c9e1a7f3b5d8c2e6a9f4b7d1c
       CORS_ORIGINS: http://localhost:3000
     defaults:
       run:
@@ -48,6 +47,9 @@ jobs:
 
       - name: Install dependencies
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Prepare PostgreSQL extensions
+        run: PGPASSWORD=afasync psql -h 127.0.0.1 -U afasync -d afasync -c 'CREATE EXTENSION IF NOT EXISTS citext;'
 
       - name: Compile application and tests
         run: python -m compileall -q app migrations tests
