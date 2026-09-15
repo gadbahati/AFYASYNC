@@ -3,11 +3,17 @@ from fastapi import APIRouter,Depends,HTTPException
 from sqlalchemy.orm import Session
 from app.auth.dependencies import get_db,require_permission
 from app.maternity.schemas import *
-from app.maternity.service import create_pregnancy,add_antenatal_visit,record_delivery,register_newborn
+from app.maternity.service import create_pregnancy,add_antenatal_visit,record_delivery,register_newborn,list_pregnancies,list_antenatal_visits
 router=APIRouter(prefix="/api/v1/maternity",tags=["Maternity & ANC"])
 def err(e):
     codes={"PATIENT_NOT_IN_FACILITY":403,"ACTIVE_PREGNANCY_EXISTS":409,"PREGNANCY_NOT_FOUND":404,"DELIVERY_NOT_FOUND":404}
     return HTTPException(codes.get(str(e),400),detail=str(e))
+@router.get("/pregnancies",response_model=list[PregnancyResponse])
+def pregnancies(db:Session=Depends(get_db),u=Depends(require_permission("encounters.create"))):
+    return list_pregnancies(db,u.facility_id)
+@router.get("/pregnancies/{pregnancy_id}/visits",response_model=list[AntenatalVisitResponse])
+def pregnancy_visits(pregnancy_id:UUID,db:Session=Depends(get_db),u=Depends(require_permission("encounters.create"))):
+    return list_antenatal_visits(db,u.facility_id,pregnancy_id)
 @router.post("/pregnancies",response_model=PregnancyResponse,status_code=201)
 def pregnancy(p:PregnancyCreate,db:Session=Depends(get_db),u=Depends(require_permission("encounters.create"))):
     try:return create_pregnancy(db,u.facility_id,u.id,p)
