@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+from uuid import uuid4
 
 from sqlalchemy import select, text
 
@@ -16,11 +17,12 @@ from app.auth.security import hash_password
 from app.database import SessionLocal
 from app.facilities.models import Facility
 from app.patients.models import Person
-from app.rbac.models import Staff, User
+from app.rbac.models import Permission, Role, RolePermission, Staff, StaffRole, User
 
 DEFAULT_USERNAME = "afyasync.admin"
 DEFAULT_FACILITY_CODE = "AFYA-DEMO-001"
 DEFAULT_FACILITY_NAME = "AfyaSync Pilot Facility"
+DEFAULT_ADMIN_ROLE = "System Administrator"
 
 
 def seed_universal_admin(*, username: str | None = None, password: str | None = None, reset_password: bool | None = None) -> dict:
@@ -71,11 +73,46 @@ def seed_universal_admin(*, username: str | None = None, password: str | None = 
         assert user.person_id is not None
         staff = db.scalar(select(Staff).where(Staff.person_id == user.person_id, Staff.facility_id == facility.id))
         if staff is None:
-            db.add(Staff(facility_id=facility.id, person_id=user.person_id, employee_number="ADMIN-001", status="ACTIVE"))
+            staff = Staff(facility_id=facility.id, person_id=user.person_id, employee_number="ADMIN-001", status="ACTIVE")
+            db.add(staff)
+            db.flush()
         elif staff.status != "ACTIVE":
             staff.status = "ACTIVE"
+
+        role = db.scalar(select(Role).where(Role.name == DEFAULT_ADMIN_ROLE))
+        if role is None:
+            role = Role(id=uuid4(), name=DEFAULT_ADMIN_ROLE, description="Full AfyaSync platform administration")
+            db.add(role)
+            db.flush()
+
+        staff_role = db.scalar(
+            select(StaffRole).where(
+                StaffRole.staff_id == staff.id,
+                StaffRole.role_id == role.id,
+                StaffRole.facility_id == facility.id,
+            )
+        )
+        if staff_role is None:
+            db.add(StaffRole(staff_id=staff.id, role_id=role.id, facility_id=facility.id))
+
+        for permission in db.scalars(select(Permission)).all():
+            if db.scalar(
+                select(RolePermission).where(
+                    RolePermission.role_id == role.id,
+                    RolePermission.permission_id == permission.id,
+                )
+            ) is None:
+                db.add(RolePermission(role_id=role.id, permission_id=permission.id))
+
         db.commit()
-        return {"username": username, "facility_code": facility.facility_id, "facility_name": facility.name, "created_user": created_user, "password_reset": bool(reset_password or created_user)}
+        return {
+            "username": username,
+            "facility_code": facility.facility_id,
+            "facility_name": facility.name,
+            "created_user": created_user,
+            "password_reset": bool(reset_password or created_user),
+            "role": DEFAULT_ADMIN_ROLE,
+        }
     except Exception:
         db.rollback()
         raise
