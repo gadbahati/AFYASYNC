@@ -6,7 +6,6 @@ import os
 import threading
 import time
 from math import ceil
-from urllib.parse import urlencode
 
 import httpx
 from sqlalchemy import func, select, text
@@ -18,11 +17,13 @@ from app.facilities.models import Facility
 logger = logging.getLogger("afyasync.facilities.kmhfr")
 
 SYNC_LOCK_KEY = "afyasync:kmhfr:facility-registry"
+# Official Ministry of Health KMHFR public API. Do not route registry traffic
+# through third-party proxies or mirrors.
 DEFAULT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/public/facilities/"
 DIRECT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/facilities/facilities/"
 MAX_PAGES = 1000
 PAGE_SIZE = 100
-REQUEST_TIMEOUT = httpx.Timeout(connect=20.0, read=90.0, write=20.0, pool=20.0)
+REQUEST_TIMEOUT = httpx.Timeout(connect=60.0, read=180.0, write=30.0, pool=30.0)
 RETRY_INTERVAL_SECONDS = 60
 _sync_thread_lock = threading.Lock()
 _sync_running = False
@@ -52,7 +53,7 @@ def _stable_facility_id(key: str) -> str:
 def _upsert(item: dict, db: Session) -> bool:
     code = _value(item, "code", "mfl_code", "facility_code", "facility_code_number")
     external_id = _value(item, "id", "uuid", "facility_id")
-    name = _value(item, "name", "facility_official_name", "official_name")
+    name = _value(item, "name", "facility_official_name", "official_name", "facility_unique_name")
     if not name:
         return False
     registry_key = code or external_id
@@ -86,17 +87,10 @@ def _advisory_unlock(db: Session) -> None:
     db.execute(text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), {"key": SYNC_LOCK_KEY})
 
 
-def _jina_url(page: int) -> str:
-    target = DEFAULT_KMHFR_URL + "?" + urlencode({"page_size": PAGE_SIZE, "page": page})
-    return "https://r.jina.ai/http://api.kmhfr.health.go.ke/api/public/facilities/?" + urlencode({"page_size": PAGE_SIZE, "page": page})
-
-
-def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | None]:
-    # The Jina proxy must receive the upstream query in its target URL. Passing
-    # page/page_size as query parameters to r.jina.ai itself does not reliably
-    # forward them to KMHFR and was the reason only the first page could be seen.
+def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | None, str]:
+    # Only official KMHFR endpoints are permitted. Try the current public path
+    # first, then the alternate official facilities path.
     candidates = [
-        (_jina_url(page), "jina_proxy"),
         (DEFAULT_KMHFR_URL, "official_public_api"),
         (DIRECT_KMHFR_URL, "official_facilities_api"),
     ]
@@ -104,8 +98,7 @@ def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | Non
     for endpoint, source in candidates:
         for attempt in range(1, 4):
             try:
-                params = None if source == "jina_proxy" else {"page_size": PAGE_SIZE, "page": page}
-                response = client.get(endpoint, params=params)
+                response = client.get(endpoint, params={"page_size": PAGE_SIZE, "page": page, "format": "json"})
                 response.raise_for_status()
                 payload = response.json()
                 if not isinstance(payload, (dict, list)):
@@ -116,9 +109,9 @@ def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | Non
                     if total_pages is None and isinstance(count, int):
                         total_pages = ceil(count / PAGE_SIZE)
                     logger.info("KMHFR_PAGE_SOURCE page=%s source=%s count=%s total_pages=%s", page, source, count, total_pages)
-                    return payload, int(total_pages) if total_pages else None
+                    return payload, int(total_pages) if total_pages else None, source
                 logger.info("KMHFR_PAGE_SOURCE page=%s source=%s", page, source)
-                return payload, None
+                return payload, None, source
             except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError, ValueError) as exc:
                 last_error = exc
                 logger.warning("KMHFR_PAGE_ATTEMPT_FAILED page=%s source=%s attempt=%s error=%s", page, source, attempt, type(exc).__name__)
@@ -143,7 +136,7 @@ def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
             page = 1
             total_pages: int | None = None
             while page <= MAX_PAGES:
-                payload, discovered_pages = _fetch_page(client, page)
+                payload, discovered_pages, source = _fetch_page(client, page)
                 if discovered_pages:
                     total_pages = discovered_pages
                 results = payload.get("results", []) if isinstance(payload, dict) else payload
@@ -159,7 +152,7 @@ def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
                 db.commit()
                 pages += 1
                 if pages % 10 == 0:
-                    logger.info("KMHFR_SYNC_PROGRESS pages=%s seen=%s changed=%s total_pages=%s", pages, seen, changed, total_pages)
+                    logger.info("KMHFR_SYNC_PROGRESS pages=%s seen=%s changed=%s total_pages=%s source=%s", pages, seen, changed, total_pages, source)
                 if total_pages and page >= total_pages:
                     break
                 if len(results) < PAGE_SIZE and not total_pages:
@@ -208,6 +201,7 @@ def start_sync_retry_loop() -> bool:
             return False
         _retry_thread_started = True
     def retry_worker() -> None:
+        global _sync_thread_started
         time.sleep(15)
         while True:
             try:
