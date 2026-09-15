@@ -24,6 +24,8 @@ def _token_response(db: Session, user: User, facility_id) -> TokenResponse:
 
 
 def _is_system_administrator(db: Session, user: User) -> bool:
+    if not isinstance(user, User) or user.person_id is None:
+        return False
     return db.scalar(
         select(StaffRole.staff_id)
         .join(Staff, Staff.id == StaffRole.staff_id)
