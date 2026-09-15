@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from math import ceil
+from urllib.parse import urlencode
 
 import httpx
 from sqlalchemy import func, select, text
@@ -19,10 +20,9 @@ logger = logging.getLogger("afyasync.facilities.kmhfr")
 SYNC_LOCK_KEY = "afyasync:kmhfr:facility-registry"
 DEFAULT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/public/facilities/"
 DIRECT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/facilities/facilities/"
-JINA_KMHFR_URL = "https://r.jina.ai/http://api.kmhfr.health.go.ke/api/public/facilities/"
 MAX_PAGES = 1000
 PAGE_SIZE = 100
-REQUEST_TIMEOUT = httpx.Timeout(connect=20.0, read=60.0, write=20.0, pool=20.0)
+REQUEST_TIMEOUT = httpx.Timeout(connect=20.0, read=90.0, write=20.0, pool=20.0)
 RETRY_INTERVAL_SECONDS = 60
 _sync_thread_lock = threading.Lock()
 _sync_running = False
@@ -86,18 +86,17 @@ def _advisory_unlock(db: Session) -> None:
     db.execute(text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), {"key": SYNC_LOCK_KEY})
 
 
-def _normalise_endpoint(value: str) -> str:
-    value = value.strip()
-    if not value:
-        return DEFAULT_KMHFR_URL
-    return value if value.endswith("/") else value + "/"
+def _jina_url(page: int) -> str:
+    target = DEFAULT_KMHFR_URL + "?" + urlencode({"page_size": PAGE_SIZE, "page": page})
+    return "https://r.jina.ai/http://api.kmhfr.health.go.ke/api/public/facilities/?" + urlencode({"page_size": PAGE_SIZE, "page": page})
 
 
 def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | None]:
-    # Railway cannot currently establish a TCP connection to the KMHFR API host.
-    # Jina's HTTP proxy is tried first so the national registry remains available.
+    # The Jina proxy must receive the upstream query in its target URL. Passing
+    # page/page_size as query parameters to r.jina.ai itself does not reliably
+    # forward them to KMHFR and was the reason only the first page could be seen.
     candidates = [
-        (JINA_KMHFR_URL, "jina_proxy"),
+        (_jina_url(page), "jina_proxy"),
         (DEFAULT_KMHFR_URL, "official_public_api"),
         (DIRECT_KMHFR_URL, "official_facilities_api"),
     ]
@@ -105,7 +104,8 @@ def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | Non
     for endpoint, source in candidates:
         for attempt in range(1, 4):
             try:
-                response = client.get(endpoint, params={"page_size": PAGE_SIZE, "page": page})
+                params = None if source == "jina_proxy" else {"page_size": PAGE_SIZE, "page": page}
+                response = client.get(endpoint, params=params)
                 response.raise_for_status()
                 payload = response.json()
                 if not isinstance(payload, (dict, list)):
@@ -121,6 +121,7 @@ def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | Non
                 return payload, None
             except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError, ValueError) as exc:
                 last_error = exc
+                logger.warning("KMHFR_PAGE_ATTEMPT_FAILED page=%s source=%s attempt=%s error=%s", page, source, attempt, type(exc).__name__)
                 if attempt < 3:
                     time.sleep(2 ** (attempt - 1))
     raise RuntimeError(f"KMHFR_REQUEST_FAILED page={page}: {last_error}") from last_error
@@ -132,11 +133,12 @@ def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
     pages = changed = seen = 0
     locked = False
     try:
-        if not _advisory_lock(db):
+        locked = _advisory_lock(db)
+        if not locked:
             result = {"running": True, "pages": 0, "seen": 0, "changed": 0, "message": "already_running"}
             _last_sync_result = result
             return result
-        logger.info("KMHFR_SYNC_START page_size=%s", PAGE_SIZE)
+        logger.info("KMHFR_SYNC_START page_size=%s force=%s", PAGE_SIZE, force)
         with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True, headers={"Accept": "application/json", "User-Agent": "AfyaSync/1.0 national-facility-sync"}) as client:
             page = 1
             total_pages: int | None = None
