@@ -52,12 +52,12 @@ def _ensure_default_departments(db: Session, facility_id: UUID) -> None:
     try:
         existing = set(result)
     except TypeError:
-        # Keep lightweight unit-test mocks compatible while preserving normal ORM behaviour.
         existing = set()
     for code, name in DEFAULT_DEPARTMENTS:
         if code not in existing:
             db.add(Department(facility_id=facility_id, name=name, code=code, status="ACTIVE"))
-    db.flush()
+    # Do not flush here: the caller already flushes the facility and will commit
+    # the new departments atomically. This also keeps ID-collision retries atomic.
 
 
 def create_facility(db: Session, data: dict, *, actor_user_id: UUID | None = None) -> Facility:
@@ -252,7 +252,7 @@ def update_facility_status(db: Session, facility_id: UUID, status: str, *, reaso
     previous = facility.status
     facility.status = status
     db.flush()
-    record_audit(db, action="UPDATE_FACILITY_STATUS", resource_type="FACILITY", resource_id=str(facility.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, metadata={"previous_status": previous, "new_status": status, "reason": normalized_reason}, commit=False)
+    record_audit(db, action="UPDATE_FACILITY_STATUS", resource_type="FACILITY", resource_id=str(facility.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility.id, metadata={"previous_status": previous, "new_status": status, "reason": normalized_reason}, commit=False)
     db.commit()
     db.refresh(facility)
     return facility
