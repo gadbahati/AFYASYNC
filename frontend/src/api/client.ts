@@ -1,133 +1,30 @@
-import type { Admission, ApiErrorBody, Appointment, AuthMe, BenefitPackage, ClinicalTimeline, Consultation, Department, Diagnosis, Encounter, EncounterCreate, FacilityOption, FacilityReport, LabForwardResponse, LabOrderDetail, LabOrderSummary, LabResult, LabTest, LoginResult, Patient, PatientCreate, PatientListResponse, PatientRecord, PreAuthorization, Queue, QueueEntry, Referral, SHAMember, TokenResponse, Vital } from "./types";
+import type { Admission, ApiErrorBody, Appointment, AuthMe, BenefitPackage, ClinicalTimeline, Consultation, Department, Diagnosis, Encounter, EncounterCreate, FacilityOption, FacilityReport, FacilityOperationsReport, LabForwardResponse, LabOrderDetail, LabOrderSummary, LabResult, LabTest, LoginResult, Patient, PatientCreate, PatientListResponse, PatientRecord, PreAuthorization, Queue, QueueEntry, Referral, SHAMember, TokenResponse, Vital } from "./types";
 import { clearSession, getAccessToken, getRefreshToken, setSession } from "../auth/storage";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const AUTH_EXPIRED_EVENT = "afyasync:auth-expired";
-
-export class ApiError extends Error {
-  status: number;
-  code: string;
-  constructor(status: number, code: string, message?: string) {
-    super(message || code);
-    this.status = status;
-    this.code = code;
-  }
-}
-
-function parseError(body: ApiErrorBody | null, status: number): { code: string; message?: string } {
-  if (!body) return { code: status >= 500 ? "SERVER_ERROR" : "REQUEST_FAILED" };
-  if (typeof body.detail === "string") return { code: body.detail };
-  if (body.detail) return { code: body.detail.code || "REQUEST_FAILED", message: body.detail.message };
-  const message = typeof body.message === "string" ? body.message : undefined;
-  const requestId = body.data && typeof body.data === "object" && typeof body.data.request_id === "string" ? body.data.request_id : undefined;
-  if (status >= 500) return { code: requestId ? `SERVER_ERROR:${requestId}` : "SERVER_ERROR", message };
-  return { code: message || "REQUEST_FAILED", message };
-}
-
-function notifyAuthExpired(): void {
-  clearSession();
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-}
-
+export class ApiError extends Error { status: number; code: string; constructor(status: number, code: string, message?: string) { super(message || code); this.status = status; this.code = code; } }
+function parseError(body: ApiErrorBody | null, status: number): { code: string; message?: string } { if (!body) return { code: status >= 500 ? "SERVER_ERROR" : "REQUEST_FAILED" }; if (typeof body.detail === "string") return { code: body.detail }; if (body.detail) return { code: body.detail.code || "REQUEST_FAILED", message: body.detail.message }; const message = typeof body.message === "string" ? body.message : undefined; const requestId = body.data && typeof body.data === "object" && typeof body.data.request_id === "string" ? body.data.request_id : undefined; if (status >= 500) return { code: requestId ? `SERVER_ERROR:${requestId}` : "SERVER_ERROR", message }; return { code: message || "REQUEST_FAILED", message }; }
+function notifyAuthExpired(): void { clearSession(); if (typeof window !== "undefined") window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT)); }
 let refreshPromise: Promise<boolean> | null = null;
-
-async function tryRefresh(): Promise<boolean> {
-  const refresh = getRefreshToken();
-  if (!refresh) return false;
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: refresh }) });
-    if (!res.ok) { notifyAuthExpired(); return false; }
-    const data = (await res.json()) as TokenResponse;
-    setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
-    return true;
-  } catch { notifyAuthExpired(); return false; }
-}
-
-async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
-  if (!API_BASE && import.meta.env.PROD) throw new ApiError(0, "API_NOT_CONFIGURED");
-  const headers = new Headers(init.headers);
-  if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
-  const token = getAccessToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  let res: Response;
-  try { res = await fetch(`${API_BASE}${path}`, { ...init, headers }); }
-  catch { throw new ApiError(0, "API_UNREACHABLE"); }
-  if (res.status === 401 && retry) {
-    if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null; });
-    if (await refreshPromise) return request<T>(path, init, false);
-  }
-  if (!res.ok) {
-    let body: ApiErrorBody | null = null;
-    try { body = (await res.json()) as ApiErrorBody; } catch {}
-    const parsed = parseError(body, res.status);
-    if (res.status === 401 && path !== "/api/v1/auth/login" && path !== "/api/v1/auth/refresh" && path !== "/api/v1/auth/logout") notifyAuthExpired();
-    throw new ApiError(res.status, parsed.code, parsed.message);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
+async function tryRefresh(): Promise<boolean> { const refresh = getRefreshToken(); if (!refresh) return false; try { const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: refresh }) }); if (!res.ok) { notifyAuthExpired(); return false; } const data = (await res.json()) as TokenResponse; setSession({ access_token: data.access_token, refresh_token: data.refresh_token }); return true; } catch { notifyAuthExpired(); return false; } }
+async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> { if (!API_BASE && import.meta.env.PROD) throw new ApiError(0, "API_NOT_CONFIGURED"); const headers = new Headers(init.headers); if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json"); const token = getAccessToken(); if (token) headers.set("Authorization", `Bearer ${token}`); let res: Response; try { res = await fetch(`${API_BASE}${path}`, { ...init, headers }); } catch { throw new ApiError(0, "API_UNREACHABLE"); } if (res.status === 401 && retry) { if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null; }); if (await refreshPromise) return request<T>(path, init, false); } if (!res.ok) { let body: ApiErrorBody | null = null; try { body = (await res.json()) as ApiErrorBody; } catch {} const parsed = parseError(body, res.status); if (res.status === 401 && path !== "/api/v1/auth/login" && path !== "/api/v1/auth/refresh" && path !== "/api/v1/auth/logout") notifyAuthExpired(); throw new ApiError(res.status, parsed.code, parsed.message); } if (res.status === 204) return undefined as T; return (await res.json()) as T; }
 
 export const api = {
   login(username: string, password: string) { return request<LoginResult>("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false); },
   selectFacility(facility_id: string) { return request<TokenResponse>("/api/v1/auth/select-facility", { method: "POST", body: JSON.stringify({ facility_id }) }, false); },
-  facilities() { return request<FacilityOption[]>("/api/v1/auth/facilities"); },
-  me() { return request<AuthMe>("/api/v1/auth/me"); },
-  logout(refresh_token: string) { return request<{ success: boolean }>("/api/v1/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token }) }, false); },
-  listPatients(limit = 50, offset = 0) { return request<PatientListResponse>(`/api/v1/patients?limit=${limit}&offset=${offset}`); },
-  getPatient(id: string) { return request<Patient>(`/api/v1/patients/${id}`); },
-  getPatientRecord(id: string) { return request<PatientRecord>(`/api/v1/patients/${id}/summary`); },
-  createPatient(payload: PatientCreate) { return request<Patient>("/api/v1/patients", { method: "POST", body: JSON.stringify(payload) }); },
+  facilities() { return request<FacilityOption[]>("/api/v1/auth/facilities"); }, me() { return request<AuthMe>("/api/v1/auth/me"); }, logout(refresh_token: string) { return request<{ success: boolean }>("/api/v1/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token }) }, false); },
+  listPatients(limit = 50, offset = 0) { return request<PatientListResponse>(`/api/v1/patients?limit=${limit}&offset=${offset}`); }, getPatient(id: string) { return request<Patient>(`/api/v1/patients/${id}`); }, getPatientRecord(id: string) { return request<PatientRecord>(`/api/v1/patients/${id}/summary`); }, createPatient(payload: PatientCreate) { return request<Patient>("/api/v1/patients", { method: "POST", body: JSON.stringify(payload) }); },
   facilityReport(start?: string, end?: string) { const q = new URLSearchParams(); if (start) q.set("start_date", start); if (end) q.set("end_date", end); return request<FacilityReport>(`/api/v1/reports/facility${q.toString() ? `?${q}` : ""}`); },
-  listBenefitPackages() { return request<BenefitPackage[]>("/api/v1/benefits/packages"); },
-  verifyShaMember(membershipNumber: string) { return request<SHAMember>(`/api/v1/admissions/sha-member?membership_number=${encodeURIComponent(membershipNumber)}`); },
-  startAdmission(payload: { patient_id: string; department_id: string; benefit_package_code: string; ward: string; bed: string; diagnosis?: string | null; preauthorization_id: string }) { return request<Admission>("/api/v1/admissions", { method: "POST", body: JSON.stringify(payload) }); },
-  requestPreauthorization(payload: { patient_id: string; coverage_id: string; payer_id: string; benefit_package_code: string; care_setting: "OUTPATIENT" | "INPATIENT"; department: string; requested_services: string[]; requested_amount: number; encounter_id?: string | null }) { return request<PreAuthorization>("/api/v1/preauthorizations", { method: "POST", body: JSON.stringify(payload) }); },
-  decidePreauthorization(id: string, payload: { status: "AUTHORIZED" | "REJECTED" | "AUTHORIZED_PENDING_VISIT"; approved_amount: number; external_reference?: string | null }) { return request<PreAuthorization>(`/api/v1/preauthorizations/${id}/decision`, { method: "POST", body: JSON.stringify(payload) }); },
-  listDepartments(facilityId: string) { return request<Department[]>(`/api/v1/facilities/${facilityId}/departments`); },
-  createEncounter(payload: EncounterCreate) { return request<Encounter>("/api/v1/encounters", { method: "POST", body: JSON.stringify(payload) }); },
-  getEncounter(id: string) { return request<Encounter>(`/api/v1/encounters/${id}`); },
-  closeEncounter(id: string) { return request<Encounter>(`/api/v1/encounters/${id}/close`, { method: "POST" }); },
-  getClinicalTimeline(encounterId: string) { return request<ClinicalTimeline>(`/api/v1/encounters/${encounterId}/clinical`); },
-  recordVitals(encounterId: string, payload: Record<string, number | null>) { return request<Vital>(`/api/v1/encounters/${encounterId}/vitals`, { method: "POST", body: JSON.stringify(payload) }); },
-  saveConsultation(encounterId: string, payload: Record<string, string | null>) { return request<Consultation>(`/api/v1/encounters/${encounterId}/consultation`, { method: "POST", body: JSON.stringify(payload) }); },
-  addDiagnosis(encounterId: string, payload: { diagnosis_name: string; diagnosis_code?: string | null; diagnosis_type?: string }) { return request<Diagnosis>(`/api/v1/encounters/${encounterId}/diagnoses`, { method: "POST", body: JSON.stringify(payload) }); },
-  listAppointments() { return request<Appointment[]>("/api/v1/appointments"); },
-  createAppointment(payload: Omit<Appointment, "id" | "status" | "facility_id"> & { facility_id?: string }) { return request<Appointment>("/api/v1/appointments", { method: "POST", body: JSON.stringify(payload) }); },
-  listReferrals(role: "all" | "source" | "destination" = "all") { return request<{ items: Referral[]; total: number; limit: number; offset: number }>(`/api/v1/referrals?role=${role}`); },
-  createReferral(payload: { encounter_id: string; destination_facility_id: string; destination_department_id?: string | null; reason: string; priority?: string; clinical_summary?: string | null }) { return request<Referral>("/api/v1/referrals", { method: "POST", body: JSON.stringify(payload) }); },
-  updateReferralStatus(id: string, status: string) { return request<Referral>(`/api/v1/referrals/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }); },
-  listLabTests() { return request<LabTest[]>("/api/v1/laboratory/tests"); },
-  addLabTest(payload: { code: string; name: string; description?: string | null; category?: string | null; sample_type?: string | null; price: number }) { return request<LabTest>("/api/v1/laboratory/tests", { method: "POST", body: JSON.stringify(payload) }); },
-  createLabOrder(payload: { encounter_id: string; priority: "NORMAL" | "URGENT" | "EMERGENCY"; items: { test_id: string; instructions?: string | null }[] }) { return request<LabOrderSummary>("/api/v1/laboratory/orders", { method: "POST", body: JSON.stringify(payload) }); },
-  getLabOrder(orderId: string) { return request<LabOrderDetail>(`/api/v1/laboratory/orders/${orderId}`); },
-  collectLabSample(itemId: string) { return request<{ id: string; sample_id: string; lab_order_item_id: string; status: string }>("/api/v1/laboratory/samples/collect", { method: "POST", body: JSON.stringify({ lab_order_item_id: itemId }) }); },
-  receiveLabSample(sampleId: string) { return request<{ id: string; sample_id: string; lab_order_item_id: string; status: string }>("/api/v1/laboratory/samples/receive", { method: "POST", body: JSON.stringify({ sample_id: sampleId }) }); },
-  enterLabResult(payload: { lab_order_item_id: string; sample_id: string; result: string; unit?: string | null; reference_range?: string | null; comments?: string | null }) { return request<LabResult>("/api/v1/laboratory/results", { method: "POST", body: JSON.stringify(payload) }); },
-  verifyLabResult(resultId: string) { return request<LabResult>(`/api/v1/laboratory/results/${resultId}/verify`, { method: "POST" }); },
-  forwardLabOrder(orderId: string) { return request<LabForwardResponse>(`/api/v1/laboratory/orders/${orderId}/forward-to-prescription`, { method: "POST" }); },
-  addCharge(payload: { encounter_id: string; service_id: string; quantity: number; unit_price?: number; source_type: string; source_id?: string | null }) { return request<{ id: string; unit_price: number; total_amount: number }>("/api/v1/billing/charges", { method: "POST", body: JSON.stringify(payload) }); },
-  createInvoice(encounterId: string) { return request<{ id: string; invoice_id: string; total_amount: number; patient_amount: number; payer_amount: number; status: string }>(`/api/v1/billing/encounters/${encounterId}/invoice`, { method: "POST" }); },
-  listQueues() { return request<Queue[]>("/api/v1/appointments/queues"); },
-  listQueueEntries(queueId?: string) { return request<QueueEntry[]>(`/api/v1/appointments/queues/entries${queueId ? `?queue_id=${queueId}` : ""}`); },
-  updateQueueEntryStatus(entryId: string, newStatus: string) { return request<QueueEntry>(`/api/v1/appointments/queues/entries/${entryId}/${newStatus}`, { method: "PATCH" }); },
-  listMedications() { return request<Array<{ id: string; code: string; name: string; strength: string | null; form: string | null; status: string }>>("/api/v1/pharmacy/medications"); },
-  createMedication(payload: { code: string; name: string; strength?: string | null; form?: string | null; generic_name?: string | null; unit?: string | null }) { return request("/api/v1/pharmacy/medications", { method: "POST", body: JSON.stringify(payload) }); },
-  listPharmacyInventory() { return request<Array<{ id: string; facility_id: string; medication_id: string; current_quantity: number; minimum_quantity: number; status: string }>>("/api/v1/pharmacy/inventory"); },
-  listPrescriptions(status?: string) { const q = status ? `?status=${encodeURIComponent(status)}` : ""; return request<Array<{ id: string; prescription_id: string; encounter_id: string; patient_id: string; status: string; created_at: string }>>(`/api/v1/pharmacy/prescriptions${q}`); },
-  listBillingServices() { return request<Array<{ id: string; code: string; name: string; service_type: string; price: number; status: string }>>("/api/v1/billing/services"); },
-  createBillingService(payload: { code: string; name: string; service_type: string; price: number; department_id?: string | null }) { return request("/api/v1/billing/services", { method: "POST", body: JSON.stringify(payload) }); },
-  listInvoices() { return request<Array<{ id: string; invoice_id: string; patient_id: string; encounter_id: string; total_amount: number; patient_amount: number; payer_amount: number; status: string }>>("/api/v1/billing/invoices"); },
-  recordPayment(payload: { invoice_id: string; amount: number; payment_method: string; provider?: string | null; external_reference?: string | null }, idempotencyKey?: string) { const headers = idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined; return request("/api/v1/billing/payments", { method: "POST", headers, body: JSON.stringify(payload) }); },
-  listClaims() { return request<Array<{ id: string; claim_id: string; invoice_id: string; payer_id: string; claim_amount: number; approved_amount: number; paid_amount: number; status: string }>>("/api/v1/claims"); },
-  createClaim(invoice_id: string) { return request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id }) }); },
-  validateClaim(claim_id: string) { return request<{ claim_id: string; valid: boolean; errors: string[] }>(`/api/v1/claims/${claim_id}/validate`, { method: "POST" }); },
-  submitClaim(claim_id: string) { return request<{ claim_id: string; status: string; message: string }>(`/api/v1/claims/${claim_id}/submit`, { method: "POST" }); },
-  getClaimRejectionGuide(claim_id: string) { return request<any>(`/api/v1/claims/${claim_id}/rejection-guide`); },
-  recordClaimResponse(claim_id: string, payload: { status: "APPROVED" | "REJECTED" | "PARTIALLY_APPROVED"; response_code: string; response_message: string; external_reference: string; approved_amount?: number | null }) { return request<any>(`/api/v1/claims/${claim_id}/response`, { method: "POST", body: JSON.stringify(payload) }); },
-  reconcileClaim(claim_id: string, received_amount: number) { return request<any>(`/api/v1/claims/${claim_id}/reconcile`, { method: "POST", body: JSON.stringify({ received_amount }) }); },
-  listClaimRejections() { return request<any[]>("/api/v1/claims/workbench/rejections"); },
-  sandboxRejectClaim(claim_id: string, payload: { response_code?: string; response_message?: string; external_reference?: string } = {}) { return request<any>(`/api/v1/claims/${claim_id}/sandbox-reject`, { method: "POST", body: JSON.stringify(payload) }); },
-  commandCentre() { return request<any>("/api/v1/insight/command-centre"); },
-  fraudRadar() { return request<any>("/api/v1/insight/fraud-radar"); },
-  simulateCoverage(payload: { coverage_mode: string; patient_id?: string | null; membership_number?: string | null; lines: Array<{ code: string; description: string; quantity: number; unit_price: number }> }) { return request<any>("/api/v1/insight/coverage/simulate", { method: "POST", body: JSON.stringify(payload) }); },
+  facilityOperationsReport(start?: string, end?: string) { const q = new URLSearchParams(); if (start) q.set("start_date", start); if (end) q.set("end_date", end); return request<FacilityOperationsReport>(`/api/v1/reports/facility/operations${q.toString() ? `?${q}` : ""}`); },
+  listBenefitPackages() { return request<BenefitPackage[]>("/api/v1/benefits/packages"); }, verifyShaMember(membershipNumber: string) { return request<SHAMember>(`/api/v1/admissions/sha-member?membership_number=${encodeURIComponent(membershipNumber)}`); }, startAdmission(payload: { patient_id: string; department_id: string; benefit_package_code: string; ward: string; bed: string; diagnosis?: string | null; preauthorization_id: string }) { return request<Admission>("/api/v1/admissions", { method: "POST", body: JSON.stringify(payload) }); }, requestPreauthorization(payload: { patient_id: string; coverage_id: string; payer_id: string; benefit_package_code: string; care_setting: "OUTPATIENT" | "INPATIENT"; department: string; requested_services: string[]; requested_amount: number; encounter_id?: string | null }) { return request<PreAuthorization>("/api/v1/preauthorizations", { method: "POST", body: JSON.stringify(payload) }); }, decidePreauthorization(id: string, payload: { status: "AUTHORIZED" | "REJECTED" | "AUTHORIZED_PENDING_VISIT"; approved_amount: number; external_reference?: string | null }) { return request<PreAuthorization>(`/api/v1/preauthorizations/${id}/decision`, { method: "POST", body: JSON.stringify(payload) }); },
+  listDepartments(facilityId: string) { return request<Department[]>(`/api/v1/facilities/${facilityId}/departments`); }, createEncounter(payload: EncounterCreate) { return request<Encounter>("/api/v1/encounters", { method: "POST", body: JSON.stringify(payload) }); }, getEncounter(id: string) { return request<Encounter>(`/api/v1/encounters/${id}`); }, closeEncounter(id: string) { return request<Encounter>(`/api/v1/encounters/${id}/close`, { method: "POST" }); }, getClinicalTimeline(encounterId: string) { return request<ClinicalTimeline>(`/api/v1/encounters/${encounterId}/clinical`); }, recordVitals(encounterId: string, payload: Record<string, number | null>) { return request<Vital>(`/api/v1/encounters/${encounterId}/vitals`, { method: "POST", body: JSON.stringify(payload) }); }, saveConsultation(encounterId: string, payload: Record<string, string | null>) { return request<Consultation>(`/api/v1/encounters/${encounterId}/consultation`, { method: "POST", body: JSON.stringify(payload) }); }, addDiagnosis(encounterId: string, payload: { diagnosis_name: string; diagnosis_code?: string | null; diagnosis_type?: string }) { return request<Diagnosis>(`/api/v1/encounters/${encounterId}/diagnoses`, { method: "POST", body: JSON.stringify(payload) }); },
+  listAppointments() { return request<Appointment[]>("/api/v1/appointments"); }, createAppointment(payload: Omit<Appointment, "id" | "status" | "facility_id"> & { facility_id?: string }) { return request<Appointment>("/api/v1/appointments", { method: "POST", body: JSON.stringify(payload) }); }, listReferrals(role: "all" | "source" | "destination" = "all") { return request<{ items: Referral[]; total: number; limit: number; offset: number }>(`/api/v1/referrals?role=${role}`); }, createReferral(payload: { encounter_id: string; destination_facility_id: string; destination_department_id?: string | null; reason: string; priority?: string; clinical_summary?: string | null }) { return request<Referral>("/api/v1/referrals", { method: "POST", body: JSON.stringify(payload) }); }, updateReferralStatus(id: string, status: string) { return request<Referral>(`/api/v1/referrals/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }); },
+  listLabTests() { return request<LabTest[]>("/api/v1/laboratory/tests"); }, addLabTest(payload: { code: string; name: string; description?: string | null; category?: string | null; sample_type?: string | null; price: number }) { return request<LabTest>("/api/v1/laboratory/tests", { method: "POST", body: JSON.stringify(payload) }); }, createLabOrder(payload: { encounter_id: string; priority: "NORMAL" | "URGENT" | "EMERGENCY"; items: { test_id: string; instructions?: string | null }[] }) { return request<LabOrderSummary>("/api/v1/laboratory/orders", { method: "POST", body: JSON.stringify(payload) }); }, getLabOrder(orderId: string) { return request<LabOrderDetail>(`/api/v1/laboratory/orders/${orderId}`); }, collectLabSample(itemId: string) { return request<{ id: string; sample_id: string; lab_order_item_id: string; status: string }>("/api/v1/laboratory/samples/collect", { method: "POST", body: JSON.stringify({ lab_order_item_id: itemId }) }); }, receiveLabSample(sampleId: string) { return request<{ id: string; sample_id: string; lab_order_item_id: string; status: string }>("/api/v1/laboratory/samples/receive", { method: "POST", body: JSON.stringify({ sample_id: sampleId }) }); }, enterLabResult(payload: { lab_order_item_id: string; sample_id: string; result: string; unit?: string | null; reference_range?: string | null; comments?: string | null }) { return request<LabResult>("/api/v1/laboratory/results", { method: "POST", body: JSON.stringify(payload) }); }, verifyLabResult(resultId: string) { return request<LabResult>(`/api/v1/laboratory/results/${resultId}/verify`, { method: "POST" }); }, forwardLabOrder(orderId: string) { return request<LabForwardResponse>(`/api/v1/laboratory/orders/${orderId}/forward-to-prescription`, { method: "POST" }); },
+  addCharge(payload: { encounter_id: string; service_id: string; quantity: number; unit_price?: number; source_type: string; source_id?: string | null }) { return request<{ id: string; unit_price: number; total_amount: number }>("/api/v1/billing/charges", { method: "POST", body: JSON.stringify(payload) }); }, createInvoice(encounterId: string) { return request<{ id: string; invoice_id: string; total_amount: number; patient_amount: number; payer_amount: number; status: string }>(`/api/v1/billing/encounters/${encounterId}/invoice`, { method: "POST" }); },
+  listQueues() { return request<Queue[]>("/api/v1/appointments/queues"); }, listQueueEntries(queueId?: string) { return request<QueueEntry[]>(`/api/v1/appointments/queues/entries${queueId ? `?queue_id=${queueId}` : ""}`); }, updateQueueEntryStatus(entryId: string, newStatus: string) { return request<QueueEntry>(`/api/v1/appointments/queues/entries/${entryId}/${newStatus}`, { method: "PATCH" }); },
+  listMedications() { return request<Array<{ id: string; code: string; name: string; strength: string | null; form: string | null; status: string }>>("/api/v1/pharmacy/medications"); }, createMedication(payload: { code: string; name: string; strength?: string | null; form?: string | null; generic_name?: string | null; unit?: string | null }) { return request("/api/v1/pharmacy/medications", { method: "POST", body: JSON.stringify(payload) }); }, listPharmacyInventory() { return request<Array<{ id: string; facility_id: string; medication_id: string; current_quantity: number; minimum_quantity: number; status: string }>>("/api/v1/pharmacy/inventory"); }, listPrescriptions(status?: string) { const q = status ? `?status=${encodeURIComponent(status)}` : ""; return request<Array<{ id: string; prescription_id: string; encounter_id: string; patient_id: string; status: string; created_at: string }>>(`/api/v1/pharmacy/prescriptions${q}`); },
+  listBillingServices() { return request<Array<{ id: string; code: string; name: string; service_type: string; price: number; status: string }>>("/api/v1/billing/services"); }, createBillingService(payload: { code: string; name: string; service_type: string; price: number; department_id?: string | null }) { return request("/api/v1/billing/services", { method: "POST", body: JSON.stringify(payload) }); }, listInvoices() { return request<Array<{ id: string; invoice_id: string; patient_id: string; encounter_id: string; total_amount: number; patient_amount: number; payer_amount: number; status: string }>>("/api/v1/billing/invoices"); }, recordPayment(payload: { invoice_id: string; amount: number; payment_method: string; provider?: string | null; external_reference?: string | null }, idempotencyKey?: string) { const headers = idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined; return request("/api/v1/billing/payments", { method: "POST", headers, body: JSON.stringify(payload) }); },
+  listClaims() { return request<Array<{ id: string; claim_id: string; invoice_id: string; payer_id: string; claim_amount: number; approved_amount: number; paid_amount: number; status: string }>>("/api/v1/claims"); }, createClaim(invoice_id: string) { return request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id }) }); }, validateClaim(claim_id: string) { return request<{ claim_id: string; valid: boolean; errors: string[] }>(`/api/v1/claims/${claim_id}/validate`, { method: "POST" }); }, submitClaim(claim_id: string) { return request<{ claim_id: string; status: string; message: string }>(`/api/v1/claims/${claim_id}/submit`, { method: "POST" }); }, getClaimRejectionGuide(claim_id: string) { return request<any>(`/api/v1/claims/${claim_id}/rejection-guide`); }, recordClaimResponse(claim_id: string, payload: { status: "APPROVED" | "REJECTED" | "PARTIALLY_APPROVED"; response_code: string; response_message: string; external_reference: string; approved_amount?: number | null }) { return request<any>(`/api/v1/claims/${claim_id}/response`, { method: "POST", body: JSON.stringify(payload) }); }, reconcileClaim(claim_id: string, received_amount: number) { return request<any>(`/api/v1/claims/${claim_id}/reconcile`, { method: "POST", body: JSON.stringify({ received_amount }) }); }, listClaimRejections() { return request<any[]>("/api/v1/claims/workbench/rejections"); }, sandboxRejectClaim(claim_id: string, payload: { response_code?: string; response_message?: string; external_reference?: string } = {}) { return request<any>(`/api/v1/claims/${claim_id}/sandbox-reject`, { method: "POST", body: JSON.stringify(payload) }); },
+  commandCentre() { return request<any>("/api/v1/insight/command-centre"); }, fraudRadar() { return request<any>("/api/v1/insight/fraud-radar"); }, simulateCoverage(payload: { coverage_mode: string; patient_id?: string | null; membership_number?: string | null; lines: Array<{ code: string; description: string; quantity: number; unit_price: number }> }) { return request<any>("/api/v1/insight/coverage/simulate", { method: "POST", body: JSON.stringify(payload) }); },
 };
