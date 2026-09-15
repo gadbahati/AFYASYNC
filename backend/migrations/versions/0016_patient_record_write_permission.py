@@ -1,6 +1,6 @@
 """add patient record write permission
 
-Revision ID: 0016_patient_record_write_permission
+Revision ID: 0016_patient_record_write
 Revises: 0015_patient_facility_scope
 """
 
@@ -9,7 +9,7 @@ from uuid import uuid4
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0016_patient_record_write_permission"
+revision = "0016_patient_record_write"
 down_revision = "0015_patient_facility_scope"
 branch_labels = None
 depends_on = None
