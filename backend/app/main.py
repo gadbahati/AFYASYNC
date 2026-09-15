@@ -1,5 +1,6 @@
 from re import fullmatch
 from uuid import uuid4
+import logging
 
 from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -85,6 +86,7 @@ from app.wards.router import router as wards_router
 from app.wards.movement_router import router as ward_movement_router
 from app.ussd.router import router as ussd_router
 
+logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
 
@@ -117,7 +119,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception:
             runtime_metrics.request(error=True)
-            response = JSONResponse(status_code=500, content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"})
+            logger.exception(
+                "Unhandled request exception request_id=%s method=%s path=%s",
+                request_id,
+                request.method,
+                request.url.path,
+            )
+            response = JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "data": {"request_id": request_id},
+                    "message": "Internal server error",
+                },
+            )
             self._apply_headers(response, request_id)
             return response
         runtime_metrics.request(error=response.status_code >= 500)
