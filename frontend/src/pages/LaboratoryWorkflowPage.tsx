@@ -1,89 +1,152 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import { isDemoMode } from "../auth/storage";
-import type { LabOrderDetail, LabTest } from "../api/types";
+import type { Department, Encounter, LabOrderDetail, LabTest, Patient, Queue, QueueEntry } from "../api/types";
 import "./lab.css";
 
-type DemoTest = LabTest & { specimen: string };
-type NewTest = { name: string; code: string; description: string; specimen: string; price: string };
-const DEMO_TESTS: DemoTest[] = [
-  { id: "fbc", code: "FBC", name: "Full Blood Count", category: "Haematology", description: "Measures haemoglobin, white cells, platelets and related blood indices.", sample_type: "EDTA whole blood", specimen: "EDTA whole blood", price: 650, status: "ACTIVE" },
-  { id: "malaria", code: "MAL-RDT", name: "Malaria Rapid Diagnostic Test", category: "Parasitology", description: "Screens for malaria infection using a rapid diagnostic blood test.", sample_type: "Whole blood", specimen: "Whole blood", price: 350, status: "ACTIVE" },
-  { id: "rbs", code: "RBS", name: "Random Blood Sugar", category: "Chemistry", description: "Measures blood glucose at the time the specimen is collected.", sample_type: "Fluoride plasma / capillary blood", specimen: "Fluoride plasma / capillary blood", price: 250, status: "ACTIVE" },
-  { id: "urinalysis", code: "UA", name: "Urinalysis", category: "Clinical microscopy", description: "Examines urine for physical, chemical and microscopic findings.", sample_type: "Midstream urine", specimen: "Midstream urine", price: 450, status: "ACTIVE" },
-  { id: "lft", code: "LFT", name: "Liver Function Tests", category: "Clinical chemistry", description: "Panel assessing liver-related enzymes, proteins and bilirubin.", sample_type: "Serum", specimen: "Serum", price: 1500, status: "ACTIVE" },
-  { id: "ufb", code: "U&E", name: "Urea & Electrolytes", category: "Clinical chemistry", description: "Assesses urea and key electrolytes used in renal and fluid assessment.", sample_type: "Serum / plasma", specimen: "Serum / plasma", price: 1200, status: "ACTIVE" },
-];
+type Priority = "NORMAL" | "URGENT" | "EMERGENCY";
+type PatientMap = Record<string, Patient>;
 
-type DemoRecord = { result: string; status: "PENDING" | "PERFORMED" | "RESULTED" };
-
-export function LaboratoryWorkflowPage() { return isDemoMode() ? <DemoLaboratory /> : <LiveLaboratory />; }
-
-function DemoLaboratory() {
-  const [selected, setSelected] = useState<string[]>(["fbc", "malaria"]);
-  const [records, setRecords] = useState<Record<string, DemoRecord>>({ fbc: { result: "Hb 12.8 g/dL · WBC 7.2 ×10⁹/L · Platelets 286 ×10⁹/L", status: "RESULTED" }, malaria: { result: "Negative", status: "RESULTED" } });
-  const [showAdd, setShowAdd] = useState(false);
-  const [customTests, setCustomTests] = useState<DemoTest[]>([]);
-  const [newTest, setNewTest] = useState<NewTest>({ name: "", code: "", description: "", specimen: "", price: "" });
-  const [forwarded, setForwarded] = useState(false);
-  const allTests = useMemo(() => [...DEMO_TESTS, ...customTests], [customTests]);
-  const selectedTests = allTests.filter((test) => selected.includes(test.id));
-  const total = selectedTests.reduce((sum, test) => sum + test.price, 0);
-  const completed = selectedTests.filter((test) => records[test.id]?.status === "RESULTED" && records[test.id]?.result.trim()).length;
-  function addTest() { const price = Number(newTest.price); if (!newTest.name.trim() || !newTest.code.trim() || !newTest.description.trim() || !newTest.specimen.trim() || !Number.isFinite(price) || price <= 0) return; const test: DemoTest = { id: `custom-${Date.now()}`, code: newTest.code.trim().toUpperCase(), name: newTest.name.trim(), category: "Custom laboratory", description: newTest.description.trim(), sample_type: newTest.specimen.trim(), specimen: newTest.specimen.trim(), price, status: "ACTIVE" }; setCustomTests((current) => [...current, test]); setSelected((current) => [...current, test.id]); setNewTest({ name: "", code: "", description: "", specimen: "", price: "" }); setShowAdd(false); }
-  return <section className="page-stack"><LabHeader demo onAdd={() => setShowAdd((v) => !v)} />
-    <div className="success-box"><strong>Demo presentation mode.</strong> This screen mirrors the real laboratory workflow without writing demo data into the live database.</div>
-    {showAdd && <AddTestCard value={newTest} setValue={setNewTest} onAdd={addTest} onCancel={() => setShowAdd(false)} />}
-    <WorkflowSteps />
-    <article className="card"><div className="row-between"><div><h2>1. Add / select tests</h2><p className="muted">Each examination has its own description, specimen and standalone price.</p></div><div className="lab-total-card"><small>Laboratory total</small><strong>KES {total.toLocaleString()}</strong></div></div><div className="lab-test-grid">{allTests.map((test) => <label key={test.id} className={selected.includes(test.id) ? "lab-test-card selected" : "lab-test-card"}><input type="checkbox" checked={selected.includes(test.id)} onChange={() => { setSelected((c) => c.includes(test.id) ? c.filter((x) => x !== test.id) : [...c, test.id]); setForwarded(false); }} /><div><div className="row-between"><strong>{test.name}</strong><strong>KES {test.price.toLocaleString()}</strong></div><p className="muted">{test.code} · {test.category}</p><p>{test.description}</p><small>Specimen: {test.specimen}</small></div></label>)}</div></article>
-    <TestRecords tests={selectedTests} records={records} setRecords={setRecords} />
-    <BillingCard tests={selectedTests} />
-    <ForwardCard tests={selectedTests} records={records} ready={completed === selectedTests.length && selectedTests.length > 0} forwarded={forwarded} onForward={() => setForwarded(true)} />
-  </section>;
-}
-
-function LiveLaboratory() {
+export function LaboratoryWorkflowPage() {
+  const [params] = useSearchParams();
+  const requestedPatientId = params.get("patientId") || "";
+  const requestedEncounterId = params.get("encounterId") || "";
+  const [patients, setPatients] = useState<PatientMap>({});
+  const [queues, setQueues] = useState<Queue[]>([]);
+  const [entries, setEntries] = useState<QueueEntry[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [catalogue, setCatalogue] = useState<LabTest[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [encounter, setEncounter] = useState<Encounter | null>(null);
+  const [activeEntry, setActiveEntry] = useState<QueueEntry | null>(null);
   const [order, setOrder] = useState<LabOrderDetail | null>(null);
-  const [encounterId, setEncounterId] = useState("");
-  const [priority, setPriority] = useState<"NORMAL" | "URGENT" | "EMERGENCY">("NORMAL");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [priority, setPriority] = useState<Priority>("NORMAL");
   const [resultInputs, setResultInputs] = useState<Record<string, string>>({});
   const [samples, setSamples] = useState<Record<string, string>>({});
-  const [showAdd, setShowAdd] = useState(false);
-  const [newTest, setNewTest] = useState<NewTest>({ name: "", code: "", description: "", specimen: "", price: "" });
+  const [destinationDepartmentId, setDestinationDepartmentId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => { api.listLabTests().then(setCatalogue).catch((e) => setError(e instanceof ApiError ? e.code : "LAB_CATALOGUE_FAILED")); }, []);
+  const [loading, setLoading] = useState(true);
+
+  const labQueueIds = useMemo(() => new Set(queues.filter((q) => {
+    const department = departments.find((d) => d.id === q.department_id);
+    return /laboratory|lab/i.test(`${department?.name || ""} ${department?.code || ""} ${q.name}`);
+  }).map((q) => q.id)), [queues, departments]);
+
+  const labEntries = useMemo(() => entries.filter((entry) => labQueueIds.has(entry.queue_id) && ["WAITING", "CALLED", "IN_SERVICE"].includes(entry.status)), [entries, labQueueIds]);
+  const patientName = (id: string) => { const p = patients[id]; return p ? [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(" ") : "Patient"; };
   const selectedTests = catalogue.filter((test) => selected.includes(test.id));
   const total = selectedTests.reduce((sum, test) => sum + Number(test.price), 0);
-  async function refresh(orderId: string) { const next = await api.getLabOrder(orderId); setOrder(next); }
-  async function createOrder() { setError(""); if (!encounterId.trim() || selected.length === 0) return; try { const created = await api.createLabOrder({ encounter_id: encounterId.trim(), priority, items: selected.map((test_id) => ({ test_id })) }); await refresh(created.id); setMessage("Laboratory order created. Collect each specimen to continue."); } catch (e) { setError(e instanceof ApiError ? e.code : "LAB_ORDER_FAILED"); } }
-  async function collect(itemId: string) { try { const sample = await api.collectLabSample(itemId); setSamples((c) => ({ ...c, [itemId]: sample.id })); if (order) await refresh(order.id); } catch (e) { setError(e instanceof ApiError ? e.code : "SAMPLE_COLLECTION_FAILED"); } }
-  async function receive(itemId: string) { const sampleId = samples[itemId]; if (!sampleId || !order) return; try { await api.receiveLabSample(sampleId); await refresh(order.id); } catch (e) { setError(e instanceof ApiError ? e.code : "SAMPLE_RECEIVE_FAILED"); } }
-  async function enter(itemId: string) { const sampleId = samples[itemId]; const value = resultInputs[itemId]?.trim(); if (!sampleId || !value || !order) return; try { await api.enterLabResult({ lab_order_item_id: itemId, sample_id: sampleId, result: value }); await refresh(order.id); setMessage("Result entered. Verify it to complete the test and create its charge."); } catch (e) { setError(e instanceof ApiError ? e.code : "RESULT_ENTRY_FAILED"); } }
-  async function verify(resultId: string) { if (!order) return; try { await api.verifyLabResult(resultId); await refresh(order.id); } catch (e) { setError(e instanceof ApiError ? e.code : "RESULT_VERIFY_FAILED"); } }
-  async function forward() { if (!order) return; try { const response = await api.forwardLabOrder(order.id); await refresh(order.id); setMessage(response.message); } catch (e) { setError(e instanceof ApiError ? e.code : "LAB_FORWARD_FAILED"); } }
-  async function addTest() { const price = Number(newTest.price); if (!newTest.name.trim() || !newTest.code.trim() || !newTest.description.trim() || !newTest.specimen.trim() || !Number.isFinite(price) || price <= 0) return; try { const created = await api.addLabTest({ code: newTest.code, name: newTest.name, description: newTest.description, category: "Laboratory", sample_type: newTest.specimen, price }); setCatalogue((c) => [...c, created]); setSelected((c) => [...c, created.id]); setNewTest({ name: "", code: "", description: "", specimen: "", price: "" }); setShowAdd(false); setMessage(`${created.name} added to the real laboratory catalogue.`); } catch (e) { setError(e instanceof ApiError ? e.code : "LAB_TEST_CREATE_FAILED"); } }
-  return <section className="page-stack"><LabHeader live onAdd={() => setShowAdd((v) => !v)} />
+  const allVerified = !!order && order.items.length > 0 && order.items.every((item) => item.status === "RESULT_VERIFIED");
+
+  async function load() {
+    setLoading(true); setError("");
+    try {
+      const [patientResponse, queueResponse, departmentResponse, tests] = await Promise.all([
+        api.listPatients(200, 0),
+        api.listQueues(),
+        api.listDepartments(localStorage.getItem("afyasync:facility_id") || ""),
+        api.listLabTests(),
+      ]);
+      const map: PatientMap = {};
+      patientResponse.items.forEach((p) => { map[p.id] = p; });
+      setPatients(map); setQueues(queueResponse); setDepartments(departmentResponse); setCatalogue(tests);
+      const allEntries = await api.listQueueEntries();
+      setEntries(allEntries);
+      if (requestedEncounterId) {
+        const nextEncounter = await api.getEncounter(requestedEncounterId);
+        setEncounter(nextEncounter);
+        const matching = allEntries.find((e) => e.encounter_id === requestedEncounterId && labQueueIds.has(e.queue_id));
+        if (matching) setActiveEntry(matching);
+      }
+    } catch (e) { setError(e instanceof ApiError ? e.code : "LAB_WORKFLOW_LOAD_FAILED"); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    if (!departments.length || !encounter) return;
+    const preferred = departments.find((d) => d.id === encounter.department_id && !/laboratory|lab/i.test(`${d.name} ${d.code}`));
+    if (preferred) setDestinationDepartmentId(preferred.id);
+  }, [departments, encounter]);
+
+  async function receiveIncomingPatient() {
+    if (!requestedPatientId || !requestedEncounterId) return;
+    try {
+      const labDepartment = departments.find((d) => /laboratory|lab/i.test(`${d.name} ${d.code}`));
+      if (!labDepartment) throw new Error("LABORATORY_DEPARTMENT_NOT_CONFIGURED");
+      const entry = await api.handoffPatient({ patient_id: requestedPatientId, encounter_id: requestedEncounterId, destination_department_id: labDepartment.id, priority, reason: "Laboratory investigation" });
+      setActiveEntry(entry); setEncounter(await api.getEncounter(requestedEncounterId)); setMessage(`${patientName(requestedPatientId)} has been sent to the laboratory queue.`); await load();
+    } catch (e) { setError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : "LAB_HANDOFF_FAILED"); }
+  }
+
+  async function callPatient(entry: QueueEntry) {
+    try { const updated = await api.updateQueueEntryStatus(entry.id, "CALLED"); setEntries((current) => current.map((e) => e.id === updated.id ? updated : e)); setActiveEntry(updated); setMessage(`${patientName(updated.patient_id)} has been called to the laboratory.`); }
+    catch (e) { setError(e instanceof ApiError ? e.code : "LAB_CALL_FAILED"); }
+  }
+
+  async function receivePatient(entry: QueueEntry) {
+    try { const updated = await api.updateQueueEntryStatus(entry.id, "IN_SERVICE"); setEntries((current) => current.map((e) => e.id === updated.id ? updated : e)); setActiveEntry(updated); if (updated.encounter_id) setEncounter(await api.getEncounter(updated.encounter_id)); setMessage(`${patientName(updated.patient_id)} is now received in the laboratory.`); }
+    catch (e) { setError(e instanceof ApiError ? e.code : "LAB_RECEIVE_FAILED"); }
+  }
+
+  async function createOrder() {
+    if (!encounter || !activeEntry || activeEntry.status !== "IN_SERVICE" || selected.length === 0) return;
+    try { const created = await api.createLabOrder({ encounter_id: encounter.id, priority, items: selected.map((test_id) => ({ test_id })) }); setOrder(await api.getLabOrder(created.id)); setMessage("Laboratory order created for the received patient."); }
+    catch (e) { setError(e instanceof ApiError ? e.code : "LAB_ORDER_FAILED"); }
+  }
+
+  async function refreshOrder() { if (order) setOrder(await api.getLabOrder(order.id)); }
+
+  async function collectAndReceive(itemId: string) {
+    if (!order) return;
+    try { const sample = await api.collectLabSample(itemId); setSamples((current) => ({ ...current, [itemId]: sample.id })); await api.receiveLabSample(sample.id); await refreshOrder(); setMessage("Specimen collected and received. Record the result below."); }
+    catch (e) { setError(e instanceof ApiError ? e.code : "SPECIMEN_WORKFLOW_FAILED"); }
+  }
+
+  async function recordResult(itemId: string) {
+    if (!order) return;
+    const sampleId = samples[itemId]; const result = resultInputs[itemId]?.trim();
+    if (!sampleId || !result) return;
+    try { await api.enterLabResult({ lab_order_item_id: itemId, sample_id: sampleId, result }); await refreshOrder(); setMessage("Result recorded. Verify it before forwarding the patient."); }
+    catch (e) { setError(e instanceof ApiError ? e.code : "RESULT_ENTRY_FAILED"); }
+  }
+
+  async function verifyResult(resultId: string) {
+    try { await api.verifyLabResult(resultId); await refreshOrder(); }
+    catch (e) { setError(e instanceof ApiError ? e.code : "RESULT_VERIFY_FAILED"); }
+  }
+
+  async function forwardPatient() {
+    if (!order || !encounter || !activeEntry || !destinationDepartmentId || !allVerified) return;
+    try {
+      await api.handoffPatient({ patient_id: encounter.patient_id, encounter_id: encounter.id, destination_department_id: destinationDepartmentId, priority, reason: "Laboratory results verified; continue clinical care" });
+      await api.updateQueueEntryStatus(activeEntry.id, "COMPLETED");
+      setMessage(`${patientName(encounter.patient_id)} has been forwarded to ${departments.find((d) => d.id === destinationDepartmentId)?.name || "the next department"}.`);
+      setActiveEntry(null); setOrder(null); setSelected([]); setSamples({}); setResultInputs({}); await load();
+    } catch (e) { setError(e instanceof ApiError ? e.code : "LAB_FORWARD_FAILED"); }
+  }
+
+  if (loading) return <section className="page-stack"><div className="card"><strong>Loading laboratory queue…</strong></div></section>;
+
+  return <section className="page-stack">
+    <header className="page-heading"><div><p className="eyebrow">Clinical laboratory information system</p><h1>Laboratory</h1><p className="muted">Patients arrive by handoff. Staff call them, receive them by name, perform selected tests, record verified results and forward the same encounter to the next department.</p></div><span className="status-pill">LIVE WORKFLOW</span></header>
     {error && <div className="error">{error}</div>}{message && <div className="success-box">{message}</div>}
-    {showAdd && <AddTestCard value={newTest} setValue={setNewTest} onAdd={addTest} onCancel={() => setShowAdd(false)} />}
-    <WorkflowSteps />
-    <article className="card"><div className="row-between"><div><h2>1. Order laboratory tests</h2><p className="muted">Select tests for an open encounter. The selected tests become real laboratory order items.</p></div><div className="lab-total-card"><small>Order total</small><strong>KES {total.toLocaleString()}</strong></div></div><div className="lab-add-grid"><label>Open encounter ID<input value={encounterId} placeholder="Paste encounter UUID" onChange={(e) => setEncounterId(e.target.value)} /></label><label>Priority<select value={priority} onChange={(e) => setPriority(e.target.value as typeof priority)}><option>NORMAL</option><option>URGENT</option><option>EMERGENCY</option></select></label></div><div className="lab-test-grid">{catalogue.map((test) => <label key={test.id} className={selected.includes(test.id) ? "lab-test-card selected" : "lab-test-card"}><input type="checkbox" checked={selected.includes(test.id)} disabled={!!order} onChange={() => setSelected((c) => c.includes(test.id) ? c.filter((x) => x !== test.id) : [...c, test.id])} /><div><div className="row-between"><strong>{test.name}</strong><strong>KES {Number(test.price).toLocaleString()}</strong></div><p className="muted">{test.code} · {test.category || "Laboratory"}</p><p>{test.description}</p><small>Specimen: {test.sample_type || "Not specified"}</small></div></label>)}</div><div className="form-actions"><button disabled={!!order || !encounterId.trim() || selected.length === 0} onClick={createOrder}>{order ? `Order ${order.order_id}` : "Create laboratory order"}</button></div></article>
-    {order && <><article className="card"><div className="row-between"><div><h2>2. Individual test records</h2><p className="muted">Order {order.order_id} · every examination is tracked separately from specimen collection through verified result.</p></div><span className="status-pill">{order.status}</span></div><div className="table-wrap"><table><thead><tr><th>Test</th><th>Specimen / status</th><th>Result</th><th>Price</th><th>Action</th></tr></thead><tbody>{order.items.map((item) => <tr key={item.id}><td><strong>{item.test_name}</strong><br /><small>{item.test_code}</small><p className="muted">{item.description}</p></td><td><strong>{item.sample_type || "—"}</strong><br /><span className="badge">{item.status}</span></td><td>{item.result ? <><strong>{item.result.result}</strong><br /><small>{item.result.status}</small></> : <input value={resultInputs[item.id] || ""} placeholder="Enter result after sample received" onChange={(e) => setResultInputs((c) => ({ ...c, [item.id]: e.target.value }))} disabled={item.status !== "SAMPLE_RECEIVED"} />}</td><td><strong>KES {Number(item.price).toLocaleString()}</strong>{item.charge_id && <><br /><small>Charged</small></>}</td><td>{item.status === "ORDERED" && <button onClick={() => collect(item.id)}>Collect specimen</button>}{item.status === "SAMPLE_COLLECTED" && <button onClick={() => receive(item.id)}>Receive specimen</button>}{item.status === "SAMPLE_RECEIVED" && <button onClick={() => enter(item.id)} disabled={!resultInputs[item.id]?.trim()}>Record result</button>}{item.status === "RESULT_ENTERED" && item.result && <button onClick={() => verify(item.result!.id)}>Verify result</button>}{item.status === "RESULT_VERIFIED" && <span className="status-pill">VERIFIED + BILLED</span>}</td></tr>)}</tbody></table></div></article>
-      <article className="card"><h2>3. Test-by-test billing</h2><p className="muted">Verified tests create real encounter charges using the individual catalogue price.</p><div className="lab-summary">{order.items.map((item) => <div className="billing-line" key={item.id}><div><strong>{item.test_name}</strong><p className="muted">{item.charge_id ? "Verified and billed" : "Not yet billed"}</p></div><span>1 ×</span><strong>KES {Number(item.price).toLocaleString()}</strong></div>)}</div><div className="billing-total">Laboratory order total: KES {Number(order.total_amount).toLocaleString()}</div></article>
-      <article className="card"><div className="row-between"><div><h2>4. Forward verified results to prescription review</h2><p className="muted">All tests must be verified. The hand-off records the action on the real laboratory order; it does not prescribe automatically.</p></div><span className={order.forwarded_at ? "status-pill" : "badge"}>{order.forwarded_at ? "FORWARDED" : "PENDING"}</span></div><div className="form-actions"><button disabled={order.status !== "COMPLETED" || !!order.forwarded_at} onClick={forward}>{order.forwarded_at ? "Results forwarded" : "Forward to prescription review"}</button></div></article></>}
+
+    {requestedPatientId && requestedEncounterId && !activeEntry && <article className="card"><div className="row-between"><div><p className="eyebrow">Incoming patient</p><h2>{patientName(requestedPatientId)}</h2><p className="muted">Afya ID: {patients[requestedPatientId]?.afya_id || "—"} · Encounter: {encounter?.encounter_id || "linked encounter"}</p></div><button onClick={receiveIncomingPatient}>Send to laboratory queue</button></div></article>}
+
+    <article className="card"><div className="row-between"><div><p className="eyebrow">Laboratory queue</p><h2>Patients waiting for laboratory</h2><p className="muted">No UUID entry is required. Patients arrive here through a persistent encounter handoff.</p></div><span className="status-pill">{labEntries.length} waiting</span></div><div className="table-wrap"><table><thead><tr><th>Patient</th><th>Priority</th><th>Status</th><th>Encounter</th><th>Action</th></tr></thead><tbody>{labEntries.map((entry) => <tr key={entry.id}><td><strong>{patientName(entry.patient_id)}</strong><br /><small>{patients[entry.patient_id]?.afya_id || "Afya ID unavailable"}</small></td><td>{entry.priority}</td><td><span className="badge">{entry.status}</span></td><td>{entry.encounter_id ? "Linked" : "Missing"}</td><td>{entry.status === "WAITING" && <button onClick={() => callPatient(entry)}>Call patient</button>}{entry.status === "CALLED" && <button onClick={() => receivePatient(entry)}>Receive patient</button>}{entry.status === "IN_SERVICE" && <button onClick={() => { setActiveEntry(entry); void (entry.encounter_id ? api.getEncounter(entry.encounter_id).then(setEncounter) : Promise.resolve()); }}>Open patient</button>}</td></tr>)}{labEntries.length === 0 && <tr><td colSpan={5}><span className="muted">No patients are currently waiting for laboratory.</span></td></tr>}</tbody></table></div></article>
+
+    {activeEntry && encounter && activeEntry.status === "IN_SERVICE" && <>
+      <article className="card"><div className="row-between"><div><p className="eyebrow">Patient received</p><h2>{patientName(encounter.patient_id)}</h2><p className="muted">{patients[encounter.patient_id]?.afya_id || "Afya ID"} · {encounter.encounter_id} · {departments.find((d) => d.id === encounter.department_id)?.name || "Clinical department"}</p></div><span className="status-pill">IN LABORATORY</span></div></article>
+
+      {!order && <article className="card"><div className="row-between"><div><h2>1. Select and perform tests</h2><p className="muted">Tap the examinations required for this patient. The encounter is already linked.</p></div><div className="lab-total-card"><small>Order total</small><strong>KES {total.toLocaleString()}</strong></div></div><div className="lab-add-grid"><label>Priority<select value={priority} onChange={(e) => setPriority(e.target.value as Priority)}><option value="NORMAL">NORMAL</option><option value="URGENT">URGENT</option><option value="EMERGENCY">EMERGENCY</option></select></label></div><div className="lab-test-grid">{catalogue.map((test) => <label key={test.id} className={selected.includes(test.id) ? "lab-test-card selected" : "lab-test-card"}><input type="checkbox" checked={selected.includes(test.id)} onChange={() => setSelected((current) => current.includes(test.id) ? current.filter((id) => id !== test.id) : [...current, test.id])} /><div><div className="row-between"><strong>{test.name}</strong><strong>KES {Number(test.price).toLocaleString()}</strong></div><p className="muted">{test.code} · {test.category || "Laboratory"}</p><p>{test.description || "Laboratory examination"}</p><small>Specimen: {test.sample_type || "Not specified"}</small></div></label>)}</div><div className="form-actions"><button disabled={!selected.length} onClick={createOrder}>Start selected tests</button></div></article>}
+
+      {order && <><article className="card"><div className="row-between"><div><h2>2. Perform tests & record results</h2><p className="muted">Each test remains linked to this patient and encounter. Use one action to collect and receive the specimen, then record and verify the result.</p></div><span className="status-pill">{order.status}</span></div><div className="table-wrap"><table><thead><tr><th>Test</th><th>Specimen</th><th>Result</th><th>Billing</th><th>Action</th></tr></thead><tbody>{order.items.map((item) => <tr key={item.id}><td><strong>{item.test_name}</strong><br /><small>{item.test_code}</small></td><td><span className="badge">{item.status}</span><br /><small>{item.sample_type || "—"}</small></td><td>{item.result ? <><strong>{item.result.result}</strong>{item.result.unit && ` ${item.result.unit}`}<br /><small>{item.result.status}</small></> : <input value={resultInputs[item.id] || ""} placeholder="Enter laboratory result" disabled={!samples[item.id] || item.status !== "SAMPLE_RECEIVED"} onChange={(e) => setResultInputs((current) => ({ ...current, [item.id]: e.target.value }))} />}</td><td><strong>KES {Number(item.price).toLocaleString()}</strong>{item.charge_id && <><br /><small>Charged</small></>}</td><td>{item.status === "ORDERED" && <button onClick={() => collectAndReceive(item.id)}>Collect & receive</button>}{item.status === "SAMPLE_RECEIVED" && <button disabled={!resultInputs[item.id]?.trim()} onClick={() => recordResult(item.id)}>Record result</button>}{item.status === "RESULT_ENTERED" && item.result && <button onClick={() => verifyResult(item.result!.id)}>Verify result</button>}{item.status === "RESULT_VERIFIED" && <span className="status-pill">VERIFIED</span>}</td></tr>)}</tbody></table></div></article>
+        <article className="card"><h2>3. Forward patient to the next department</h2><p className="muted">Verified laboratory work is complete. Choose the next destination; the same patient and encounter will be placed in that department's queue.</p><div className="lab-add-grid"><label>Next department<select value={destinationDepartmentId} onChange={(e) => setDestinationDepartmentId(e.target.value)}><option value="">Select next step</option>{departments.filter((d) => d.id !== encounter.department_id && !/laboratory|lab/i.test(`${d.name} ${d.code}`)).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label></div><div className="form-actions"><button disabled={!allVerified || !destinationDepartmentId} onClick={forwardPatient}>{allVerified ? "Forward patient" : "Complete and verify all results first"}</button></div></article></>}
+    </>}
+
+    <style>{`@media(max-width:800px){.page-heading{display:block}.page-heading .status-pill{display:inline-block;margin-top:12px}.table-wrap{overflow-x:auto}.lab-add-grid{grid-template-columns:1fr!important}.lab-test-grid{grid-template-columns:1fr!important}.row-between{gap:12px;align-items:flex-start}.form-actions button,button{max-width:100%}}`}</style>
   </section>;
 }
-
-function LabHeader({ demo = false, live = false, onAdd }: { demo?: boolean; live?: boolean; onAdd: () => void }) { return <header className="page-heading"><div><p className="eyebrow">Clinical laboratory information system</p><h1>Laboratory</h1><p className="muted">Order tests, track specimens, record individual results, bill each test and hand verified findings to prescription review.</p></div><div className="form-actions"><span className="status-pill">{demo ? "DEMO WORKFLOW" : live ? "LIVE SYSTEM" : "LABORATORY"}</span><button onClick={onAdd}>+ Add test</button></div></header>; }
-
-function WorkflowSteps() { return <article className="card"><div className="row-between"><div><h2>Laboratory workflow</h2><p className="muted">A complete clinical sequence from request to clinician hand-off.</p></div></div><div className="lab-workflow-strip">{["Order test", "Collect specimen", "Perform test", "Record result", "Bill test", "Forward to clinician"].map((step, index) => <div className="lab-workflow-step" key={step}><span>{index + 1}</span><strong>{step}</strong></div>)}</div></article>; }
-
-function AddTestCard({ value, setValue, onAdd, onCancel }: { value: NewTest; setValue: Dispatch<SetStateAction<NewTest>>; onAdd: () => void; onCancel: () => void }) { return <article className="card"><div className="row-between"><div><h2>+ Add laboratory test</h2><p className="muted">Create a test with its own code, clinical description, specimen requirement and standalone price.</p></div><span className="badge">TEST CATALOGUE</span></div><div className="lab-add-grid"><label>Test name<input value={value.name} placeholder="e.g. Kidney Function Test" onChange={(e) => setValue({ ...value, name: e.target.value })} /></label><label>Test code<input value={value.code} placeholder="e.g. KFT" onChange={(e) => setValue({ ...value, code: e.target.value })} /></label><label>Specimen / sample<input value={value.specimen} placeholder="e.g. Serum" onChange={(e) => setValue({ ...value, specimen: e.target.value })} /></label><label>Price (KES)<input type="number" min="1" value={value.price} placeholder="e.g. 1200" onChange={(e) => setValue({ ...value, price: e.target.value })} /></label><label className="lab-add-wide">Description<textarea value={value.description} placeholder="What this examination measures or helps assess" onChange={(e) => setValue({ ...value, description: e.target.value })} /></label></div><div className="form-actions"><button disabled={!value.name.trim() || !value.code.trim() || !value.description.trim() || !value.specimen.trim() || Number(value.price) <= 0} onClick={onAdd}>Add test</button><button className="button secondary" onClick={onCancel}>Cancel</button></div></article>; }
-
-function TestRecords({ tests, records, setRecords }: { tests: DemoTest[]; records: Record<string, DemoRecord>; setRecords: Dispatch<SetStateAction<Record<string, DemoRecord>>> }) { const completed = tests.filter((t) => records[t.id]?.status === "RESULTED" && records[t.id]?.result.trim()).length; return <article className="card"><div className="row-between"><div><h2>2. Individual test records</h2><p className="muted">Every examination is recorded separately with its own result and status.</p></div><span className="status-pill">{completed} OF {tests.length} COMPLETE</span></div><div className="table-wrap"><table><thead><tr><th>Test</th><th>Description</th><th>Specimen</th><th>Price</th><th>Result / observation</th><th>Status</th></tr></thead><tbody>{tests.map((test) => { const record = records[test.id] ?? { result: "", status: "PENDING" as const }; return <tr key={test.id}><td><strong>{test.name}</strong><br /><small>{test.code}</small></td><td>{test.description}</td><td>{test.specimen}</td><td><strong>KES {test.price.toLocaleString()}</strong></td><td><input value={record.result} placeholder="Enter laboratory result" onChange={(e) => { setRecords((c) => ({ ...c, [test.id]: { result: e.target.value, status: e.target.value.trim() ? "RESULTED" : "PENDING" } })); }} /></td><td>{record.status === "RESULTED" ? <span className="status-pill">RESULTED</span> : <button className="button secondary" onClick={() => setRecords((c) => ({ ...c, [test.id]: { ...record, status: "PERFORMED" } }))}>Mark performed</button>}</td></tr>; })}</tbody></table></div></article>; }
-
-function BillingCard({ tests }: { tests: LabTest[] }) { const total = tests.reduce((sum, test) => sum + Number(test.price), 0); return <article className="card"><h2>3. Test-by-test billing</h2><p className="muted">Every laboratory test has its own standalone charge.</p><div className="lab-summary">{tests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{test.code}</p></div><span>1 ×</span><strong>KES {Number(test.price).toLocaleString()}</strong></div>)}</div><div className="billing-total">Laboratory total: KES {total.toLocaleString()}</div></article>; }
-
-function ForwardCard({ tests, records, ready, forwarded, onForward }: { tests: DemoTest[]; records: Record<string, DemoRecord>; ready: boolean; forwarded: boolean; onForward: () => void }) { return <article className="card"><div className="row-between"><div><h2>4. Forward completed results to prescription review</h2><p className="muted">The authorized clinician reviews laboratory findings and decides whether medication is appropriate.</p></div><span className={ready ? "status-pill" : "badge"}>{ready ? "READY TO FORWARD" : "WAITING"}</span></div><div className="lab-summary">{tests.map((test) => <div className="billing-line" key={test.id}><div><strong>{test.name}</strong><p className="muted">{records[test.id]?.result || "Result pending"}</p></div><span className={records[test.id]?.status === "RESULTED" ? "status-pill" : "badge"}>{records[test.id]?.status === "RESULTED" ? "READY" : "PENDING"}</span></div>)}</div><div className="form-actions"><button disabled={!ready} onClick={onForward}>{forwarded ? "✓ Results forwarded" : "Forward results to prescription review"}</button></div>{forwarded && <div className="success-box"><strong>LABORATORY COMPLETE</strong> · Results recorded · Charges calculated · Findings forwarded to prescription review.</div>}</article>; }
