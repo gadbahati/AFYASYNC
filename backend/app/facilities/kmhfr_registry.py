@@ -104,6 +104,21 @@ def _upsert(db, item: dict) -> bool:
     return changed
 
 
+def _live_sync() -> dict[str, int | bool | str]:
+    """Use the live official KMHFR API when a GitHub snapshot is unavailable."""
+    from app.facilities.kmhfr_sync import sync_all as sync_live
+
+    result = sync_live(force=True)
+    return {
+        "running": bool(result.get("running", False)),
+        "pages": int(result.get("pages", 0)),
+        "seen": int(result.get("seen", 0)),
+        "changed": int(result.get("changed", 0)),
+        "message": str(result.get("message", "unknown")),
+        "source": "official_kmhfr_api",
+    }
+
+
 def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
     global _state
     db = SessionLocal()
@@ -111,15 +126,8 @@ def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
     locked = False
     try:
         if not SNAPSHOT.exists():
-            _state = {
-                "running": False,
-                "pages": 0,
-                "seen": 0,
-                "changed": 0,
-                "message": "waiting_for_kmhfr_snapshot",
-                "source": "snapshot",
-            }
-            logger.warning("KMHFR snapshot is not present yet; waiting for GitHub registry publication")
+            logger.warning("KMHFR snapshot unavailable; falling back to live official KMHFR API")
+            _state = _live_sync()
             return _state
 
         locked = bool(
@@ -137,11 +145,7 @@ def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
         if not isinstance(records, list) or len(records) < MIN_SNAPSHOT_RECORDS:
             raise RuntimeError(f"KMHFR_SNAPSHOT_INVALID:{len(records) if isinstance(records, list) else 0}")
 
-        logger.info(
-            "KMHFR_SNAPSHOT_IMPORT_START records=%s source=%s",
-            len(records),
-            payload.get("source") if isinstance(payload, dict) else "unknown",
-        )
+        logger.info("KMHFR_SNAPSHOT_IMPORT_START records=%s source=%s", len(records), payload.get("source") if isinstance(payload, dict) else "unknown")
         for item in records:
             if isinstance(item, dict):
                 seen += 1
@@ -153,27 +157,13 @@ def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
                     logger.info("KMHFR_SNAPSHOT_IMPORT_PROGRESS seen=%s changed=%s", seen, changed)
         db.commit()
 
-        _state = {
-            "running": False,
-            "pages": 1,
-            "seen": seen,
-            "changed": changed,
-            "message": "complete",
-            "source": "official_kmhfr_snapshot",
-        }
+        _state = {"running": False, "pages": 1, "seen": seen, "changed": changed, "message": "complete", "source": "official_kmhfr_snapshot"}
         logger.info("KMHFR_SNAPSHOT_IMPORT_COMPLETE seen=%s changed=%s", seen, changed)
         return _state
     except Exception as exc:
         db.rollback()
-        _state = {
-            "running": False,
-            "pages": 0,
-            "seen": seen,
-            "changed": changed,
-            "message": f"failed:{type(exc).__name__}",
-            "source": "snapshot",
-        }
-        logger.exception("KMHFR_SNAPSHOT_IMPORT_FAILED seen=%s", seen)
+        _state = {"running": False, "pages": 0, "seen": seen, "changed": changed, "message": f"failed:{type(exc).__name__}", "source": "snapshot"}
+        logger.exception("KMHFR_REGISTRY_IMPORT_FAILED seen=%s", seen)
         return _state
     finally:
         if locked:
@@ -219,7 +209,7 @@ def start_sync_retry_loop() -> bool:
                 if active >= TARGET_ACTIVE_FACILITIES:
                     logger.info("KMHFR_REGISTRY_READY active_facilities=%s", active)
                     return
-                if SNAPSHOT.exists() and not _running:
+                if not _running:
                     logger.info("KMHFR_REGISTRY_RETRY active_facilities=%s", active)
                     start_sync()
             except Exception:
@@ -233,9 +223,4 @@ def start_sync_retry_loop() -> bool:
 def sync_state(db) -> dict[str, int | bool | str]:
     active = db.scalar(select(func.count(Facility.id)).where(Facility.status == "ACTIVE")) or 0
     total = db.scalar(select(func.count(Facility.id))) or 0
-    return {
-        "active_facilities": int(active),
-        "total_facilities": int(total),
-        "sync_running": _running,
-        **_state,
-    }
+    return {"active_facilities": int(active), "total_facilities": int(total), "sync_running": _running, **_state}
