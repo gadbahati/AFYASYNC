@@ -41,6 +41,12 @@ def register_patient(payload: PatientCreate, user: User = Depends(require_permis
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": code, "message": "Enter a valid 7–9 digit national ID number."}) from exc
         if code == "DUPLICATE_PATIENT":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": code, "message": "A possible existing patient was found."}) from exc
+        if code == "FACILITY_CONTEXT_REQUIRED":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": code, "message": "Select a facility before registering a patient."}) from exc
+        if code == "IDENTITY_SEQUENCE_UNAVAILABLE":
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": code, "message": "Patient identity service is temporarily unavailable. Please try again."}) from exc
+        if code == "PATIENT_CREATE_CONFLICT":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": code, "message": "The patient record could not be created because it conflicts with an existing record. Refresh and try again."}) from exc
         raise
     return _response(patient)
 
@@ -115,7 +121,7 @@ def update_patient_enrollment(patient_id: UUID, payload: PatientFacilityStatusUp
     except ValueError as exc:
         code = str(exc)
         if code == "PATIENT_NOT_IN_FACILITY":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": code, "message": "Patient enrollment not found."}) from exc
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": code, "message": "Enrollment status not found."}) from exc
         if code == "INVALID_PATIENT_FACILITY_STATUS":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": code, "message": "Enrollment status must be ACTIVE or INACTIVE."}) from exc
         if code == "PATIENT_FACILITY_STATUS_UNCHANGED":
