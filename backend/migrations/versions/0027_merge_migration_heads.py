@@ -2,7 +2,7 @@
 
 Revision ID: 0027_merge_migration_heads
 Revises: 0026_post_hardening_permissions, 0016_patient_access_permissions,
-         0016_patient_record_permission, 0016_patient_record_write_permission,
+         0016_patient_record_permission, 0016_patient_record_write,
          0015_department_write_permission, 0022_integration_callback_integrity
 
 This is a graph-only merge revision. The individual branches contain the
@@ -24,7 +24,7 @@ down_revision = (
     "0026_post_hardening_permissions",
     "0016_patient_access_permissions",
     "0016_patient_record_permission",
-    "0016_patient_record_write_permission",
+    "0016_patient_record_write",
     "0015_department_write_permission",
     "0022_integration_callback_integrity",
 )
