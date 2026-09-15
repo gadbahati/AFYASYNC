@@ -137,12 +137,13 @@ def initialize_database():
         Base.metadata.create_all(bind=engine)
     import os
     seed_requested = os.getenv("SEED_UNIVERSAL_ADMIN", "").strip().lower() in {"1", "true", "yes"}
-    if seed_requested and settings.environment == "production":
+    bootstrap_requested = os.getenv("BOOTSTRAP_UNIVERSAL_ADMIN_ONCE", "").strip().lower() in {"1", "true", "yes"}
+    if seed_requested and settings.environment == "production" and not bootstrap_requested:
         raise RuntimeError("SEED_UNIVERSAL_ADMIN is forbidden in production")
-    if seed_requested:
+    if seed_requested or bootstrap_requested:
         from app.scripts.seed_universal_admin import seed_universal_admin
         result = seed_universal_admin()
-        print("SEED_UNIVERSAL_ADMIN:", result)
+        print("UNIVERSAL_ADMIN_BOOTSTRAP:", result)
 
 
 app.include_router(auth_router.router)
