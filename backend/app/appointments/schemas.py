@@ -46,3 +46,11 @@ class QueueEntryResponse(QueueEntryCreate):
     queued_at: datetime
     called_at: datetime | None
     completed_at: datetime | None
+
+
+class PatientHandoffCreate(BaseModel):
+    patient_id: UUID
+    encounter_id: UUID
+    destination_department_id: UUID
+    priority: str = Field(default="NORMAL", pattern="^(NORMAL|URGENT|EMERGENCY)$")
+    reason: str | None = Field(default=None, max_length=500)
