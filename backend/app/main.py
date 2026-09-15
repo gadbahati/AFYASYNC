@@ -37,6 +37,7 @@ from app.encounters import models as encounter_models
 from app.encounters.router import router as encounters_router
 from app.facilities import models as facility_models
 from app.facilities.router import router as facilities_router
+from app.facilities.kmhfr_sync import start_sync as start_kmhfr_national_sync
 from app.insight.router import router as insight_router
 from app.integrations import models as integration_models
 from app.integrations.router import router as integrations_router
@@ -159,6 +160,15 @@ def initialize_database():
         from app.scripts.seed_universal_admin import seed_universal_admin
         result = seed_universal_admin()
         print("UNIVERSAL_ADMIN_BOOTSTRAP:", result)
+
+    # Start the national KMHFR facility import in the background after the
+    # application is ready. This guarantees the directory is populated without
+    # making Railway's /health check wait for thousands of remote API records.
+    try:
+        started = start_kmhfr_national_sync()
+        logger.info("KMHFR startup facility sync started=%s", started)
+    except Exception:
+        logger.exception("Unable to start KMHFR startup facility sync")
 
 
 app.include_router(auth_router.router)
