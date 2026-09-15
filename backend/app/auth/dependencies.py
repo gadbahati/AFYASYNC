@@ -31,6 +31,18 @@ def get_token_payload(credentials: HTTPAuthorizationCredentials | None = Depends
     return decode_access_token(credentials.credentials)
 
 
+def _is_system_administrator(db: Session, user: User) -> bool:
+    if user.person_id is None:
+        return False
+    return db.scalar(
+        select(StaffRole.staff_id)
+        .join(Staff, Staff.id == StaffRole.staff_id)
+        .join(Role, Role.id == StaffRole.role_id)
+        .where(Staff.person_id == user.person_id, Staff.status == "ACTIVE", Role.name == "System Administrator")
+        .limit(1)
+    ) is not None
+
+
 def get_facility_context(payload: dict = Depends(get_token_payload), user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> UUID:
     raw = payload.get("facility_id")
     if not raw:
@@ -39,6 +51,11 @@ def get_facility_context(payload: dict = Depends(get_token_payload), user: User 
         facility_id = UUID(raw)
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=403, detail="INVALID_FACILITY_CONTEXT") from exc
+    facility = db.get(Facility, facility_id)
+    if facility is None or facility.status != "ACTIVE":
+        raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
+    if _is_system_administrator(db, user):
+        return facility_id
     staff = db.scalar(
         select(Staff)
         .join(Facility, Facility.id == Staff.facility_id)
@@ -56,22 +73,32 @@ def get_facility_context(payload: dict = Depends(get_token_payload), user: User 
 
 def require_permission(permission_code: str):
     def dependency(user: User = Depends(get_current_user), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> User:
-        stmt = (
-            select(Permission.id)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(Role, Role.id == RolePermission.role_id)
-            .join(StaffRole, StaffRole.role_id == Role.id)
-            .join(Staff, Staff.id == StaffRole.staff_id)
-            .join(Facility, Facility.id == Staff.facility_id)
-            .where(
-                Permission.code == permission_code,
-                Staff.person_id == user.person_id,
-                Staff.facility_id == facility_id,
-                StaffRole.facility_id == facility_id,
-                Staff.status == "ACTIVE",
-                Facility.status == "ACTIVE",
-            ).limit(1)
-        )
+        if _is_system_administrator(db, user):
+            stmt = (
+                select(Permission.id)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .join(Role, Role.id == RolePermission.role_id)
+                .join(StaffRole, StaffRole.role_id == Role.id)
+                .join(Staff, Staff.id == StaffRole.staff_id)
+                .where(Permission.code == permission_code, Staff.person_id == user.person_id, Staff.status == "ACTIVE").limit(1)
+            )
+        else:
+            stmt = (
+                select(Permission.id)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .join(Role, Role.id == RolePermission.role_id)
+                .join(StaffRole, StaffRole.role_id == Role.id)
+                .join(Staff, Staff.id == StaffRole.staff_id)
+                .join(Facility, Facility.id == Staff.facility_id)
+                .where(
+                    Permission.code == permission_code,
+                    Staff.person_id == user.person_id,
+                    Staff.facility_id == facility_id,
+                    StaffRole.facility_id == facility_id,
+                    Staff.status == "ACTIVE",
+                    Facility.status == "ACTIVE",
+                ).limit(1)
+            )
         if db.scalar(stmt) is None:
             raise HTTPException(status_code=403, detail="PERMISSION_DENIED")
         return user
@@ -79,12 +106,7 @@ def require_permission(permission_code: str):
 
 
 def require_national_permission(permission_code: str):
-    """Require an explicitly assigned permission without creating a facility context.
-
-    National permissions are intentionally independent of the facility selected in a token.
-    The user's active staff assignment is still required, but access is granted only when
-    one of that user's active staff roles carries the requested permission.
-    """
+    """Require an explicitly assigned permission without creating a facility context."""
     def dependency(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
         stmt = (
             select(Permission.id)
