@@ -41,3 +41,42 @@ class FacilityReport(BaseModel):
     claims_receivable: Decimal
     claim_statuses: list[ClaimStatusSummary]
     payer_claims: list[PayerClaimSummary]
+
+
+class FacilityDailyReportRow(BaseModel):
+    date: date
+    patients: int
+    encounters: int
+    diagnoses: int
+    prescriptions: int
+    admissions: int
+    referrals: int
+    charges: Decimal
+    invoices: Decimal
+    payments: Decimal
+    stock_received_quantity: Decimal
+    stock_dispensed_quantity: Decimal
+
+
+class DiagnosisSummary(BaseModel):
+    diagnosis: str
+    count: int
+
+
+class FacilityOperationsReport(BaseModel):
+    facility_id: str
+    start_date: date
+    end_date: date
+    patients: int
+    encounters: int
+    diagnoses: int
+    prescriptions: int
+    admissions: int
+    referrals: int
+    charges_total: Decimal
+    invoices_total: Decimal
+    confirmed_payments: Decimal
+    stock_received_quantity: Decimal
+    stock_dispensed_quantity: Decimal
+    top_diagnoses: list[DiagnosisSummary]
+    daily: list[FacilityDailyReportRow]
