@@ -37,7 +37,7 @@ from app.encounters import models as encounter_models
 from app.encounters.router import router as encounters_router
 from app.facilities import models as facility_models
 from app.facilities.router import router as facilities_router
-from app.facilities.kmhfr_sync import start_sync as start_kmhfr_national_sync, start_sync_retry_loop as start_kmhfr_retry_loop
+from app.facilities.kmhfr_registry import start_sync as start_kmhfr_national_sync, start_sync_retry_loop as start_kmhfr_retry_loop
 from app.insight.router import router as insight_router
 from app.integrations import models as integration_models
 from app.integrations.router import router as integrations_router
@@ -90,7 +90,6 @@ from app.ussd.router import router as ussd_router
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
-
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     @staticmethod
     def _request_id(request: Request) -> str:
@@ -128,12 +127,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         self._apply_headers(response, request_id)
         return response
 
-
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"])
 app.add_middleware(SecurityHeadersMiddleware)
-
 
 @app.on_event("startup")
 def initialize_database():
@@ -148,14 +145,12 @@ def initialize_database():
         from app.scripts.seed_universal_admin import seed_universal_admin
         result = seed_universal_admin()
         print("UNIVERSAL_ADMIN_BOOTSTRAP:", result)
-
     try:
         started = start_kmhfr_national_sync()
         retry_started = start_kmhfr_retry_loop()
-        logger.info("KMHFR startup facility sync started=%s retry_loop=%s", started, retry_started)
+        logger.info("KMHFR startup registry import started=%s retry_loop=%s", started, retry_started)
     except Exception:
-        logger.exception("Unable to start KMHFR startup facility sync")
-
+        logger.exception("Unable to start KMHFR registry import")
 
 app.include_router(auth_router.router)
 app.include_router(patients_router)
@@ -201,11 +196,9 @@ app.include_router(national_capacity_router)
 app.include_router(observability_router)
 app.include_router(ussd_router)
 
-
 @app.get("/health", tags=["System"])
 def health_check():
     return {"success": True, "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version}, "message": "AfyaSync API is running"}
-
 
 @app.get("/ready", tags=["System"])
 def readiness_check(response: Response):
@@ -216,7 +209,6 @@ def readiness_check(response: Response):
     except Exception:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"success": False, "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"}, "message": "AfyaSync API is not ready"}
-
 
 @app.get("/api/v1", tags=["System"])
 def api_root():
