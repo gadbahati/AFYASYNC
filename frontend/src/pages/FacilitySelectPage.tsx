@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { getAccessToken } from "../auth/storage";
@@ -12,8 +12,6 @@ type DirectoryFacility = FacilityOption & {
   registration_number?: string | null;
 };
 
-type DirectoryStatus = { active_facilities: number; sync_running: boolean };
-
 export function FacilitySelectPage() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -21,8 +19,6 @@ export function FacilitySelectPage() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [count, setCount] = useState(0);
   const [selecting, setSelecting] = useState<string | null>(null);
 
   async function loadDirectory(search: string, showSpinner = true) {
@@ -30,7 +26,6 @@ export function FacilitySelectPage() {
     try {
       const rows = await api.facilityDirectory(search);
       setFacilities(rows as DirectoryFacility[]);
-      setCount(rows.length);
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message || err.code : "Unable to load the Kenya facility registry.");
@@ -39,34 +34,22 @@ export function FacilitySelectPage() {
     }
   }
 
-  async function loadSyncStatus() {
-    try {
-      const status = await api.facilityDirectoryStatus();
-      setSyncing(status.sync_running);
-      if (!query.trim()) setCount(status.active_facilities);
-    } catch {
-      // The directory itself remains usable if this optional status call fails.
-    }
-  }
-
   useEffect(() => {
     if (!auth.ready || !auth.username || !getAccessToken()) return;
     void loadDirectory("");
-    void loadSyncStatus();
+    // The national import runs in the backend without blocking this screen.
+    // Refresh while it is growing so newly imported facilities appear automatically.
     const timer = window.setInterval(() => {
-      void loadSyncStatus();
-      if (!query.trim()) void loadDirectory("", false);
-    }, 5000);
+      void loadDirectory(query, false);
+    }, 10000);
     return () => window.clearInterval(timer);
   }, [auth.ready, auth.username]);
 
   useEffect(() => {
     if (!auth.ready || !auth.username || !getAccessToken()) return;
-    const timer = window.setTimeout(() => void loadDirectory(query), 300);
+    const timer = window.setTimeout(() => void loadDirectory(query), 350);
     return () => window.clearTimeout(timer);
   }, [query]);
-
-  const visible = useMemo(() => facilities, [facilities]);
 
   if (!auth.ready) return <div className="auth-page"><div className="card auth-card"><p className="muted">Preparing facility selection…</p></div></div>;
   if (!auth.username || !getAccessToken()) return <Navigate to="/login" replace />;
@@ -103,16 +86,16 @@ export function FacilitySelectPage() {
         </label>
 
         <div className="facility-picker-meta">
-          <strong>{count.toLocaleString()}</strong>
+          <strong>{facilities.length.toLocaleString()}</strong>
           <span>{query.trim() ? "matching facilities" : "active facilities currently indexed"}</span>
-          {syncing && <span className="muted">• National registry sync in progress — this list will keep filling automatically.</span>}
+          <span className="muted">• The directory refreshes automatically while the national registry sync completes.</span>
         </div>
 
         {loading && <p className="muted">Loading facilities…</p>}
         {error && <div className="error" role="alert">{error}</div>}
 
         <div className="facility-grid">
-          {visible.map((facility) => (
+          {facilities.map((facility) => (
             <button key={facility.facility_id} type="button" className="facility-card" onClick={() => void choose(facility)} disabled={Boolean(selecting)}>
               <span className="facility-card-icon" aria-hidden="true">+</span>
               <span className="facility-card-body">
@@ -125,7 +108,7 @@ export function FacilitySelectPage() {
           ))}
         </div>
 
-        {!loading && visible.length === 0 && (
+        {!loading && facilities.length === 0 && (
           <div className="card"><strong>No facility found</strong><p className="muted">Try the facility name, county, sub-county, facility type or KMHFR facility code.</p></div>
         )}
       </div>
