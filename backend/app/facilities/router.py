@@ -9,7 +9,7 @@ from app.auth.schemas import FacilityOption
 from app.database import get_db
 from app.facilities.models import Facility
 from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
-from app.facilities.service import create_department, create_facility, get_facility, list_departments, list_facilities, list_network_facilities, update_department_status, update_facility, update_facility_status
+from app.facilities.service import create_department, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, sync_kmhfr_facilities, update_department_status, update_facility, update_facility_status
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/facilities", tags=["Facilities"])
@@ -23,9 +23,10 @@ def get_facilities(limit: int = Query(default=50, ge=1, le=100), _: User = Depen
     return list_facilities(db, limit)
 
 @router.get("/directory", response_model=list[FacilityOption])
-def get_facility_directory(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[FacilityOption]:
-    rows = db.execute(select(Facility.id, Facility.name).where(Facility.status == "ACTIVE").order_by(Facility.name)).all()
-    return [FacilityOption(facility_id=row[0], facility_name=row[1]) for row in rows]
+def get_facility_directory(search: str | None = Query(default=None, max_length=150), _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[FacilityOption]:
+    sync_kmhfr_facilities(db)
+    rows = list_facility_directory(db, search=search)
+    return [FacilityOption(facility_id=row.id, facility_name=row.name) for row in rows]
 
 @router.get("/network", response_model=list[NetworkFacilityResponse])
 def get_network_facilities(limit: int = Query(default=100, ge=1, le=200), facility_status: str | None = Query(default=None), county: str | None = Query(default=None, max_length=100), _: User = Depends(require_national_permission("facilities.network.read")), db: Session = Depends(get_db)) -> list[NetworkFacilityResponse]:
