@@ -46,16 +46,26 @@ const readRequestBody = async (req) => {
 };
 
 const proxyApi = async (req, res) => {
-  if (!apiProxyTarget) return res.writeHead(503, { "Content-Type": "application/json" }).end(JSON.stringify({ success: false, message: "API proxy is not configured" }));
+  if (!apiProxyTarget) {
+    return res.writeHead(503, { "Content-Type": "application/json" }).end(JSON.stringify({ success: false, message: "API proxy is not configured" }));
+  }
+
   const target = new URL(req.url || "/", `${apiProxyTarget}/`);
   const headers = { ...req.headers };
   delete headers.host;
   delete headers.connection;
+  delete headers["content-length"];
+  // Node fetch transparently decompresses upstream responses. Request an
+  // uncompressed response so the forwarded body and headers always agree.
+  headers["accept-encoding"] = "identity";
+
   const body = ["GET", "HEAD"].includes(req.method || "GET") ? undefined : await readRequestBody(req);
   const upstream = await fetch(target, { method: req.method, headers, body, redirect: "manual" });
   const responseHeaders = {};
   upstream.headers.forEach((value, key) => { responseHeaders[key] = value; });
   delete responseHeaders["content-length"];
+  delete responseHeaders["content-encoding"];
+  delete responseHeaders["transfer-encoding"];
   res.writeHead(upstream.status, responseHeaders);
   if (!upstream.body) return res.end();
   return Readable.fromWeb(upstream.body).pipe(res);
