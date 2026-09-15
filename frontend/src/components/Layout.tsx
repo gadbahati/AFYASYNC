@@ -8,7 +8,7 @@ const navGroups = [
   { label: "Revenue & financing", links: [["/billing", "Billing"], ["/claims", "Claims & rework"], ["/integrations", "Integration operations"]] },
 ] as const;
 
-const KENYA_CREST = "https://upload.wikimedia.org/wikipedia/commons/3/32/Coat_of_arms_of_Kenya_%28Official%29.svg";
+const KENYA_CREST = "https://upload.wikimedia.org/wikipedia/commons/f/f6/Coat_of_arms_of_Kenya_%28Official%29.svg";
 
 function KenyaCrest({ className = "" }: { className?: string }) {
   return <img className={`kenya-crest ${className}`} src={KENYA_CREST} alt="Coat of arms of Kenya" />;
