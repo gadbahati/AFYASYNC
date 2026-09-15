@@ -17,7 +17,7 @@ from app.facilities.models import Facility
 logger = logging.getLogger("afyasync.facilities.kmhfr")
 
 SYNC_LOCK_KEY = "afyasync:kmhfr:facility-registry"
-DEFAULT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/public/facilities/"
+DEFAULT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/facilities/facilities/"
 MAX_PAGES = 1000
 PAGE_SIZE = 100
 REQUEST_TIMEOUT = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
@@ -25,13 +25,7 @@ RETRY_INTERVAL_SECONDS = 60
 _sync_thread_lock = threading.Lock()
 _sync_running = False
 _retry_thread_started = False
-_last_sync_result: dict[str, int | str | bool] = {
-    "running": False,
-    "pages": 0,
-    "seen": 0,
-    "changed": 0,
-    "message": "not_started",
-}
+_last_sync_result: dict[str, int | str | bool] = {"running": False, "pages": 0, "seen": 0, "changed": 0, "message": "not_started"}
 
 
 def _value(item: dict, *keys: str) -> str | None:
@@ -54,7 +48,7 @@ def _stable_facility_id(key: str) -> str:
 
 
 def _upsert(item: dict, db: Session) -> bool:
-    code = _value(item, "code", "mfl_code", "facility_code", "facility_code_number", "facility_code_number")
+    code = _value(item, "code", "mfl_code", "facility_code", "facility_code_number")
     external_id = _value(item, "id", "uuid", "facility_id")
     name = _value(item, "name", "facility_official_name", "official_name")
     if not name:
@@ -64,40 +58,15 @@ def _upsert(item: dict, db: Session) -> bool:
     sub_county = _value(item, "sub_county_name", "sub_county", "subcounty")
     facility_type = _value(item, "facility_type_name", "facility_type", "type") or "HEALTH_FACILITY"
     is_active = _active(item)
-
-    facility = None
-    if registry_key:
-        facility = db.scalar(select(Facility).where(Facility.registration_number == registry_key).limit(1))
+    facility = db.scalar(select(Facility).where(Facility.registration_number == registry_key).limit(1)) if registry_key else None
     if facility is None:
-        facility = db.scalar(
-            select(Facility).where(
-                func.lower(Facility.name) == name.lower(),
-                func.lower(func.coalesce(Facility.county, "")) == (county or "").lower(),
-            ).limit(1)
-        )
-
+        facility = db.scalar(select(Facility).where(func.lower(Facility.name) == name.lower(), func.lower(func.coalesce(Facility.county, "")) == (county or "").lower()).limit(1))
     if facility is None:
         identity = registry_key or f"{name}|{county or ''}|{sub_county or ''}"
-        facility = Facility(
-            facility_id=_stable_facility_id(identity),
-            name=name,
-            facility_type=facility_type,
-            registration_number=registry_key,
-            county=county,
-            sub_county=sub_county,
-            status="ACTIVE" if is_active else "INACTIVE",
-        )
-        db.add(facility)
+        db.add(Facility(facility_id=_stable_facility_id(identity), name=name, facility_type=facility_type, registration_number=registry_key, county=county, sub_county=sub_county, status="ACTIVE" if is_active else "INACTIVE"))
         return True
-
     changed = False
-    values = {
-        "name": name,
-        "facility_type": facility_type,
-        "county": county,
-        "sub_county": sub_county,
-        "status": "ACTIVE" if is_active else "INACTIVE",
-    }
+    values = {"name": name, "facility_type": facility_type, "county": county, "sub_county": sub_county, "status": "ACTIVE" if is_active else "INACTIVE"}
     if registry_key:
         values["registration_number"] = registry_key
     for field, value in values.items():
@@ -108,8 +77,7 @@ def _upsert(item: dict, db: Session) -> bool:
 
 
 def _advisory_lock(db: Session) -> bool:
-    result = db.execute(text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"), {"key": SYNC_LOCK_KEY})
-    return bool(result.scalar())
+    return bool(db.execute(text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"), {"key": SYNC_LOCK_KEY}).scalar())
 
 
 def _advisory_unlock(db: Session) -> None:
@@ -124,10 +92,6 @@ def _normalise_endpoint(value: str) -> str:
         return value + "/"
     if value.endswith("/facilities/"):
         return value
-    if value.endswith("/api/public"):
-        return value + "/facilities/"
-    if value.endswith("/api/public/"):
-        return value + "facilities/"
     return value.rstrip("/") + "/facilities/"
 
 
@@ -163,13 +127,11 @@ def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
             result = {"running": True, "pages": 0, "seen": 0, "changed": 0, "message": "already_running"}
             _last_sync_result = result
             return result
-
         endpoint = _normalise_endpoint(os.getenv("KMHFR_API_BASE_URL", DEFAULT_KMHFR_URL))
         token = os.getenv("KMHFR_API_TOKEN", "").strip()
         headers = {"Accept": "application/json", "User-Agent": "AfyaSync/1.0 national-facility-sync"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-
         logger.info("KMHFR_SYNC_START endpoint=%s page_size=%s", endpoint, PAGE_SIZE)
         with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True, headers=headers) as client:
             url: str | None = endpoint
@@ -186,10 +148,8 @@ def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
                             changed += 1
                 db.commit()
                 pages += 1
-
                 if pages == 1 and isinstance(payload, dict):
                     logger.info("KMHFR_SYNC_SOURCE count=%s total_pages=%s", payload.get("count"), payload.get("total_pages"))
-
                 if next_url:
                     url = urljoin(url, next_url)
                     page += 1
@@ -198,10 +158,8 @@ def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
                     url = endpoint
                 else:
                     url = None
-
                 if pages % 10 == 0:
                     logger.info("KMHFR_SYNC_PROGRESS pages=%s seen=%s changed=%s", pages, seen, changed)
-
         result = {"running": False, "pages": pages, "seen": seen, "changed": changed, "message": "complete"}
         _last_sync_result = result
         logger.info("KMHFR_SYNC_COMPLETE pages=%s seen=%s changed=%s", pages, seen, changed)
@@ -210,7 +168,7 @@ def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
         db.rollback()
         result = {"running": False, "pages": pages, "seen": seen, "changed": changed, "message": f"failed:{type(exc).__name__}"}
         _last_sync_result = result
-        logger.exception("KMHFR_SYNC_FAILED pages=%s seen=%s changed=%s", pages, seen, changed)
+        logger.exception("KMHFR_SYNC_FAILED pages=%s seen=%s changed=%s", pages, seen)
         return result
     finally:
         try:
@@ -226,7 +184,6 @@ def start_sync() -> bool:
         if _sync_running:
             return False
         _sync_running = True
-
     def worker() -> None:
         global _sync_running
         try:
@@ -234,7 +191,6 @@ def start_sync() -> bool:
         finally:
             with _sync_thread_lock:
                 _sync_running = False
-
     threading.Thread(target=worker, name="kmhfr-national-sync", daemon=True).start()
     return True
 
@@ -245,7 +201,6 @@ def start_sync_retry_loop() -> bool:
         if _retry_thread_started:
             return False
         _retry_thread_started = True
-
     def retry_worker() -> None:
         time.sleep(15)
         while True:
@@ -261,7 +216,6 @@ def start_sync_retry_loop() -> bool:
             except Exception:
                 logger.exception("KMHFR_SYNC_RETRY_CHECK_FAILED")
             time.sleep(RETRY_INTERVAL_SECONDS)
-
     threading.Thread(target=retry_worker, name="kmhfr-sync-retry", daemon=True).start()
     return True
 
@@ -269,12 +223,4 @@ def start_sync_retry_loop() -> bool:
 def sync_state(db: Session) -> dict[str, int | bool | str]:
     active = db.scalar(select(func.count(Facility.id)).where(Facility.status == "ACTIVE")) or 0
     total = db.scalar(select(func.count(Facility.id))) or 0
-    return {
-        "active_facilities": int(active),
-        "total_facilities": int(total),
-        "sync_running": _sync_running,
-        "pages": int(_last_sync_result.get("pages", 0)),
-        "seen": int(_last_sync_result.get("seen", 0)),
-        "changed": int(_last_sync_result.get("changed", 0)),
-        "message": str(_last_sync_result.get("message", "not_started")),
-    }
+    return {"active_facilities": int(active), "total_facilities": int(total), "sync_running": _sync_running, "pages": int(_last_sync_result.get("pages", 0)), "seen": int(_last_sync_result.get("seen", 0)), "changed": int(_last_sync_result.get("changed", 0)), "message": str(_last_sync_result.get("message", "not_started"))}
