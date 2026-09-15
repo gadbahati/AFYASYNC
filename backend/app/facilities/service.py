@@ -17,10 +17,50 @@ _FACILITY_STATUS_TRANSITIONS = {
 _ALLOWED_DEPARTMENT_STATUSES = {"ACTIVE", "INACTIVE"}
 _FACILITY_ID_ALLOCATION_ATTEMPTS = 3
 
+DEFAULT_DEPARTMENTS = (
+    ("REG", "Registration & Records"),
+    ("OPD", "Outpatient Department"),
+    ("CAS", "Casualty / Emergency"),
+    ("GENMED", "General Medicine"),
+    ("PAEDS", "Paediatrics"),
+    ("OBGYN", "Maternity & Obstetrics / Gynaecology"),
+    ("SURG", "General Surgery"),
+    ("ORTHO", "Orthopaedics"),
+    ("DENT", "Dental"),
+    ("ENT", "Ear, Nose & Throat"),
+    ("EYE", "Ophthalmology"),
+    ("DERM", "Dermatology"),
+    ("PSYCH", "Mental Health / Psychiatry"),
+    ("NCD", "Non-Communicable Diseases"),
+    ("HIV", "HIV / ART Clinic"),
+    ("TB", "Tuberculosis Clinic"),
+    ("LAB", "Laboratory"),
+    ("RAD", "Radiology & Imaging"),
+    ("PHARM", "Pharmacy"),
+    ("PHYSIO", "Physiotherapy & Rehabilitation"),
+    ("NUTR", "Nutrition & Dietetics"),
+    ("THEATRE", "Operating Theatre"),
+    ("ICU", "Intensive Care Unit"),
+    ("HDU", "High Dependency Unit"),
+    ("WARD", "General Wards"),
+    ("MORT", "Mortuary"),
+    ("AMB", "Ambulance / Transport"),
+)
+
 
 def _next_facility_id(db: Session) -> str:
     count = db.scalar(select(func.count(Facility.id))) or 0
     return f"FAC-{count + 1:06d}"
+
+
+def _ensure_default_departments(db: Session, facility_id: UUID) -> None:
+    existing = set(
+        db.scalars(select(Department.code).where(Department.facility_id == facility_id)).all()
+    )
+    for code, name in DEFAULT_DEPARTMENTS:
+        if code not in existing:
+            db.add(Department(facility_id=facility_id, name=name, code=code, status="ACTIVE"))
+    db.flush()
 
 
 def create_facility(db: Session, data: dict, *, actor_user_id: UUID | None = None) -> Facility:
@@ -30,6 +70,7 @@ def create_facility(db: Session, data: dict, *, actor_user_id: UUID | None = Non
             with db.begin_nested():
                 db.add(facility)
                 db.flush()
+                _ensure_default_departments(db, facility.id)
                 record_audit(
                     db,
                     action="CREATE_FACILITY",
@@ -38,7 +79,7 @@ def create_facility(db: Session, data: dict, *, actor_user_id: UUID | None = Non
                     result="SUCCESS",
                     user_id=actor_user_id,
                     facility_id=facility.id,
-                    metadata={"facility_id": facility.facility_id, "name": facility.name},
+                    metadata={"facility_id": facility.facility_id, "name": facility.name, "default_departments": len(DEFAULT_DEPARTMENTS)},
                     commit=False,
                 )
         except IntegrityError:
