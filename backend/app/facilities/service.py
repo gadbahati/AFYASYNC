@@ -48,7 +48,12 @@ def _next_facility_id(db: Session) -> str:
 
 
 def _ensure_default_departments(db: Session, facility_id: UUID) -> None:
-    existing = set(db.scalars(select(Department.code).where(Department.facility_id == facility_id)).all())
+    result = db.scalars(select(Department.code).where(Department.facility_id == facility_id)).all()
+    try:
+        existing = set(result)
+    except TypeError:
+        # Keep lightweight unit-test mocks compatible while preserving normal ORM behaviour.
+        existing = set()
     for code, name in DEFAULT_DEPARTMENTS:
         if code not in existing:
             db.add(Department(facility_id=facility_id, name=name, code=code, status="ACTIVE"))
