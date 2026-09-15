@@ -18,8 +18,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Deliberately schema-neutral; RBAC provisioning is deferred until after
-    # the API is live so deployment startup cannot be blocked by RBAC locks.
+    # Kept schema-neutral until RBAC provisioning is run against the live service.
     pass
 
 
