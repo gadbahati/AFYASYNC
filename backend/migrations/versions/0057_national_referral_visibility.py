@@ -18,49 +18,79 @@ ROLE_NAME = "National Health Referral Administrator"
 
 
 def upgrade() -> None:
+    """Seed the permission and privileged role with compact, idempotent SQL.
+
+    Keeping this migration to three short statements avoids ORM/table metadata
+    work during the deployment migration transaction while preserving the
+    intended RBAC state on both fresh and existing databases.
+    """
+    permission_id = uuid4()
+    role_id = uuid4()
     bind = op.get_bind()
-    permissions = sa.table("permissions", sa.column("id"), sa.column("code"), sa.column("description"))
-    roles = sa.table("roles", sa.column("id"), sa.column("name"), sa.column("description"))
-    role_permissions = sa.table("role_permissions", sa.column("role_id"), sa.column("permission_id"))
 
-    permission_id = bind.execute(sa.select(permissions.c.id).where(permissions.c.code == PERMISSION_CODE)).scalar()
-    if permission_id is None:
-        permission_id = uuid4()
-        bind.execute(sa.insert(permissions).values(
-            id=permission_id,
-            code=PERMISSION_CODE,
-            description="View privacy-minimized referral routing and operational status across active facilities",
-        ))
+    bind.execute(
+        sa.text(
+            """
+            INSERT INTO permissions (id, code, description)
+            VALUES (:permission_id, :code, :description)
+            ON CONFLICT (code) DO NOTHING
+            """
+        ),
+        {
+            "permission_id": permission_id,
+            "code": PERMISSION_CODE,
+            "description": "View privacy-minimized referral routing and operational status across active facilities",
+        },
+    )
 
-    role_id = bind.execute(sa.select(roles.c.id).where(roles.c.name == ROLE_NAME)).scalar()
-    if role_id is None:
-        role_id = uuid4()
-        bind.execute(sa.insert(roles).values(
-            id=role_id,
-            name=ROLE_NAME,
-            description="Explicitly privileged national referral visibility",
-        ))
+    bind.execute(
+        sa.text(
+            """
+            INSERT INTO roles (id, name, description)
+            VALUES (:role_id, :name, :description)
+            ON CONFLICT (name) DO NOTHING
+            """
+        ),
+        {
+            "role_id": role_id,
+            "name": ROLE_NAME,
+            "description": "Explicitly privileged national referral visibility",
+        },
+    )
 
-    if bind.execute(sa.select(role_permissions.c.role_id).where(
-        role_permissions.c.role_id == role_id,
-        role_permissions.c.permission_id == permission_id,
-    )).first() is None:
-        bind.execute(sa.insert(role_permissions).values(role_id=role_id, permission_id=permission_id))
+    bind.execute(
+        sa.text(
+            """
+            INSERT INTO role_permissions (role_id, permission_id)
+            SELECT r.id, p.id
+            FROM roles r
+            CROSS JOIN permissions p
+            WHERE r.name = :role_name
+              AND p.code = :permission_code
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+            """
+        ),
+        {"role_name": ROLE_NAME, "permission_code": PERMISSION_CODE},
+    )
 
 
 def downgrade() -> None:
     bind = op.get_bind()
-    permissions = sa.table("permissions", sa.column("id"), sa.column("code"))
-    roles = sa.table("roles", sa.column("id"), sa.column("name"))
-    role_permissions = sa.table("role_permissions", sa.column("role_id"), sa.column("permission_id"))
-    permission_id = bind.execute(sa.select(permissions.c.id).where(permissions.c.code == PERMISSION_CODE)).scalar()
-    role_id = bind.execute(sa.select(roles.c.id).where(roles.c.name == ROLE_NAME)).scalar()
-    if role_id is not None and permission_id is not None:
-        bind.execute(sa.delete(role_permissions).where(
-            role_permissions.c.role_id == role_id,
-            role_permissions.c.permission_id == permission_id,
-        ))
-    if role_id is not None:
-        bind.execute(sa.delete(roles).where(roles.c.id == role_id))
-    if permission_id is not None:
-        bind.execute(sa.delete(permissions).where(permissions.c.id == permission_id))
+    bind.execute(
+        sa.text(
+            """
+            DELETE FROM role_permissions
+            WHERE role_id = (SELECT id FROM roles WHERE name = :role_name)
+              AND permission_id = (SELECT id FROM permissions WHERE code = :permission_code)
+            """
+        ),
+        {"role_name": ROLE_NAME, "permission_code": PERMISSION_CODE},
+    )
+    bind.execute(
+        sa.text("DELETE FROM roles WHERE name = :role_name"),
+        {"role_name": ROLE_NAME},
+    )
+    bind.execute(
+        sa.text("DELETE FROM permissions WHERE code = :permission_code"),
+        {"permission_code": PERMISSION_CODE},
+    )
