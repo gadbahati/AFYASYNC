@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
+import logging
 import os
+import threading
 from uuid import UUID
 
 import httpx
@@ -8,7 +10,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
+from app.database import SessionLocal
 from app.facilities.models import Department, Facility
+
+logger = logging.getLogger("afyasync.facilities")
 
 _ALLOWED_FACILITY_STATUSES = {"APPLICATION", "ACTIVE", "SUSPENDED", "INACTIVE"}
 _FACILITY_STATUS_TRANSITIONS = {
@@ -21,35 +26,19 @@ _ALLOWED_DEPARTMENT_STATUSES = {"ACTIVE", "INACTIVE"}
 _FACILITY_ID_ALLOCATION_ATTEMPTS = 3
 _KMHFR_SYNC_TTL = timedelta(hours=6)
 _last_kmhfr_sync_at: datetime | None = None
+_kmhfr_sync_running = False
+_kmhfr_sync_lock = threading.Lock()
 
 DEFAULT_DEPARTMENTS = (
-    ("REG", "Registration & Records"),
-    ("OPD", "Outpatient Department"),
-    ("CAS", "Casualty / Emergency"),
-    ("GENMED", "General Medicine"),
-    ("PAEDS", "Paediatrics"),
-    ("OBGYN", "Maternity & Obstetrics / Gynaecology"),
-    ("SURG", "General Surgery"),
-    ("ORTHO", "Orthopaedics"),
-    ("DENT", "Dental"),
-    ("ENT", "Ear, Nose & Throat"),
-    ("EYE", "Ophthalmology"),
-    ("DERM", "Dermatology"),
-    ("PSYCH", "Mental Health / Psychiatry"),
-    ("NCD", "Non-Communicable Diseases"),
-    ("HIV", "HIV / ART Clinic"),
-    ("TB", "Tuberculosis Clinic"),
-    ("LAB", "Laboratory"),
-    ("RAD", "Radiology & Imaging"),
-    ("PHARM", "Pharmacy"),
-    ("PHYSIO", "Physiotherapy & Rehabilitation"),
-    ("NUTR", "Nutrition & Dietetics"),
-    ("THEATRE", "Operating Theatre"),
-    ("ICU", "Intensive Care Unit"),
-    ("HDU", "High Dependency Unit"),
-    ("WARD", "General Wards"),
-    ("MORT", "Mortuary"),
-    ("AMB", "Ambulance / Transport"),
+    ("REG", "Registration & Records"), ("OPD", "Outpatient Department"), ("CAS", "Casualty / Emergency"),
+    ("GENMED", "General Medicine"), ("PAEDS", "Paediatrics"), ("OBGYN", "Maternity & Obstetrics / Gynaecology"),
+    ("SURG", "General Surgery"), ("ORTHO", "Orthopaedics"), ("DENT", "Dental"), ("ENT", "Ear, Nose & Throat"),
+    ("EYE", "Ophthalmology"), ("DERM", "Dermatology"), ("PSYCH", "Mental Health / Psychiatry"),
+    ("NCD", "Non-Communicable Diseases"), ("HIV", "HIV / ART Clinic"), ("TB", "Tuberculosis Clinic"),
+    ("LAB", "Laboratory"), ("RAD", "Radiology & Imaging"), ("PHARM", "Pharmacy"),
+    ("PHYSIO", "Physiotherapy & Rehabilitation"), ("NUTR", "Nutrition & Dietetics"), ("THEATRE", "Operating Theatre"),
+    ("ICU", "Intensive Care Unit"), ("HDU", "High Dependency Unit"), ("WARD", "General Wards"),
+    ("MORT", "Mortuary"), ("AMB", "Ambulance / Transport"),
 )
 
 
@@ -106,81 +95,120 @@ def list_facility_directory(db: Session, *, search: str | None = None, limit: in
     stmt = select(Facility).where(Facility.status == "ACTIVE").order_by(Facility.name)
     if search and search.strip():
         needle = f"%{search.strip().lower()}%"
-        stmt = stmt.where(func.lower(Facility.name).like(needle))
+        stmt = stmt.where(
+            func.lower(Facility.name).like(needle)
+            | func.lower(func.coalesce(Facility.county, "")).like(needle)
+            | func.lower(func.coalesce(Facility.sub_county, "")).like(needle)
+            | func.lower(func.coalesce(Facility.facility_type, "")).like(needle)
+        )
     return list(db.scalars(stmt.limit(min(max(limit, 1), 50000))))
 
 
 def _kmhfr_value(item: dict, *keys: str) -> str | None:
     for key in keys:
         value = item.get(key)
+        if isinstance(value, dict):
+            value = value.get("name") or value.get("label") or value.get("value") or value.get("code")
         if value is not None and str(value).strip():
             return str(value).strip()
     return None
 
 
+def _sync_kmhfr_page(item: dict, db: Session) -> bool:
+    code = _kmhfr_value(item, "code", "mfl_code", "facility_code", "facility_code_number")
+    external_uuid = _kmhfr_value(item, "id", "uuid")
+    name = _kmhfr_value(item, "name", "facility_official_name", "official_name")
+    if not name:
+        return False
+    county = _kmhfr_value(item, "county", "county_name")
+    sub_county = _kmhfr_value(item, "sub_county", "subcounty", "sub_county_name")
+    facility_type = _kmhfr_value(item, "facility_type_name", "facility_type", "type") or "HEALTH_FACILITY"
+    operation_status = (_kmhfr_value(item, "operation_status_name", "operation_status", "status") or "Operational").strip().lower()
+    active = operation_status in {"operational", "active", "open", "operating"}
+    registration_key = code or external_uuid
+    facility = None
+    if registration_key:
+        facility = db.scalar(select(Facility).where(Facility.registration_number == registration_key).limit(1))
+    if facility is None and county:
+        facility = db.scalar(select(Facility).where(func.lower(Facility.name) == name.lower(), func.lower(func.coalesce(Facility.county, "")) == county.lower()).limit(1))
+    if facility is None:
+        stable_key = str(registration_key or name).replace(" ", "-")[:26]
+        facility = Facility(
+            facility_id=f"KMHFL-{stable_key}", name=name, facility_type=facility_type,
+            registration_number=registration_key, county=county, sub_county=sub_county,
+            status="ACTIVE" if active else "INACTIVE",
+        )
+        db.add(facility)
+        return True
+    changed = False
+    values = {"name": name, "facility_type": facility_type, "county": county, "sub_county": sub_county, "status": "ACTIVE" if active else "INACTIVE"}
+    if registration_key:
+        values["registration_number"] = registration_key
+    for field, value in values.items():
+        if value is not None and getattr(facility, field) != value:
+            setattr(facility, field, value)
+            changed = True
+    return changed
+
+
 def sync_kmhfr_facilities(db: Session, *, force: bool = False) -> int:
-    global _last_kmhfr_sync_at
+    global _last_kmhfr_sync_at, _kmhfr_sync_running
     now = datetime.now(timezone.utc)
     if not force and _last_kmhfr_sync_at and now - _last_kmhfr_sync_at < _KMHFR_SYNC_TTL:
         return 0
-    base = os.getenv("KMHFR_API_BASE_URL", "https://api.kmhfr.health.go.ke/api").rstrip("/")
+    base = os.getenv("KMHFR_API_BASE_URL", "https://api.kmhfr.health.go.ke/api/public").rstrip("/")
     token = os.getenv("KMHFR_API_TOKEN", "").strip()
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", "User-Agent": "AfyaSync/1.0"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    url = f"{base}/facilities/facilities/"
+    url = f"{base}/facilities/"
     imported = 0
+    pages = 0
     try:
-        with httpx.Client(timeout=20.0, follow_redirects=True, headers=headers) as client:
-            pages = 0
-            while url and pages < 100:
-                response = client.get(url, params={"is_active": "true", "page_size": 1000} if pages == 0 else None)
+        with httpx.Client(timeout=30.0, follow_redirects=True, headers=headers) as client:
+            while url and pages < 1000:
+                response = client.get(url, params={"page_size": 30} if pages == 0 else None)
                 response.raise_for_status()
                 payload = response.json()
                 results = payload.get("results", payload if isinstance(payload, list) else [])
                 if not isinstance(results, list):
-                    break
+                    raise ValueError("KMHFR_INVALID_RESULTS")
                 for item in results:
-                    if not isinstance(item, dict):
-                        continue
-                    code = _kmhfr_value(item, "code", "mfl_code", "facility_code")
-                    external_uuid = _kmhfr_value(item, "id")
-                    name = _kmhfr_value(item, "name", "facility_official_name")
-                    if not name:
-                        continue
-                    county = _kmhfr_value(item, "county", "county_name")
-                    sub_county = _kmhfr_value(item, "sub_county", "subcounty", "sub_county_name")
-                    facility_type = _kmhfr_value(item, "facility_type_name", "facility_type", "type") or "HEALTH_FACILITY"
-                    operation_status = (_kmhfr_value(item, "operation_status_name", "operation_status", "status") or "Operational").lower()
-                    active = operation_status in {"operational", "active", "open"}
-                    registration_key = code or external_uuid
-                    facility = None
-                    if registration_key:
-                        facility = db.scalar(select(Facility).where(Facility.registration_number == registration_key).limit(1))
-                    if facility is None:
-                        facility = db.scalar(select(Facility).where(func.lower(Facility.name) == name.lower(), func.lower(Facility.county) == (county or "").lower()).limit(1))
-                    if facility is None:
-                        facility = Facility(facility_id=f"KMHFL-{(code or external_uuid or name)[:24]}", name=name, facility_type=facility_type, registration_number=registration_key, county=county, sub_county=sub_county, status="ACTIVE" if active else "INACTIVE")
-                        db.add(facility)
-                        db.flush()
+                    if isinstance(item, dict) and _sync_kmhfr_page(item, db):
                         imported += 1
-                    else:
-                        facility.name = name
-                        facility.facility_type = facility_type
-                        facility.registration_number = registration_key or facility.registration_number
-                        facility.county = county or facility.county
-                        facility.sub_county = sub_county or facility.sub_county
-                        facility.status = "ACTIVE" if active else "INACTIVE"
-                    _ensure_default_departments(db, facility.id)
                 db.commit()
                 next_url = payload.get("next") if isinstance(payload, dict) else None
                 url = next_url if isinstance(next_url, str) and next_url else ""
                 pages += 1
-    except (httpx.HTTPError, ValueError, TypeError):
+                if pages % 25 == 0:
+                    logger.info("KMHFR facility sync progress pages=%s imported_or_changed=%s", pages, imported)
+    except Exception:
         db.rollback()
+        logger.exception("KMHFR facility sync failed after pages=%s", pages)
         return 0
     _last_kmhfr_sync_at = now
+    logger.info("KMHFR facility sync complete pages=%s imported_or_changed=%s", pages, imported)
     return imported
+
+
+def start_kmhfr_sync_if_needed() -> None:
+    global _kmhfr_sync_running
+    with _kmhfr_sync_lock:
+        if _kmhfr_sync_running:
+            return
+        now = datetime.now(timezone.utc)
+        if _last_kmhfr_sync_at and now - _last_kmhfr_sync_at < _KMHFR_SYNC_TTL:
+            return
+        _kmhfr_sync_running = True
+    def worker() -> None:
+        global _kmhfr_sync_running
+        try:
+            with SessionLocal() as db:
+                sync_kmhfr_facilities(db)
+        finally:
+            with _kmhfr_sync_lock:
+                _kmhfr_sync_running = False
+    threading.Thread(target=worker, name="kmhfr-facility-sync", daemon=True).start()
 
 
 def get_facility(db: Session, facility_id: UUID) -> Facility | None:
