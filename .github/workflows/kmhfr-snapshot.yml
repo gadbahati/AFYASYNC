@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/kmhfr-snapshot.yml'
-      - 'backend/app/scripts/update_kmhfr_snapshot.py'
+      - 'backend/app/scripts/update_kmhfr_snapshot_v4.py'
       - 'backend/app/facilities/kmhfr_registry.py'
   schedule:
     - cron: '17 2 1 * *'
@@ -32,7 +32,7 @@ jobs:
           python-version: '3.12'
 
       - name: Download and validate official KMHFR registry
-        run: python backend/app/scripts/update_kmhfr_snapshot.py
+        run: python backend/app/scripts/update_kmhfr_snapshot_v4.py
 
       - name: Validate snapshot before publishing
         run: |
@@ -44,15 +44,17 @@ jobs:
               raise SystemExit('FAIL: KMHFR snapshot file was not created')
           payload = json.loads(p.read_text(encoding='utf-8'))
           records = payload.get('records', [])
+          api_count = int(payload.get('api_count') or 0)
           if len(records) < 10000:
               raise SystemExit(f'FAIL: snapshot contains only {len(records)} records')
-          codes = [r.get('code') for r in records if isinstance(r, dict) and r.get('code')]
+          if api_count and len(records) < int(api_count * 0.90):
+              raise SystemExit(f'FAIL: snapshot incomplete api_count={api_count} records={len(records)}')
+          codes = [str(r.get('code')).strip() for r in records if isinstance(r, dict) and str(r.get('code') or '').strip()]
           if len(set(codes)) != len(codes):
               raise SystemExit('FAIL: snapshot contains duplicate facility codes')
-          names = [r.get('name') for r in records if isinstance(r, dict)]
-          if not all(isinstance(name, str) and name.strip() for name in names):
+          if not all(isinstance(r.get('name'), str) and r.get('name').strip() for r in records):
               raise SystemExit('FAIL: snapshot contains unnamed facilities')
-          print(f'Validated official KMHFR snapshot records={len(records)} coded={len(codes)}')
+          print(f'Validated official KMHFR snapshot records={len(records)} api_count={api_count} coded={len(codes)}')
           PY
 
       - name: Commit registry snapshot
