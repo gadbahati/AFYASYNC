@@ -1,0 +1,40 @@
+name: AfyaSync KMHFR Snapshot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/kmhfr-snapshot.yml'
+  schedule:
+    - cron: '17 2 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download official KMHFR registry
+        run: python backend/app/scripts/update_kmhfr_snapshot.py
+
+      - name: Commit registry snapshot
+        run: |
+          git config user.name 'AfyaSync KMHFR Bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/data/kmhfr_facilities.json
+          if git diff --cached --quiet; then
+            echo 'KMHFR snapshot unchanged'
+            exit 0
+          fi
+          git commit -m 'Refresh official KMHFR facility registry [skip ci]'
+          git push
