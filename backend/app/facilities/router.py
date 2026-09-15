@@ -1,9 +1,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_facility_context, require_national_permission, require_permission
+from app.auth.dependencies import get_facility_context, require_national_permission, require_permission, get_current_user
+from app.auth.schemas import FacilityOption
 from app.database import get_db
 from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
 from app.facilities.service import create_department, create_facility, get_facility, list_departments, list_facilities, list_network_facilities, update_department_status, update_facility, update_facility_status
@@ -18,6 +20,11 @@ def register_facility(payload: FacilityCreate, user: User = Depends(require_perm
 @router.get("", response_model=list[FacilityResponse])
 def get_facilities(limit: int = Query(default=50, ge=1, le=100), _: User = Depends(require_permission("facilities.read")), db: Session = Depends(get_db)) -> list[FacilityResponse]:
     return list_facilities(db, limit)
+
+@router.get("/directory", response_model=list[FacilityOption])
+def get_facility_directory(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[FacilityOption]:
+    rows = db.execute(select(Facility.id, Facility.name).where(Facility.status == "ACTIVE").order_by(Facility.name)).all()
+    return [FacilityOption(facility_id=row[0], facility_name=row[1]) for row in rows]
 
 @router.get("/network", response_model=list[NetworkFacilityResponse])
 def get_network_facilities(limit: int = Query(default=100, ge=1, le=200), facility_status: str | None = Query(default=None), county: str | None = Query(default=None, max_length=100), _: User = Depends(require_national_permission("facilities.network.read")), db: Session = Depends(get_db)) -> list[NetworkFacilityResponse]:
@@ -44,7 +51,7 @@ def update_network_facility_status(facility_id: UUID, payload: FacilityStatusUpd
         return update_facility_status(db, facility_id, payload.status, reason=payload.reason, actor_user_id=user.id)
     except ValueError as exc:
         code = str(exc)
-        raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "INVALID_FACILITY_STATUS": 400, "FACILITY_STATUS_UNCHANGED": 400, "INVALID_FACILITY_STATUS_TRANSITION": 409, "FACILITY_STATUS_REASON_REQUIRED": 400}.get(code, 400), detail=code) from exc
+        raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "INVALID_FACILITY_STATUS": 400, "FACILITY_STATUS_UNCHANGED": 409, "FACILITY_STATUS_REASON_REQUIRED": 400}.get(code, 400), detail=code) from exc
 
 @router.get("/me", response_model=FacilityResponse)
 def get_current_facility(facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission("facilities.read")), db: Session = Depends(get_db)) -> FacilityResponse:
@@ -67,7 +74,7 @@ def change_current_facility_status(payload: FacilityStatusUpdate, facility_id: U
         return update_facility_status(db, facility_id, payload.status, reason=payload.reason, actor_user_id=user.id)
     except ValueError as exc:
         code = str(exc)
-        raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "INVALID_FACILITY_STATUS": 400, "FACILITY_STATUS_UNCHANGED": 400, "INVALID_FACILITY_STATUS_TRANSITION": 409, "FACILITY_STATUS_REASON_REQUIRED": 400}.get(code, 400), detail=code) from exc
+        raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "INVALID_FACILITY_STATUS": 400, "FACILITY_STATUS_UNCHANGED": 409, "INVALID_FACILITY_STATUS_TRANSITION": 409, "FACILITY_STATUS_REASON_REQUIRED": 400}.get(code, 400), detail=code) from exc
 
 @router.post("/{facility_id}/departments", response_model=DepartmentResponse, status_code=status.HTTP_201_CREATED)
 def register_department(facility_id: UUID, payload: DepartmentCreate, user: User = Depends(require_permission("facilities.department.write")), context_facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> DepartmentResponse:
