@@ -12,16 +12,13 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(min_length=1)
 
 
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int
-
-
 class FacilityOption(BaseModel):
     facility_id: UUID
     facility_name: str
+    county: str | None = None
+    sub_county: str | None = None
+    facility_type: str | None = None
+    registration_number: str | None = None
 
 
 class FacilitySelectionRequest(BaseModel):
