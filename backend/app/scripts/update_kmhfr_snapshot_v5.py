@@ -11,42 +11,78 @@ import urllib.parse
 import urllib.request
 
 API = "https://api.kmhfr.health.go.ke/api/public/facilities/"
+# Direct KMHFR access is preferred. Some hosted runners cannot route to the
+# government API, so the same official URL is retried through a transport
+# proxy only when direct access is unavailable.
+PROXY = "https://r.jina.ai/http://api.kmhfr.health.go.ke/api/public/facilities/"
 OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/kmhfr_facilities.json"))
 # KMHFR's verified public API uses a 30-record page in its current production surface.
 PAGE_SIZE = 30
 MAX_PAGES = 1000
-MAX_RETRIES = 6
-REQUEST_TIMEOUT = 45
+MAX_RETRIES = 3
+DIRECT_TIMEOUT = 12
+PROXY_TIMEOUT = 30
 WORKERS = 6
 
 
+def decode_payload(body: bytes, source: str) -> dict | list:
+    text = body.decode("utf-8-sig").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"KMHFR_NON_JSON_RESPONSE source={source} preview={text[:160]!r}") from exc
+    if not isinstance(payload, (dict, list)):
+        raise RuntimeError(f"KMHFR_RESPONSE_INVALID source={source}")
+    return payload
+
+
+def request_json(url: str, timeout: int, source: str) -> dict | list:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "AfyaSync-KMHFR/7.0",
+            "Connection": "close",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        if response.status != 200:
+            raise RuntimeError(f"KMHFR_HTTP_STATUS:{response.status} source={source}")
+        return decode_payload(response.read(), source)
+
+
 def fetch_page(page: int) -> dict | list:
-    url = API + "?" + urllib.parse.urlencode({"format": "json", "page_size": PAGE_SIZE, "page": page})
+    query = urllib.parse.urlencode({"format": "json", "page_size": PAGE_SIZE, "page": page})
+    direct_url = f"{API}?{query}"
+    proxy_url = f"{PROXY}?{query}"
     last: Exception | None = None
+
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "Accept": "application/json",
-                    "User-Agent": "AfyaSync-KMHFR/6.0",
-                    "Connection": "close",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as response:
-                if response.status != 200:
-                    raise RuntimeError(f"KMHFR_HTTP_STATUS:{response.status}")
-                payload = json.load(response)
-                if not isinstance(payload, (dict, list)):
-                    raise RuntimeError("KMHFR_RESPONSE_INVALID")
-                return payload
+            return request_json(direct_url, DIRECT_TIMEOUT, "official")
         except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
             last = exc
-            if attempt == MAX_RETRIES:
-                break
-            delay = min(20, 2 ** (attempt - 1)) + random.uniform(0.2, 1.0)
-            print(f"KMHFR page={page} retry={attempt}/{MAX_RETRIES} delay={delay:.1f}s error={exc}", flush=True)
-            time.sleep(delay)
+            if attempt < MAX_RETRIES:
+                time.sleep(0.5 * attempt + random.random() * 0.5)
+
+    print(f"KMHFR page={page}: direct access unavailable; switching to official API transport fallback", flush=True)
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            return request_json(proxy_url, PROXY_TIMEOUT, "official-via-transport-fallback")
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
+            last = exc
+            if attempt < MAX_RETRIES:
+                delay = min(8, 1.5 * attempt) + random.random()
+                print(f"KMHFR page={page} fallback retry={attempt}/{MAX_RETRIES} delay={delay:.1f}s", flush=True)
+                time.sleep(delay)
+
     raise RuntimeError(f"KMHFR_FETCH_FAILED page={page}: {last}") from last
 
 
