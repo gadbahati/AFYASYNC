@@ -2,19 +2,44 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import tempfile
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
 API = "https://api.kmhfr.health.go.ke/api/public/facilities/"
-OUT = os.path.join(os.path.dirname(__file__), "../../data/kmhfr_facilities.json")
-PAGE_SIZE = 30
+OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/kmhfr_facilities.json"))
+PAGE_SIZE = 100
+MAX_PAGES = 1000
+MAX_RETRIES = 8
 
 
 def fetch(url: str) -> dict | list:
-    req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "AfyaSync-KMHFR-Snapshot/1.0"})
-    with urllib.request.urlopen(req, timeout=90) as response:
-        return json.load(response)
+    last_error: Exception | None = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "AfyaSync-KMHFR-Snapshot/2.0",
+                    "Connection": "close",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=180) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"KMHFR_HTTP_STATUS:{response.status}")
+                return json.load(response)
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
+            last_error = exc
+            if attempt == MAX_RETRIES:
+                break
+            delay = min(60, 2 ** (attempt - 1)) + random.random()
+            print(f"KMHFR request retry attempt={attempt} delay={delay:.1f}s url={url}", flush=True)
+            time.sleep(delay)
+    raise RuntimeError(f"KMHFR_FETCH_FAILED:{last_error}") from last_error
 
 
 def compact(item: dict) -> dict:
@@ -46,35 +71,57 @@ def compact(item: dict) -> dict:
 
 def main() -> None:
     url = API + "?" + urllib.parse.urlencode({"page_size": PAGE_SIZE, "page": 1})
-    records: list[dict] = []
+    records_by_key: dict[str, dict] = {}
     pages = 0
-    while url and pages < 1000:
+
+    while url and pages < MAX_PAGES:
         payload = fetch(url)
         results = payload.get("results", []) if isinstance(payload, dict) else payload
         if not isinstance(results, list):
-            raise RuntimeError("KMHFR response did not contain a results list")
-        records.extend(compact(item) for item in results if isinstance(item, dict) and compact(item).get("name"))
+            raise RuntimeError("KMHFR_RESPONSE_INVALID_RESULTS")
+
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            record = compact(item)
+            if not record.get("name"):
+                continue
+            key = str(record.get("code") or record.get("id") or "|".join(str(record.get(k) or "") for k in ("name", "county", "sub_county"))).strip().lower()
+            records_by_key[key] = record
+
         pages += 1
         next_url = payload.get("next") if isinstance(payload, dict) else None
         if next_url:
-            url = urllib.parse.urljoin(url, next_url)
-        elif isinstance(payload, dict) and payload.get("total_pages") and pages < int(payload["total_pages"]):
-            url = API + "?" + urllib.parse.urlencode({"page_size": PAGE_SIZE, "page": pages + 1})
+            url = urllib.parse.urljoin(url, str(next_url))
+        elif isinstance(payload, dict) and payload.get("total_pages"):
+            total_pages = int(payload["total_pages"])
+            url = API + "?" + urllib.parse.urlencode({"page_size": PAGE_SIZE, "page": pages + 1}) if pages < total_pages else ""
+        elif results:
+            url = API + "?" + urllib.parse.urlencode({"page_size": PAGE_SIZE, "page": pages + 1}) if len(results) >= PAGE_SIZE else ""
         else:
             url = ""
-        if pages % 25 == 0:
-            print(f"KMHFR snapshot progress pages={pages} records={len(records)}", flush=True)
 
+        if pages % 10 == 0:
+            print(f"KMHFR snapshot progress pages={pages} records={len(records_by_key)}", flush=True)
+
+    records = list(records_by_key.values())
+    if pages >= MAX_PAGES:
+        raise RuntimeError(f"KMHFR_SNAPSHOT_PAGE_LIMIT:{pages}")
     if len(records) < 10000:
-        raise RuntimeError(f"KMHFR snapshot unexpectedly small: {len(records)} records")
+        raise RuntimeError(f"KMHFR_SNAPSHOT_UNEXPECTEDLY_SMALL:{len(records)}")
 
-    path = os.path.abspath(OUT)
+    path = OUT
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix="kmhfr-", suffix=".json", dir=os.path.dirname(path))
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump({"source": API, "records": records}, handle, separators=(",", ":"), ensure_ascii=False)
-        handle.write("\n")
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump({"source": API, "records": records}, handle, separators=(",", ":"), ensure_ascii=False)
+            handle.write("\n")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
     print(f"KMHFR snapshot complete pages={pages} records={len(records)} path={path}", flush=True)
 
 
