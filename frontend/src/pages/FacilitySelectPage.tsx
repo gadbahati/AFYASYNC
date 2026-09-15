@@ -20,12 +20,12 @@ export function FacilitySelectPage() {
     setLoading(true);
     setError(null);
     api
-      .facilities()
+      .facilityDirectory()
       .then((rows) => {
         if (!cancelled) setFacilities(rows);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message || err.code : "Unable to load facilities.");
+        if (!cancelled) setError(err instanceof ApiError ? err.message || err.code : "Unable to load the facility network.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -71,9 +71,9 @@ export function FacilitySelectPage() {
           <input id="facility-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by hospital, health centre or dispensary…" autoComplete="off" />
           {query && <button type="button" className="linkish" onClick={() => setQuery("")} aria-label="Clear facility search">Clear</button>}
         </label>
-        {loading && <p className="muted">Loading facility network…</p>}
+        {loading && <p className="muted">Loading the Kenya facility directory…</p>}
         {error && <div className="error" role="alert">{error}</div>}
-        <div className="facility-picker-meta"><strong>{filtered.length.toLocaleString()}</strong><span>facilities available to this account</span></div>
+        <div className="facility-picker-meta"><strong>{filtered.length.toLocaleString()}</strong><span>facilities in the current AfyaSync directory</span></div>
         <div className="facility-grid">
           {filtered.map((facility) => (
             <button key={facility.facility_id} type="button" className="facility-card" onClick={() => void choose(facility)} disabled={Boolean(selecting)}>
