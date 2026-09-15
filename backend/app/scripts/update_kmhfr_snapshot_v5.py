@@ -10,14 +10,19 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-API = "https://api.kmhfr.health.go.ke/api/public/facilities/"
-PROXY = "https://r.jina.ai/http://api.kmhfr.health.go.ke/api/public/facilities/"
+# KMHFR has historically exposed the same public facility registry through two
+# REST paths. The current documented/public path is facilities/facilities/;
+# keep the newer public endpoint as a fallback rather than using third-party
+# mirrors or synthetic data.
+API_ENDPOINTS = [
+    "https://api.kmhfr.health.go.ke/api/facilities/facilities/",
+    "https://api.kmhfr.health.go.ke/api/public/facilities/",
+]
 OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/kmhfr_facilities.json"))
 PAGE_SIZE = 30
 MAX_PAGES = 1000
 MAX_RETRIES = 3
-DIRECT_TIMEOUT = 20
-PROXY_TIMEOUT = 45
+DIRECT_TIMEOUT = 45
 WORKERS = 6
 HEADERS = {
     "Accept": "application/json",
@@ -50,7 +55,7 @@ def request_json(url: str, timeout: int, source: str) -> dict | list:
     except urllib.error.HTTPError as exc:
         body = b""
         try:
-            body = exc.read(2048)
+            body = exc.read(4096)
         except Exception:
             pass
         preview = body.decode("utf-8", errors="replace").strip().replace("\n", " ")
@@ -58,40 +63,33 @@ def request_json(url: str, timeout: int, source: str) -> dict | list:
 
 
 def query_variants(page: int) -> list[str]:
-    variants = [
-        {"format": "json", "page_size": PAGE_SIZE, "page": page},
-        {"page_size": PAGE_SIZE, "page": page},
-        {"page": page, "page_size": PAGE_SIZE},
-        {"page": page},
+    return [
+        urllib.parse.urlencode({"page": page, "page_size": PAGE_SIZE, "format": "json"}),
+        urllib.parse.urlencode({"page": page, "page_size": PAGE_SIZE}),
+        urllib.parse.urlencode({"page_size": PAGE_SIZE, "page": page}),
+        urllib.parse.urlencode({"page": page}),
     ]
-    return [urllib.parse.urlencode(params) for params in variants]
 
 
-def fetch_page(page: int) -> dict | list:
+def fetch_page(page: int) -> tuple[dict | list, str]:
     last: Exception | None = None
-    for query in query_variants(page):
-        direct_url = f"{API}?{query}"
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                return request_json(direct_url, DIRECT_TIMEOUT, "official")
-            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
-                last = exc
-                if attempt < MAX_RETRIES:
-                    time.sleep(0.5 * attempt + random.random() * 0.5)
-        print(f"KMHFR page={page}: direct query variant rejected/unavailable; trying next variant", flush=True)
-
-    print(f"KMHFR page={page}: direct access unavailable; switching to official API transport fallback", flush=True)
-    for query in query_variants(page):
-        proxy_url = f"{PROXY}?{query}"
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                return request_json(proxy_url, PROXY_TIMEOUT, "official-via-transport-fallback")
-            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
-                last = exc
-                if attempt < MAX_RETRIES:
-                    delay = min(8, 1.5 * attempt) + random.random()
-                    print(f"KMHFR page={page} fallback retry={attempt}/{MAX_RETRIES} delay={delay:.1f}s", flush=True)
-                    time.sleep(delay)
+    for endpoint in API_ENDPOINTS:
+        for query in query_variants(page):
+            url = f"{endpoint}?{query}"
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    payload = request_json(url, DIRECT_TIMEOUT, "official")
+                    if isinstance(payload, dict) and isinstance(payload.get("results"), list):
+                        return payload, endpoint
+                    if isinstance(payload, list):
+                        return payload, endpoint
+                    raise RuntimeError("KMHFR_PAGE_INVALID_RESULTS")
+                except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
+                    last = exc
+                    if attempt < MAX_RETRIES:
+                        delay = min(8, 1.0 * attempt) + random.random()
+                        time.sleep(delay)
+            print(f"KMHFR page={page}: endpoint/query unavailable; trying next official variant", flush=True)
     raise RuntimeError(f"KMHFR_FETCH_FAILED page={page}: {last}") from last
 
 
@@ -109,7 +107,7 @@ def compact(item: dict) -> dict:
     return {
         "id": value(item, "id", "uuid", "facility_id"),
         "code": value(item, "code", "mfl_code", "facility_code", "facility_code_number"),
-        "name": value(item, "name", "facility_official_name", "official_name"),
+        "name": value(item, "name", "facility_official_name", "official_name", "facility_unique_name"),
         "facility_type": value(item, "facility_type_name", "facility_type", "type"),
         "operation_status": value(item, "operation_status_name", "operation_status", "status"),
         "county": value(item, "county_name", "county"),
@@ -132,8 +130,8 @@ def items_from(payload: dict | list) -> list:
 
 
 def main() -> None:
-    print(f"KMHFR: starting official national import source={API}", flush=True)
-    first = fetch_page(1)
+    print("KMHFR: starting official national import", flush=True)
+    first, endpoint = fetch_page(1)
     first_items = items_from(first)
     if not first_items:
         raise RuntimeError("KMHFR_FIRST_PAGE_EMPTY_OR_INVALID")
@@ -141,10 +139,15 @@ def main() -> None:
     total_pages = first.get("total_pages") if isinstance(first, dict) else None
     if total_pages is None and count:
         total_pages = (count + PAGE_SIZE - 1) // PAGE_SIZE
+    if total_pages is None and isinstance(first, dict) and first.get("next"):
+        # The public Django REST API exposes a next URL; count is normally
+        # present, but keep this guard for deployments that omit it.
+        total_pages = MAX_PAGES
     total_pages = int(total_pages or 0)
     if total_pages <= 0 or total_pages > MAX_PAGES:
         raise RuntimeError(f"KMHFR_INVALID_TOTAL_PAGES:{total_pages}")
-    print(f"KMHFR: API count={count} pages={total_pages} page_size={PAGE_SIZE} workers={WORKERS}", flush=True)
+    print(f"KMHFR: endpoint={endpoint} count={count} pages={total_pages} page_size={PAGE_SIZE} workers={WORKERS}", flush=True)
+
     records: dict[str, dict] = {}
 
     def add(items: list) -> None:
@@ -154,7 +157,9 @@ def main() -> None:
             row = compact(raw)
             name = str(row.get("name") or "").strip()
             code = str(row.get("code") or "").strip()
-            identity = code or str(row.get("id") or "").strip() or "|".join(str(row.get(k) or "").strip().lower() for k in ("name", "county", "sub_county"))
+            identity = code or str(row.get("id") or "").strip() or "|".join(
+                str(row.get(k) or "").strip().lower() for k in ("name", "county", "sub_county")
+            )
             if name and identity:
                 records[identity.lower()] = row
 
@@ -164,7 +169,8 @@ def main() -> None:
         completed = 1
         for future in concurrent.futures.as_completed(futures):
             page = futures[future]
-            add(items_from(future.result()))
+            payload, _ = future.result()
+            add(items_from(payload))
             completed += 1
             if completed % 30 == 0 or completed == total_pages:
                 print(f"KMHFR: progress page={completed}/{total_pages} records={len(records)}", flush=True)
@@ -183,7 +189,12 @@ def main() -> None:
     fd, tmp = tempfile.mkstemp(prefix="kmhfr-", suffix=".json", dir=os.path.dirname(OUT))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"source": API, "api_count": count, "api_pages": total_pages, "records": final}, f, ensure_ascii=False, separators=(",", ":"))
+            json.dump(
+                {"source": endpoint, "api_count": count, "api_pages": total_pages, "records": final},
+                f,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
             f.write("\n")
         os.replace(tmp, OUT)
     finally:
