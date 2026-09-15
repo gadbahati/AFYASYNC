@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: afyasync-kmhfr-snapshot
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   snapshot:
@@ -45,10 +45,13 @@ jobs:
           records = payload.get('records', [])
           if len(records) < 10000:
               raise SystemExit(f'FAIL: snapshot contains only {len(records)} records')
+          codes = [r.get('code') for r in records if isinstance(r, dict) and r.get('code')]
+          if len(set(codes)) != len(codes):
+              raise SystemExit('FAIL: snapshot contains duplicate facility codes')
           names = [r.get('name') for r in records if isinstance(r, dict)]
           if not all(isinstance(name, str) and name.strip() for name in names):
               raise SystemExit('FAIL: snapshot contains unnamed facilities')
-          print(f'Validated KMHFR snapshot records={len(records)}')
+          print(f'Validated official KMHFR snapshot records={len(records)} coded={len(codes)}')
           PY
 
       - name: Commit registry snapshot
