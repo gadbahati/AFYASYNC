@@ -7,7 +7,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_JWT_SECRET = "change-this-development-secret"
 _DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:5173"
-_PRODUCTION_FRONTEND_ORIGIN = "https://frontend-production-492b9.up.railway.app"
 
 
 class Settings(BaseSettings):
@@ -81,9 +80,6 @@ class Settings(BaseSettings):
             if self.database_url == "postgresql+psycopg://afasync:afasync@localhost:5432/afasync":
                 raise ValueError("DATABASE_URL must not use the development database in production")
             origins = self.cors_origin_list()
-            if _PRODUCTION_FRONTEND_ORIGIN not in origins:
-                origins.append(_PRODUCTION_FRONTEND_ORIGIN)
-                self.cors_origins = ",".join(origins)
             if not origins:
                 raise ValueError("CORS_ORIGINS must contain at least one trusted browser origin in production")
             for origin in origins:
