@@ -127,4 +127,7 @@ export const api = {
   reconcileClaim(claim_id: string, received_amount: number) { return request<any>(`/api/v1/claims/${claim_id}/reconcile`, { method: "POST", body: JSON.stringify({ received_amount }) }); },
   listClaimRejections() { return request<any[]>("/api/v1/claims/workbench/rejections"); },
   sandboxRejectClaim(claim_id: string, payload: { response_code?: string; response_message?: string; external_reference?: string } = {}) { return request<any>(`/api/v1/claims/${claim_id}/sandbox-reject`, { method: "POST", body: JSON.stringify(payload) }); },
+  commandCentre() { return request<any>("/api/v1/insight/command-centre"); },
+  fraudRadar() { return request<any>("/api/v1/insight/fraud-radar"); },
+  simulateCoverage(payload: { coverage_mode: string; patient_id?: string | null; membership_number?: string | null; lines: Array<{ code: string; description: string; quantity: number; unit_price: number }> }) { return request<any>("/api/v1/insight/coverage/simulate", { method: "POST", body: JSON.stringify(payload) }); },
 };
