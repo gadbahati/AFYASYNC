@@ -37,7 +37,7 @@ from app.encounters import models as encounter_models
 from app.encounters.router import router as encounters_router
 from app.facilities import models as facility_models
 from app.facilities.router import router as facilities_router
-from app.facilities.kmhfr_sync import start_sync as start_kmhfr_national_sync
+from app.facilities.kmhfr_sync import start_sync as start_kmhfr_national_sync, start_sync_retry_loop as start_kmhfr_retry_loop
 from app.insight.router import router as insight_router
 from app.integrations import models as integration_models
 from app.integrations.router import router as integrations_router
@@ -120,20 +120,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception:
             runtime_metrics.request(error=True)
-            logger.exception(
-                "Unhandled request exception request_id=%s method=%s path=%s",
-                request_id,
-                request.method,
-                request.url.path,
-            )
-            response = JSONResponse(
-                status_code=500,
-                content={
-                    "success": False,
-                    "data": {"request_id": request_id},
-                    "message": "Internal server error",
-                },
-            )
+            logger.exception("Unhandled request exception request_id=%s method=%s path=%s", request_id, request.method, request.url.path)
+            response = JSONResponse(status_code=500, content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"})
             self._apply_headers(response, request_id)
             return response
         runtime_metrics.request(error=response.status_code >= 500)
@@ -161,12 +149,10 @@ def initialize_database():
         result = seed_universal_admin()
         print("UNIVERSAL_ADMIN_BOOTSTRAP:", result)
 
-    # Start the national KMHFR facility import in the background after the
-    # application is ready. This guarantees the directory is populated without
-    # making Railway's /health check wait for thousands of remote API records.
     try:
         started = start_kmhfr_national_sync()
-        logger.info("KMHFR startup facility sync started=%s", started)
+        retry_started = start_kmhfr_retry_loop()
+        logger.info("KMHFR startup facility sync started=%s retry_loop=%s", started, retry_started)
     except Exception:
         logger.exception("Unable to start KMHFR startup facility sync")
 
