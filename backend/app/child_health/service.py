@@ -8,6 +8,15 @@ from app.child_health.models import ChildHealthRecord, GrowthObservation, Immuni
 def _ok(db, patient_id, facility_id):
     return db.scalar(select(PatientFacility.id).where(PatientFacility.patient_id==patient_id, PatientFacility.facility_id==facility_id, PatientFacility.status=="ACTIVE")) is not None
 
+def list_children(db:Session,facility_id:UUID):
+    return list(db.scalars(select(ChildHealthRecord).where(ChildHealthRecord.facility_id==facility_id,ChildHealthRecord.status=="ACTIVE").order_by(ChildHealthRecord.created_at.desc()).limit(200)).all())
+
+def list_growth(db:Session,facility_id:UUID,child_id:UUID):
+    return list(db.scalars(select(GrowthObservation).where(GrowthObservation.facility_id==facility_id,GrowthObservation.child_id==child_id).order_by(GrowthObservation.observed_at.desc()).limit(100)).all())
+
+def list_immunisations(db:Session,facility_id:UUID,child_id:UUID):
+    return list(db.scalars(select(Immunisation).where(Immunisation.facility_id==facility_id,Immunisation.child_id==child_id).order_by(Immunisation.administered_at.desc()).limit(100)).all())
+
 def create_child(db:Session,facility_id:UUID,actor:UUID,payload):
     if not _ok(db,payload.patient_id,facility_id): raise ValueError("PATIENT_NOT_IN_FACILITY")
     item=ChildHealthRecord(facility_id=facility_id,**payload.model_dump());db.add(item)
