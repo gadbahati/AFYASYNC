@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _DEFAULT_JWT_SECRET = "change-this-development-secret"
 _DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:5173"
 
-
+# Keep backend deployments tied to the national KMHFR facility-directory import.
 class Settings(BaseSettings):
     app_name: str = "AfyaSync API"
     app_version: str = "0.1.0"
