@@ -13,6 +13,25 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: afasync
+          POSTGRES_PASSWORD: afasync
+          POSTGRES_DB: afasync
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U afasync -d afasync"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://afasync:afasync@127.0.0.1:5432/afasync
+      ENVIRONMENT: development
+      JWT_SECRET: local-ci-only-secret-8f2b4d6c9e1a7f3b5d8c2e6a9f4b7d1c
+      CORS_ORIGINS: http://localhost:3000
     defaults:
       run:
         working-directory: backend
@@ -50,6 +69,7 @@ jobs:
               {**base, "JWT_SECRET": "change-this-development-secret"},
               {**base, "JWT_SECRET": "a" * 31},
               {**base, "JWT_SECRET": "a" * 32},
+              {**base, "CORS_ORIGINS": ""},
               {**base, "CORS_ORIGINS": "http://untrusted.example.com"},
               {**base, "DATABASE_URL": "sqlite:///afasync.db"},
           ]
@@ -66,7 +86,7 @@ jobs:
           os.environ.update(base)
           configured = Settings()
           origins = configured.cors_origin_list()
-          assert "https://app.example.com" in origins
+          assert origins == ["https://app.example.com"]
           assert configured.worker_poll_seconds == 5.0
           print("Production configuration guards passed")
           PY
