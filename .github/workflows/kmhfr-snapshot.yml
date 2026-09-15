@@ -57,3 +57,5 @@ jobs:
           if git diff --cached --quiet; then echo 'KMHFR snapshot unchanged'; exit 0; fi
           git commit -m 'Refresh official KMHFR facility registry [skip ci]'
           git push
+
+# Force a fresh production registry run whenever this workflow is repaired.
