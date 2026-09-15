@@ -58,4 +58,4 @@ jobs:
           git commit -m 'Refresh official KMHFR facility registry [skip ci]'
           git push
 
-# National registry workflow: every repair commit intentionally triggers a fresh authoritative snapshot.
+# Force-refresh trigger: run the authoritative national registry import after the facility-selector repair.
