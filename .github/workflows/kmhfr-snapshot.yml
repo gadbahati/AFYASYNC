@@ -7,6 +7,7 @@ on:
       - '.github/workflows/kmhfr-snapshot.yml'
       - 'backend/app/scripts/update_kmhfr_snapshot_v4.py'
       - 'backend/app/facilities/kmhfr_registry.py'
+      - 'backend/app/config.py'
   schedule:
     - cron: '17 2 1 * *'
   workflow_dispatch:
