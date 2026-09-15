@@ -58,4 +58,4 @@ jobs:
           git commit -m 'Refresh official KMHFR facility registry [skip ci]'
           git push
 
-# Force a fresh production registry run whenever this workflow is repaired.
+# National registry workflow: every repair commit intentionally triggers a fresh authoritative snapshot.
