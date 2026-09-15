@@ -60,17 +60,18 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     if len(staff) == 0 and not system_admin:
         record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="NO_ACTIVE_FACILITY_ASSIGNMENT", user_id=user.id, ip_address=_client_ip(request))
         raise HTTPException(status_code=403, detail="NO_ACTIVE_FACILITY_ASSIGNMENT")
+
+    # A non-administrator with one assigned active facility does not need a
+    # database directory lookup merely to establish the same unambiguous scope.
+    if len(staff) == 1 and not system_admin:
+        facility_id = staff[0].facility_id
+        record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="SUCCESS", user_id=user.id, facility_id=facility_id, ip_address=_client_ip(request))
+        return _token_response(db, user, facility_id)
+
     options = _facility_options(db, user, all_active=system_admin)
     if not options:
         record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="NO_ACTIVE_FACILITIES", user_id=user.id, ip_address=_client_ip(request))
         raise HTTPException(status_code=403, detail="NO_ACTIVE_FACILITIES")
-
-    # Users assigned to exactly one active facility can enter directly. Users with
-    # multiple facilities must explicitly choose the facility for this session.
-    if len(options) == 1 and not system_admin:
-        facility_id = options[0].facility_id
-        record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="SUCCESS", user_id=user.id, facility_id=facility_id, ip_address=_client_ip(request))
-        return _token_response(db, user, facility_id)
 
     record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="FACILITY_SELECTION_REQUIRED", user_id=user.id, ip_address=_client_ip(request))
     return FacilitySelectionRequired(access_token=issue_access_token(user, None), facilities=options)
