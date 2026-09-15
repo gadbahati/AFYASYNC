@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user, get_facility_context, require_national_permission, require_permission
 from app.auth.schemas import FacilityOption
 from app.database import get_db
+from app.facilities.kmhfr_sync import start_sync, sync_state
 from app.facilities.models import Facility
 from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
-from app.facilities.service import create_department, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, start_kmhfr_sync_if_needed, update_department_status, update_facility, update_facility_status
+from app.facilities.service import create_department, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, update_department_status, update_facility, update_facility_status
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/facilities", tags=["Facilities"])
@@ -24,12 +25,25 @@ def get_facilities(limit: int = Query(default=50, ge=1, le=100), _: User = Depen
 
 @router.get("/directory", response_model=list[FacilityOption])
 def get_facility_directory(search: str | None = Query(default=None, max_length=150), _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[FacilityOption]:
-    # Never block the login/facility-selection screen for the national KMHFR
-    # import. A background worker keeps the local directory populated while
-    # the UI remains responsive. Existing facilities remain immediately usable.
-    start_kmhfr_sync_if_needed()
-    rows = list_facility_directory(db, search=search)
-    return [FacilityOption(facility_id=row.id, facility_name=row.name) for row in rows]
+    # Kick off the full KMHFR import once per process. Never make the user wait
+    # for thousands of remote pages before the directory endpoint responds.
+    start_sync()
+    rows = list_facility_directory(db, search=search, limit=50000)
+    return [
+        FacilityOption(
+            facility_id=row.id,
+            facility_name=row.name,
+            county=row.county,
+            sub_county=row.sub_county,
+            facility_type=row.facility_type,
+            registration_number=row.registration_number,
+        )
+        for row in rows
+    ]
+
+@router.get("/directory/status")
+def get_facility_directory_status(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, int | bool]:
+    return sync_state(db)
 
 @router.get("/network", response_model=list[NetworkFacilityResponse])
 def get_network_facilities(limit: int = Query(default=100, ge=1, le=200), facility_status: str | None = Query(default=None), county: str | None = Query(default=None, max_length=100), _: User = Depends(require_national_permission("facilities.network.read")), db: Session = Depends(get_db)) -> list[NetworkFacilityResponse]:
