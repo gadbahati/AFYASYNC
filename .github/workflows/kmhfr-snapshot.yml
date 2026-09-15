@@ -8,6 +8,7 @@ on:
       - 'backend/app/scripts/update_kmhfr_snapshot_v5.py'
       - 'backend/app/facilities/kmhfr_registry.py'
       - 'backend/app/config.py'
+      - 'KMHFR_REFRESH_TRIGGER.md'
   schedule:
     - cron: '17 2 1 * *'
   workflow_dispatch:
@@ -57,6 +58,3 @@ jobs:
           if git diff --cached --quiet; then echo 'KMHFR snapshot unchanged'; exit 0; fi
           git commit -m 'Refresh official KMHFR facility registry [skip ci]'
           git push
-
-# Force-refresh trigger: run the authoritative national registry import after the facility-selector repair.
-# Triggered from the current importer revision so the workflow cannot remain pinned to an older snapshot job.
