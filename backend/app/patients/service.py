@@ -53,18 +53,24 @@ def create_patient(db: Session, payload: PatientCreate, *, actor_user_id: UUID |
             raise ValueError("DUPLICATE_PATIENT")
 
     data = payload.model_dump(exclude={"national_id_number"})
-    person = Person(**data, national_id_hash=id_hash)
-    db.add(person)
-    db.flush()
-    identity = AfyaIdentity(person_id=person.id, afya_id=_next_afya_id(db))
-    db.add(identity)
-    db.flush()
-    db.add(PatientFacility(patient_id=person.id, facility_id=facility_id, status="ACTIVE"))
-    db.flush()
-    record_audit(db, action="CREATE_PATIENT", resource_type="PERSON", resource_id=str(person.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=person.id, metadata={"afya_id": identity.afya_id, "identity_verified": True}, commit=False)
-    db.commit()
-    db.refresh(person)
-    return person
+    try:
+        person = Person(**data, national_id_hash=id_hash)
+        db.add(person)
+        db.flush()
+        identity = AfyaIdentity(person_id=person.id, afya_id=_next_afya_id(db))
+        db.add(identity)
+        db.flush()
+        db.add(PatientFacility(patient_id=person.id, facility_id=facility_id, status="ACTIVE"))
+        db.flush()
+        record_audit(db, action="CREATE_PATIENT", resource_type="PERSON", resource_id=str(person.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=person.id, metadata={"afya_id": identity.afya_id, "identity_verified": True}, commit=False)
+        db.commit()
+        db.refresh(person)
+        return person
+    except IntegrityError as exc:
+        # Convert database race/constraint failures into a safe domain error.
+        # Never leave the session in an aborted transaction state.
+        db.rollback()
+        raise ValueError("PATIENT_CREATE_CONFLICT") from exc
 
 
 def get_patient_for_facility(db: Session, patient_id: UUID, facility_id: UUID) -> Person | None:
