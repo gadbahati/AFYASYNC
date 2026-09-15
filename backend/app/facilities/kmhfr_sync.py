@@ -5,7 +5,7 @@ import logging
 import os
 import threading
 import time
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from sqlalchemy import func, select, text
@@ -20,9 +20,11 @@ SYNC_LOCK_KEY = "afyasync:kmhfr:facility-registry"
 DEFAULT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/public/facilities/"
 MAX_PAGES = 1000
 PAGE_SIZE = 100
-REQUEST_TIMEOUT = httpx.Timeout(connect=20.0, read=90.0, write=30.0, pool=20.0)
+REQUEST_TIMEOUT = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
+RETRY_INTERVAL_SECONDS = 60
 _sync_thread_lock = threading.Lock()
 _sync_running = False
+_retry_thread_started = False
 _last_sync_result: dict[str, int | str | bool] = {
     "running": False,
     "pages": 0,
@@ -52,12 +54,11 @@ def _stable_facility_id(key: str) -> str:
 
 
 def _upsert(item: dict, db: Session) -> bool:
-    code = _value(item, "code", "mfl_code", "facility_code", "facility_code_number")
+    code = _value(item, "code", "mfl_code", "facility_code", "facility_code_number", "facility_code_number")
     external_id = _value(item, "id", "uuid", "facility_id")
     name = _value(item, "name", "facility_official_name", "official_name")
     if not name:
         return False
-
     registry_key = code or external_id
     county = _value(item, "county_name", "county")
     sub_county = _value(item, "sub_county_name", "sub_county", "subcounty")
@@ -107,18 +108,12 @@ def _upsert(item: dict, db: Session) -> bool:
 
 
 def _advisory_lock(db: Session) -> bool:
-    result = db.execute(
-        text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"),
-        {"key": SYNC_LOCK_KEY},
-    )
+    result = db.execute(text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"), {"key": SYNC_LOCK_KEY})
     return bool(result.scalar())
 
 
 def _advisory_unlock(db: Session) -> None:
-    db.execute(
-        text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"),
-        {"key": SYNC_LOCK_KEY},
-    )
+    db.execute(text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), {"key": SYNC_LOCK_KEY})
 
 
 def _normalise_endpoint(value: str) -> str:
@@ -136,21 +131,19 @@ def _normalise_endpoint(value: str) -> str:
     return value.rstrip("/") + "/facilities/"
 
 
-def _fetch_page(client: httpx.Client, url: str, page: int) -> tuple[dict | list, str | None]:
+def _fetch_page(client: httpx.Client, url: str, page: int, endpoint: str) -> tuple[dict | list, str | None]:
     last_error: Exception | None = None
+    has_query = bool(urlparse(url).query)
     for attempt in range(1, 6):
         try:
-            params = {"page_size": PAGE_SIZE, "page": page}
+            params = None if has_query or url != endpoint else {"page_size": PAGE_SIZE, "page": page}
             response = client.get(url, params=params)
             response.raise_for_status()
             payload = response.json()
             if not isinstance(payload, (dict, list)):
                 raise ValueError("KMHFR_INVALID_PAYLOAD")
-            if isinstance(payload, dict):
-                next_url = payload.get("next")
-                if isinstance(next_url, str) and next_url:
-                    return payload, next_url
-            return payload, None
+            next_url = payload.get("next") if isinstance(payload, dict) else None
+            return payload, next_url if isinstance(next_url, str) and next_url else None
         except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError, ValueError) as exc:
             last_error = exc
             if attempt == 5:
@@ -162,80 +155,62 @@ def _fetch_page(client: httpx.Client, url: str, page: int) -> tuple[dict | list,
 
 
 def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
-    global _sync_running, _last_sync_result
+    global _last_sync_result
     db = SessionLocal()
-    pages = 0
-    changed = 0
-    seen = 0
+    pages = changed = seen = 0
     try:
         if not _advisory_lock(db):
-            result = {"running": True, "pages": 0, "seen": 0, "changed": 0, "message": "A national facility sync is already running."}
+            result = {"running": True, "pages": 0, "seen": 0, "changed": 0, "message": "already_running"}
             _last_sync_result = result
             return result
 
         endpoint = _normalise_endpoint(os.getenv("KMHFR_API_BASE_URL", DEFAULT_KMHFR_URL))
         token = os.getenv("KMHFR_API_TOKEN", "").strip()
-        headers = {
-            "Accept": "application/json",
-            "User-Agent": "AfyaSync/1.0 national-facility-sync",
-        }
+        headers = {"Accept": "application/json", "User-Agent": "AfyaSync/1.0 national-facility-sync"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
-        logger.info("Starting KMHFR national facility sync endpoint=%s", endpoint)
+        logger.info("KMHFR_SYNC_START endpoint=%s page_size=%s", endpoint, PAGE_SIZE)
         with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True, headers=headers) as client:
             url: str | None = endpoint
             page = 1
             while url and page <= MAX_PAGES:
-                payload, next_url = _fetch_page(client, url, page)
+                payload, next_url = _fetch_page(client, url, page, endpoint)
                 results = payload.get("results", []) if isinstance(payload, dict) else payload
                 if not isinstance(results, list):
                     raise ValueError("KMHFR_INVALID_RESULTS")
-
                 for item in results:
                     if isinstance(item, dict):
                         seen += 1
                         if _upsert(item, db):
                             changed += 1
-
                 db.commit()
                 pages += 1
 
-                if isinstance(payload, dict):
-                    total_pages = payload.get("total_pages")
-                    total_count = payload.get("count")
-                    if page == 1:
-                        logger.info("KMHFR registry reports count=%s total_pages=%s", total_count, total_pages)
-                    if next_url:
-                        url = urljoin(url, next_url)
-                    elif total_pages and page < int(total_pages):
-                        page += 1
-                        url = endpoint
-                    else:
-                        url = None
+                if pages == 1 and isinstance(payload, dict):
+                    logger.info("KMHFR_SYNC_SOURCE count=%s total_pages=%s", payload.get("count"), payload.get("total_pages"))
+
+                if next_url:
+                    url = urljoin(url, next_url)
+                    page += 1
+                elif isinstance(payload, dict) and payload.get("total_pages") and page < int(payload["total_pages"]):
+                    page += 1
+                    url = endpoint
                 else:
                     url = None
 
-                if url and url == endpoint:
-                    # Some KMHFR deployments expose page-based pagination without a next URL.
-                    pass
-                elif url:
-                    page += 1
-                else:
-                    page += 1
-
                 if pages % 10 == 0:
-                    logger.info("KMHFR sync progress pages=%s seen=%s changed=%s", pages, seen, changed)
+                    logger.info("KMHFR_SYNC_PROGRESS pages=%s seen=%s changed=%s", pages, seen, changed)
 
         result = {"running": False, "pages": pages, "seen": seen, "changed": changed, "message": "complete"}
         _last_sync_result = result
-        logger.info("KMHFR national facility sync complete pages=%s seen=%s changed=%s", pages, seen, changed)
+        logger.info("KMHFR_SYNC_COMPLETE pages=%s seen=%s changed=%s", pages, seen, changed)
         return result
-    except Exception:
+    except Exception as exc:
         db.rollback()
-        result = {"running": False, "pages": pages, "seen": seen, "changed": changed, "message": "failed"}
+        result = {"running": False, "pages": pages, "seen": seen, "changed": changed, "message": f"failed:{type(exc).__name__}"}
         _last_sync_result = result
-        logger.exception("KMHFR national facility sync failed pages=%s seen=%s changed=%s", pages, seen, changed)
+        logger.exception("KMHFR_SYNC_FAILED pages=%s seen=%s changed=%s", pages, seen, changed)
         return result
     finally:
         try:
@@ -264,10 +239,39 @@ def start_sync() -> bool:
     return True
 
 
+def start_sync_retry_loop() -> bool:
+    global _retry_thread_started
+    with _sync_thread_lock:
+        if _retry_thread_started:
+            return False
+        _retry_thread_started = True
+
+    def retry_worker() -> None:
+        time.sleep(15)
+        while True:
+            try:
+                with SessionLocal() as db:
+                    active = db.scalar(select(func.count(Facility.id)).where(Facility.status == "ACTIVE")) or 0
+                if active < 1000 and not _sync_running:
+                    logger.info("KMHFR_SYNC_RETRY active_facilities=%s", active)
+                    start_sync()
+                elif active >= 1000:
+                    logger.info("KMHFR_SYNC_READY active_facilities=%s", active)
+                    return
+            except Exception:
+                logger.exception("KMHFR_SYNC_RETRY_CHECK_FAILED")
+            time.sleep(RETRY_INTERVAL_SECONDS)
+
+    threading.Thread(target=retry_worker, name="kmhfr-sync-retry", daemon=True).start()
+    return True
+
+
 def sync_state(db: Session) -> dict[str, int | bool | str]:
-    count = db.scalar(select(func.count(Facility.id)).where(Facility.status == "ACTIVE")) or 0
+    active = db.scalar(select(func.count(Facility.id)).where(Facility.status == "ACTIVE")) or 0
+    total = db.scalar(select(func.count(Facility.id))) or 0
     return {
-        "active_facilities": int(count),
+        "active_facilities": int(active),
+        "total_facilities": int(total),
         "sync_running": _sync_running,
         "pages": int(_last_sync_result.get("pages", 0)),
         "seen": int(_last_sync_result.get("seen", 0)),
