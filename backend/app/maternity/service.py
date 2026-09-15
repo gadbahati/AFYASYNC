@@ -9,6 +9,12 @@ from app.maternity.models import Pregnancy, AntenatalVisit, Delivery, Newborn
 def _patient_ok(db, patient_id, facility_id):
     return db.scalar(select(PatientFacility.id).where(PatientFacility.patient_id==patient_id, PatientFacility.facility_id==facility_id, PatientFacility.status=="ACTIVE")) is not None
 
+def list_pregnancies(db: Session, facility_id: UUID):
+    return list(db.scalars(select(Pregnancy).where(Pregnancy.facility_id==facility_id).order_by(Pregnancy.created_at.desc()).limit(200)).all())
+
+def list_antenatal_visits(db: Session, facility_id: UUID, pregnancy_id: UUID):
+    return list(db.scalars(select(AntenatalVisit).where(AntenatalVisit.facility_id==facility_id, AntenatalVisit.pregnancy_id==pregnancy_id).order_by(AntenatalVisit.visit_date.desc()).limit(100)).all())
+
 def create_pregnancy(db: Session, facility_id: UUID, actor: UUID, payload):
     if not _patient_ok(db,payload.patient_id,facility_id): raise ValueError("PATIENT_NOT_IN_FACILITY")
     existing=db.scalar(select(Pregnancy.id).where(Pregnancy.patient_id==payload.patient_id,Pregnancy.facility_id==facility_id,Pregnancy.status=="ACTIVE"))
