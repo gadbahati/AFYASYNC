@@ -195,3 +195,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# National registry deployment path: keep this importer exercised on every backend source change.
