@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision = "0029_sha_mch_admissions_benefits"
 down_revision = "0029_merge_0028_heads"
@@ -42,6 +43,23 @@ PACKAGES = (
 
 
 def upgrade() -> None:
+    op.create_table(
+        "benefit_packages",
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("payer_code", sa.String(length=50), nullable=False),
+        sa.Column("package_code", sa.String(length=80), nullable=False),
+        sa.Column("name", sa.String(length=200), nullable=False),
+        sa.Column("description", sa.Text(), nullable=False),
+        sa.Column("status", sa.String(length=30), nullable=False, server_default="ACTIVE"),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("package_code"),
+    )
+    op.create_index("ix_benefit_packages_payer_code", "benefit_packages", ["payer_code"])
+    op.create_index("ix_benefit_packages_package_code", "benefit_packages", ["package_code"])
+    op.create_index("ix_benefit_packages_status", "benefit_packages", ["status"])
+
     bind = op.get_bind()
     table = sa.table(
         "benefit_packages",
@@ -55,6 +73,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    table = sa.table("benefit_packages", sa.column("package_code"))
-    bind.execute(sa.delete(table).where(table.c.package_code.in_([p["package_code"] for p in PACKAGES])))
+    op.drop_index("ix_benefit_packages_status", table_name="benefit_packages")
+    op.drop_index("ix_benefit_packages_package_code", table_name="benefit_packages")
+    op.drop_index("ix_benefit_packages_payer_code", table_name="benefit_packages")
+    op.drop_table("benefit_packages")
