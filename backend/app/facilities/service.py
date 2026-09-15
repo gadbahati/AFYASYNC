@@ -48,16 +48,10 @@ def _next_facility_id(db: Session) -> str:
 
 
 def _ensure_default_departments(db: Session, facility_id: UUID) -> None:
-    result = db.scalars(select(Department.code).where(Department.facility_id == facility_id)).all()
-    try:
-        existing = set(result)
-    except TypeError:
-        existing = set()
+    existing = set(db.scalars(select(Department.code).where(Department.facility_id == facility_id)).all())
     for code, name in DEFAULT_DEPARTMENTS:
         if code not in existing:
             db.add(Department(facility_id=facility_id, name=name, code=code, status="ACTIVE"))
-    # Do not flush here: the caller already flushes the facility and will commit
-    # the new departments atomically. This also keeps ID-collision retries atomic.
 
 
 def create_facility(db: Session, data: dict, *, actor_user_id: UUID | None = None) -> Facility:
@@ -96,7 +90,7 @@ def list_network_facilities(db: Session, *, limit: int = 100, status_filter: str
     return list(db.scalars(stmt.limit(limit)))
 
 
-def list_facility_directory(db: Session, *, search: str | None = None, limit: int = 50000) -> list[Facility]:
+def _directory_statement(search: str | None):
     stmt = select(Facility).where(Facility.status == "ACTIVE").order_by(Facility.name)
     if search and search.strip():
         needle = f"%{search.strip().lower()}%"
@@ -105,8 +99,26 @@ def list_facility_directory(db: Session, *, search: str | None = None, limit: in
             | func.lower(func.coalesce(Facility.county, "")).like(needle)
             | func.lower(func.coalesce(Facility.sub_county, "")).like(needle)
             | func.lower(func.coalesce(Facility.facility_type, "")).like(needle)
+            | func.lower(func.coalesce(Facility.registration_number, "")).like(needle)
         )
-    return list(db.scalars(stmt.limit(min(max(limit, 1), 50000))))
+    return stmt
+
+
+def list_facility_directory(
+    db: Session,
+    *,
+    search: str | None = None,
+    limit: int = 30,
+    offset: int = 0,
+    count_only: bool = False,
+):
+    stmt = _directory_statement(search)
+    if count_only:
+        count_stmt = stmt.with_only_columns(func.count(Facility.id)).order_by(None)
+        return int(db.scalar(count_stmt) or 0)
+    limit = min(max(limit, 1), 100)
+    offset = max(offset, 0)
+    return list(db.scalars(stmt.offset(offset).limit(limit)))
 
 
 def _kmhfr_value(item: dict, *keys: str) -> str | None:
@@ -138,11 +150,7 @@ def _sync_kmhfr_page(item: dict, db: Session) -> bool:
         facility = db.scalar(select(Facility).where(func.lower(Facility.name) == name.lower(), func.lower(func.coalesce(Facility.county, "")) == county.lower()).limit(1))
     if facility is None:
         stable_key = str(registration_key or name).replace(" ", "-")[:26]
-        facility = Facility(
-            facility_id=f"KMHFL-{stable_key}", name=name, facility_type=facility_type,
-            registration_number=registration_key, county=county, sub_county=sub_county,
-            status="ACTIVE" if active else "INACTIVE",
-        )
+        facility = Facility(facility_id=f"KMHFL-{stable_key}", name=name, facility_type=facility_type, registration_number=registration_key, county=county, sub_county=sub_county, status="ACTIVE" if active else "INACTIVE")
         db.add(facility)
         return True
     changed = False
@@ -157,7 +165,7 @@ def _sync_kmhfr_page(item: dict, db: Session) -> bool:
 
 
 def sync_kmhfr_facilities(db: Session, *, force: bool = False) -> int:
-    global _last_kmhfr_sync_at, _kmhfr_sync_running
+    global _last_kmhfr_sync_at
     now = datetime.now(timezone.utc)
     if not force and _last_kmhfr_sync_at and now - _last_kmhfr_sync_at < _KMHFR_SYNC_TTL:
         return 0
