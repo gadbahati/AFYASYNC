@@ -11,17 +11,13 @@ import urllib.parse
 import urllib.request
 
 API = "https://api.kmhfr.health.go.ke/api/public/facilities/"
-# Direct KMHFR access is preferred. Some hosted runners cannot route to the
-# government API, so the same official URL is retried through a transport
-# proxy only when direct access is unavailable.
 PROXY = "https://r.jina.ai/http://api.kmhfr.health.go.ke/api/public/facilities/"
 OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/kmhfr_facilities.json"))
-# KMHFR's verified public API uses a 30-record page in its current production surface.
 PAGE_SIZE = 30
 MAX_PAGES = 1000
 MAX_RETRIES = 3
-DIRECT_TIMEOUT = 12
-PROXY_TIMEOUT = 30
+DIRECT_TIMEOUT = 20
+PROXY_TIMEOUT = 45
 WORKERS = 6
 
 
@@ -29,10 +25,8 @@ def decode_payload(body: bytes, source: str) -> dict | list:
     text = body.decode("utf-8-sig").strip()
     if text.startswith("```"):
         lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
+        lines = lines[1:] if lines and lines[0].startswith("```") else lines
+        lines = lines[:-1] if lines and lines[-1].strip() == "```" else lines
         text = "\n".join(lines).strip()
     try:
         payload = json.loads(text)
@@ -44,26 +38,18 @@ def decode_payload(body: bytes, source: str) -> dict | list:
 
 
 def request_json(url: str, timeout: int, source: str) -> dict | list:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "AfyaSync-KMHFR/7.0",
-            "Connection": "close",
-        },
-    )
+    req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "AfyaSync-KMHFR/8.0", "Connection": "close"})
     with urllib.request.urlopen(req, timeout=timeout) as response:
-        if response.status != 200:
-            raise RuntimeError(f"KMHFR_HTTP_STATUS:{response.status} source={source}")
         return decode_payload(response.read(), source)
 
 
 def fetch_page(page: int) -> dict | list:
-    query = urllib.parse.urlencode({"format": "json", "page_size": PAGE_SIZE, "page": page})
+    # Do not send format=json: the current public KMHFR API rejects that
+    # parameter with HTTP 422 on some transports. page/page_size are sufficient.
+    query = urllib.parse.urlencode({"page_size": PAGE_SIZE, "page": page})
     direct_url = f"{API}?{query}"
     proxy_url = f"{PROXY}?{query}"
     last: Exception | None = None
-
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             return request_json(direct_url, DIRECT_TIMEOUT, "official")
@@ -71,7 +57,6 @@ def fetch_page(page: int) -> dict | list:
             last = exc
             if attempt < MAX_RETRIES:
                 time.sleep(0.5 * attempt + random.random() * 0.5)
-
     print(f"KMHFR page={page}: direct access unavailable; switching to official API transport fallback", flush=True)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -82,7 +67,6 @@ def fetch_page(page: int) -> dict | list:
                 delay = min(8, 1.5 * attempt) + random.random()
                 print(f"KMHFR page={page} fallback retry={attempt}/{MAX_RETRIES} delay={delay:.1f}s", flush=True)
                 time.sleep(delay)
-
     raise RuntimeError(f"KMHFR_FETCH_FAILED page={page}: {last}") from last
 
 
@@ -128,7 +112,6 @@ def main() -> None:
     first_items = items_from(first)
     if not first_items:
         raise RuntimeError("KMHFR_FIRST_PAGE_EMPTY_OR_INVALID")
-
     count = int(first.get("count") or 0) if isinstance(first, dict) else 0
     total_pages = first.get("total_pages") if isinstance(first, dict) else None
     if total_pages is None and count:
@@ -136,10 +119,8 @@ def main() -> None:
     total_pages = int(total_pages or 0)
     if total_pages <= 0 or total_pages > MAX_PAGES:
         raise RuntimeError(f"KMHFR_INVALID_TOTAL_PAGES:{total_pages}")
-
     print(f"KMHFR: API count={count} pages={total_pages} page_size={PAGE_SIZE} workers={WORKERS}", flush=True)
     records: dict[str, dict] = {}
-
     def add(items: list) -> None:
         for raw in items:
             if not isinstance(raw, dict):
@@ -147,16 +128,12 @@ def main() -> None:
             row = compact(raw)
             name = str(row.get("name") or "").strip()
             code = str(row.get("code") or "").strip()
-            identity = code or str(row.get("id") or "").strip() or "|".join(
-                str(row.get(k) or "").strip().lower() for k in ("name", "county", "sub_county")
-            )
+            identity = code or str(row.get("id") or "").strip() or "|".join(str(row.get(k) or "").strip().lower() for k in ("name", "county", "sub_county"))
             if name and identity:
                 records[identity.lower()] = row
-
     add(first_items)
-    pages = list(range(2, total_pages + 1))
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        futures = {pool.submit(fetch_page, page): page for page in pages}
+        futures = {pool.submit(fetch_page, page): page for page in range(2, total_pages + 1)}
         completed = 1
         for future in concurrent.futures.as_completed(futures):
             page = futures[future]
@@ -164,7 +141,6 @@ def main() -> None:
             completed += 1
             if completed % 30 == 0 or completed == total_pages:
                 print(f"KMHFR: progress page={completed}/{total_pages} records={len(records)}", flush=True)
-
     final = list(records.values())
     expected_min = max(10000, int(count * 0.90)) if count else 10000
     if len(final) < expected_min:
@@ -174,24 +150,17 @@ def main() -> None:
         raise RuntimeError("KMHFR_DUPLICATE_CODES")
     if not all(str(row.get("name") or "").strip() for row in final):
         raise RuntimeError("KMHFR_UNNAMED_FACILITY")
-
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix="kmhfr-", suffix=".json", dir=os.path.dirname(OUT))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(
-                {"source": API, "api_count": count, "api_pages": total_pages, "records": final},
-                f,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
+            json.dump({"source": API, "api_count": count, "api_pages": total_pages, "records": final}, f, ensure_ascii=False, separators=(",", ":"))
             f.write("\n")
         os.replace(tmp, OUT)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
     print(f"KMHFR: COMPLETE api_count={count} imported={len(final)} pages={total_pages}", flush=True)
-
 
 if __name__ == "__main__":
     main()
