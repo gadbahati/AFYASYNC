@@ -1,13 +1,12 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_facility_context, require_national_permission, require_permission
 from app.auth.schemas import FacilityOption
 from app.database import get_db
 from app.facilities.kmhfr_registry import start_sync, sync_state
-from app.facilities.models import Facility
 from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
 from app.facilities.service import create_department, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, update_department_status, update_facility, update_facility_status
 from app.rbac.models import User
@@ -23,9 +22,21 @@ def get_facilities(limit: int = Query(default=50, ge=1, le=100), _: User = Depen
     return list_facilities(db, limit)
 
 @router.get("/directory", response_model=list[FacilityOption])
-def get_facility_directory(search: str | None = Query(default=None, max_length=150), _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[FacilityOption]:
+def get_facility_directory(
+    response: Response,
+    search: str | None = Query(default=None, max_length=150),
+    page: int = Query(default=1, ge=1, le=100000),
+    page_size: int = Query(default=30, ge=1, le=100),
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[FacilityOption]:
     start_sync()
-    rows = list_facility_directory(db, search=search, limit=50000)
+    offset = (page - 1) * page_size
+    rows = list_facility_directory(db, search=search, limit=page_size, offset=offset)
+    total_rows = list_facility_directory(db, search=search, limit=1, offset=0, count_only=True)
+    response.headers["X-Facility-Total"] = str(total_rows)
+    response.headers["X-Facility-Page"] = str(page)
+    response.headers["X-Facility-Page-Size"] = str(page_size)
     return [FacilityOption(facility_id=row.id, facility_name=row.name, county=row.county, sub_county=row.sub_county, facility_type=row.facility_type, registration_number=row.registration_number) for row in rows]
 
 @router.get("/directory/status")
