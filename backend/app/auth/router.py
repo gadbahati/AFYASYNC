@@ -61,12 +61,13 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="NO_ACTIVE_FACILITY_ASSIGNMENT", user_id=user.id, ip_address=_client_ip(request))
         raise HTTPException(status_code=403, detail="NO_ACTIVE_FACILITY_ASSIGNMENT")
     options = _facility_options(db, user, all_active=system_admin)
-    if system_admin or len(options) != 1:
-        record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="FACILITY_SELECTION_REQUIRED", user_id=user.id, ip_address=_client_ip(request))
-        return FacilitySelectionRequired(access_token=issue_access_token(user, None), facilities=options)
-    facility_id = options[0].facility_id
-    record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="SUCCESS", user_id=user.id, facility_id=facility_id, ip_address=_client_ip(request))
-    return _token_response(db, user, facility_id)
+    if not options:
+        record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="NO_ACTIVE_FACILITIES", user_id=user.id, ip_address=_client_ip(request))
+        raise HTTPException(status_code=403, detail="NO_ACTIVE_FACILITIES")
+    # Facility selection is mandatory after every password login so a stale/default
+    # facility context can never silently carry into a new session.
+    record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="FACILITY_SELECTION_REQUIRED", user_id=user.id, ip_address=_client_ip(request))
+    return FacilitySelectionRequired(access_token=issue_access_token(user, None), facilities=options)
 
 
 @router.post("/refresh", response_model=TokenResponse)
