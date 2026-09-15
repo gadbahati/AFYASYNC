@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import threading
 import time
 from math import ceil
@@ -17,8 +16,6 @@ from app.facilities.models import Facility
 logger = logging.getLogger("afyasync.facilities.kmhfr")
 
 SYNC_LOCK_KEY = "afyasync:kmhfr:facility-registry"
-# Official Ministry of Health KMHFR public API. Do not route registry traffic
-# through third-party proxies or mirrors.
 DEFAULT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/public/facilities/"
 DIRECT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/facilities/facilities/"
 MAX_PAGES = 1000
@@ -88,8 +85,6 @@ def _advisory_unlock(db: Session) -> None:
 
 
 def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | None, str]:
-    # Only official KMHFR endpoints are permitted. Try the current public path
-    # first, then the alternate official facilities path.
     candidates = [
         (DEFAULT_KMHFR_URL, "official_public_api"),
         (DIRECT_KMHFR_URL, "official_facilities_api"),
@@ -201,7 +196,6 @@ def start_sync_retry_loop() -> bool:
             return False
         _retry_thread_started = True
     def retry_worker() -> None:
-        global _sync_thread_started
         time.sleep(15)
         while True:
             try:
