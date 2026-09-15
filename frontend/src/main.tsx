@@ -4,6 +4,7 @@ import App from "./App";
 import "./index.css";
 import "./app-shell.css";
 import "./national-brand.css";
+import "./institutional-brand.css";
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
