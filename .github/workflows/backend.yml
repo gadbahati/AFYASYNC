@@ -30,7 +30,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://afasync:afasync@127.0.0.1:5432/afasync
       ENVIRONMENT: development
-      CORS_ORIGINS: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
     defaults:
       run:
         working-directory: backend
