@@ -19,6 +19,11 @@ MAX_RETRIES = 3
 DIRECT_TIMEOUT = 20
 PROXY_TIMEOUT = 45
 WORKERS = 6
+HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 AfyaSync/1.0",
+    "Connection": "close",
+}
 
 
 def decode_payload(body: bytes, source: str) -> dict | list:
@@ -31,42 +36,62 @@ def decode_payload(body: bytes, source: str) -> dict | list:
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"KMHFR_NON_JSON_RESPONSE source={source} preview={text[:160]!r}") from exc
+        raise RuntimeError(f"KMHFR_NON_JSON_RESPONSE source={source} preview={text[:240]!r}") from exc
     if not isinstance(payload, (dict, list)):
         raise RuntimeError(f"KMHFR_RESPONSE_INVALID source={source}")
     return payload
 
 
 def request_json(url: str, timeout: int, source: str) -> dict | list:
-    req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "AfyaSync-KMHFR/8.0", "Connection": "close"})
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        return decode_payload(response.read(), source)
+    req = urllib.request.Request(url, headers=HEADERS)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return decode_payload(response.read(), source)
+    except urllib.error.HTTPError as exc:
+        body = b""
+        try:
+            body = exc.read(2048)
+        except Exception:
+            pass
+        preview = body.decode("utf-8", errors="replace").strip().replace("\n", " ")
+        raise RuntimeError(f"KMHFR_HTTP_ERROR source={source} status={exc.code} url={url} body={preview[:500]!r}") from exc
+
+
+def query_variants(page: int) -> list[str]:
+    variants = [
+        {"format": "json", "page_size": PAGE_SIZE, "page": page},
+        {"page_size": PAGE_SIZE, "page": page},
+        {"page": page, "page_size": PAGE_SIZE},
+        {"page": page},
+    ]
+    return [urllib.parse.urlencode(params) for params in variants]
 
 
 def fetch_page(page: int) -> dict | list:
-    # Do not send format=json: the current public KMHFR API rejects that
-    # parameter with HTTP 422 on some transports. page/page_size are sufficient.
-    query = urllib.parse.urlencode({"page_size": PAGE_SIZE, "page": page})
-    direct_url = f"{API}?{query}"
-    proxy_url = f"{PROXY}?{query}"
     last: Exception | None = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            return request_json(direct_url, DIRECT_TIMEOUT, "official")
-        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
-            last = exc
-            if attempt < MAX_RETRIES:
-                time.sleep(0.5 * attempt + random.random() * 0.5)
+    for query in query_variants(page):
+        direct_url = f"{API}?{query}"
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                return request_json(direct_url, DIRECT_TIMEOUT, "official")
+            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
+                last = exc
+                if attempt < MAX_RETRIES:
+                    time.sleep(0.5 * attempt + random.random() * 0.5)
+        print(f"KMHFR page={page}: direct query variant rejected/unavailable; trying next variant", flush=True)
+
     print(f"KMHFR page={page}: direct access unavailable; switching to official API transport fallback", flush=True)
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            return request_json(proxy_url, PROXY_TIMEOUT, "official-via-transport-fallback")
-        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
-            last = exc
-            if attempt < MAX_RETRIES:
-                delay = min(8, 1.5 * attempt) + random.random()
-                print(f"KMHFR page={page} fallback retry={attempt}/{MAX_RETRIES} delay={delay:.1f}s", flush=True)
-                time.sleep(delay)
+    for query in query_variants(page):
+        proxy_url = f"{PROXY}?{query}"
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                return request_json(proxy_url, PROXY_TIMEOUT, "official-via-transport-fallback")
+            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as exc:
+                last = exc
+                if attempt < MAX_RETRIES:
+                    delay = min(8, 1.5 * attempt) + random.random()
+                    print(f"KMHFR page={page} fallback retry={attempt}/{MAX_RETRIES} delay={delay:.1f}s", flush=True)
+                    time.sleep(delay)
     raise RuntimeError(f"KMHFR_FETCH_FAILED page={page}: {last}") from last
 
 
@@ -121,6 +146,7 @@ def main() -> None:
         raise RuntimeError(f"KMHFR_INVALID_TOTAL_PAGES:{total_pages}")
     print(f"KMHFR: API count={count} pages={total_pages} page_size={PAGE_SIZE} workers={WORKERS}", flush=True)
     records: dict[str, dict] = {}
+
     def add(items: list) -> None:
         for raw in items:
             if not isinstance(raw, dict):
@@ -131,6 +157,7 @@ def main() -> None:
             identity = code or str(row.get("id") or "").strip() or "|".join(str(row.get(k) or "").strip().lower() for k in ("name", "county", "sub_county"))
             if name and identity:
                 records[identity.lower()] = row
+
     add(first_items)
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
         futures = {pool.submit(fetch_page, page): page for page in range(2, total_pages + 1)}
@@ -141,6 +168,7 @@ def main() -> None:
             completed += 1
             if completed % 30 == 0 or completed == total_pages:
                 print(f"KMHFR: progress page={completed}/{total_pages} records={len(records)}", flush=True)
+
     final = list(records.values())
     expected_min = max(10000, int(count * 0.90)) if count else 10000
     if len(final) < expected_min:
@@ -150,6 +178,7 @@ def main() -> None:
         raise RuntimeError("KMHFR_DUPLICATE_CODES")
     if not all(str(row.get("name") or "").strip() for row in final):
         raise RuntimeError("KMHFR_UNNAMED_FACILITY")
+
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix="kmhfr-", suffix=".json", dir=os.path.dirname(OUT))
     try:
@@ -161,6 +190,7 @@ def main() -> None:
         if os.path.exists(tmp):
             os.unlink(tmp)
     print(f"KMHFR: COMPLETE api_count={count} imported={len(final)} pages={total_pages}", flush=True)
+
 
 if __name__ == "__main__":
     main()
