@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/kmhfr-snapshot.yml'
-      - 'backend/app/scripts/update_kmhfr_snapshot_v4.py'
+      - 'backend/app/scripts/update_kmhfr_snapshot_v5.py'
       - 'backend/app/facilities/kmhfr_registry.py'
       - 'backend/app/config.py'
   schedule:
@@ -26,46 +26,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Download and validate official KMHFR registry
-        run: python backend/app/scripts/update_kmhfr_snapshot_v4.py
-
+        run: python backend/app/scripts/update_kmhfr_snapshot_v5.py
       - name: Validate snapshot before publishing
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           p = Path('backend/data/kmhfr_facilities.json')
-          if not p.exists():
-              raise SystemExit('FAIL: KMHFR snapshot file was not created')
+          if not p.exists(): raise SystemExit('FAIL: KMHFR snapshot file was not created')
           payload = json.loads(p.read_text(encoding='utf-8'))
           records = payload.get('records', [])
           api_count = int(payload.get('api_count') or 0)
-          if len(records) < 10000:
-              raise SystemExit(f'FAIL: snapshot contains only {len(records)} records')
-          if api_count and len(records) < int(api_count * 0.90):
-              raise SystemExit(f'FAIL: snapshot incomplete api_count={api_count} records={len(records)}')
+          if len(records) < 10000: raise SystemExit(f'FAIL: snapshot contains only {len(records)} records')
+          if api_count and len(records) < int(api_count * 0.90): raise SystemExit(f'FAIL: incomplete api_count={api_count} records={len(records)}')
           codes = [str(r.get('code')).strip() for r in records if isinstance(r, dict) and str(r.get('code') or '').strip()]
-          if len(set(codes)) != len(codes):
-              raise SystemExit('FAIL: snapshot contains duplicate facility codes')
-          if not all(isinstance(r.get('name'), str) and r.get('name').strip() for r in records):
-              raise SystemExit('FAIL: snapshot contains unnamed facilities')
+          if len(set(codes)) != len(codes): raise SystemExit('FAIL: duplicate facility codes')
+          if not all(isinstance(r.get('name'), str) and r.get('name').strip() for r in records): raise SystemExit('FAIL: unnamed facility')
           print(f'Validated official KMHFR snapshot records={len(records)} api_count={api_count} coded={len(codes)}')
           PY
-
       - name: Commit registry snapshot
         run: |
           git config user.name 'AfyaSync KMHFR Bot'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add backend/data/kmhfr_facilities.json
-          if git diff --cached --quiet; then
-            echo 'KMHFR snapshot unchanged'
-            exit 0
-          fi
+          if git diff --cached --quiet; then echo 'KMHFR snapshot unchanged'; exit 0; fi
           git commit -m 'Refresh official KMHFR facility registry [skip ci]'
           git push
