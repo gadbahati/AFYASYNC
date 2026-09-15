@@ -25,14 +25,13 @@ def _normalize_id_number(value: str) -> str:
 
 
 def _hash_id_number(value: str) -> str:
-    """Hash the government ID with the application secret; never persist the raw ID."""
     normalized = _normalize_id_number(value)
     return hmac.new(settings.jwt_secret.encode("utf-8"), normalized.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _next_afya_id(db: Session) -> str:
     """Generate the next concurrency-safe human-facing AfyaSync ID."""
-    sequence = db.scalar(text("nextval('afasync_patient_id_seq')"))
+    sequence = db.scalar(select(text("nextval('afasync_patient_id_seq')")))
     if sequence is None:
         raise RuntimeError("IDENTITY_SEQUENCE_UNAVAILABLE")
     return f"AF-{int(sequence):08d}"
@@ -67,8 +66,6 @@ def create_patient(db: Session, payload: PatientCreate, *, actor_user_id: UUID |
         db.refresh(person)
         return person
     except IntegrityError as exc:
-        # Convert database race/constraint failures into a safe domain error.
-        # Never leave the session in an aborted transaction state.
         db.rollback()
         raise ValueError("PATIENT_CREATE_CONFLICT") from exc
 
