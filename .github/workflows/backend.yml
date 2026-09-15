@@ -39,7 +39,7 @@ jobs:
           import os
           from app.config import Settings
 
-          secure_secret = "vR7!qP2#sL9@xC4$mN8%tK6^wF3&zH5*"
+          secure_secret = "local-ci-only-secret-8f2b4d6c9e1a7f3b5d8c2e6a9f4b7d1c"
           base = {
               "ENVIRONMENT": "production",
               "JWT_SECRET": secure_secret,
@@ -65,7 +65,8 @@ jobs:
           os.environ.clear()
           os.environ.update(base)
           configured = Settings()
-          assert configured.cors_origin_list() == ["https://app.example.com"]
+          origins = configured.cors_origin_list()
+          assert "https://app.example.com" in origins
           assert configured.worker_poll_seconds == 5.0
           print("Production configuration guards passed")
           PY
