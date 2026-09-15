@@ -9,7 +9,7 @@ from app.auth.schemas import FacilityOption
 from app.database import get_db
 from app.facilities.models import Facility
 from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
-from app.facilities.service import create_department, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, sync_kmhfr_facilities, update_department_status, update_facility, update_facility_status
+from app.facilities.service import create_department, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, start_kmhfr_sync_if_needed, update_department_status, update_facility, update_facility_status
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/facilities", tags=["Facilities"])
@@ -24,7 +24,10 @@ def get_facilities(limit: int = Query(default=50, ge=1, le=100), _: User = Depen
 
 @router.get("/directory", response_model=list[FacilityOption])
 def get_facility_directory(search: str | None = Query(default=None, max_length=150), _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[FacilityOption]:
-    sync_kmhfr_facilities(db)
+    # Never block the login/facility-selection screen for the national KMHFR
+    # import. A background worker keeps the local directory populated while
+    # the UI remains responsive. Existing facilities remain immediately usable.
+    start_kmhfr_sync_if_needed()
     rows = list_facility_directory(db, search=search)
     return [FacilityOption(facility_id=row.id, facility_name=row.name) for row in rows]
 
@@ -102,4 +105,4 @@ def change_department_status(facility_id: UUID, department_id: UUID, payload: De
         return update_department_status(db, facility_id, department_id, payload.status, actor_user_id=user.id)
     except ValueError as exc:
         code = str(exc)
-        raise HTTPException(status_code={"DEPARTMENT_NOT_FOUND": 404, "INVALID_DEPARTMENT_STATUS": 400, "DEPARTMENT_STATUS_UNCHANGED": 400}.get(code, 400), detail=code) from exc
+        raise HTTPException(status_code={"DEPARTMENT_NOT_FOUND": 404, "INVALID_DEPARTMENT_STATUS": 400, "DEPARTMENT_STATUS_UNCHANGED": 400, "FACILITY_NOT_FOUND": 404}.get(code, 400), detail=code) from exc
