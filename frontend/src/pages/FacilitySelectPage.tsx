@@ -37,7 +37,7 @@ export function FacilitySelectPage() {
       setPage(targetPage);
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message || err.code : "Unable to load the Kenya health-facility registry.");
+      setError(err instanceof ApiError ? err.message || err.code : "Unable to load facilities.");
     } finally {
       if (showSpinner) setLoading(false);
     }
@@ -82,15 +82,11 @@ export function FacilitySelectPage() {
   const lastResult = (page - 1) * PAGE_SIZE + facilities.length;
 
   return (
-    <main className="auth-page" aria-label="AfyaSync national facility directory" style={{ padding: "24px 14px", alignItems: "flex-start" }}>
+    <main className="auth-page" aria-label="Facility selection" style={{ padding: "24px 14px", alignItems: "flex-start" }}>
       <section className="card" style={{ width: "min(1600px, 100%)", padding: 24, overflow: "hidden" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 20, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 18 }}>
-          <div>
-            <div className="brand-kicker">AfyaSync • Kenya health-facility directory</div>
-            <h1 style={{ marginBottom: 8 }}>Select a facility</h1>
-            <p className="muted" style={{ margin: 0 }}>Search and select the facility where you are working. Facilities are sourced from the national KMHFR registry.</p>
-          </div>
-          <strong>Page {page} • {facilities.length} facilities</strong>
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ marginBottom: 8 }}>Select facility</h1>
+          <p className="muted" style={{ margin: 0 }}>Your staff account has access to more than one facility. Select the facility where you are working now.</p>
         </div>
 
         <form onSubmit={searchFacilities} style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
@@ -104,7 +100,7 @@ export function FacilitySelectPage() {
         {loading ? (
           <div className="card" style={{ padding: 28, textAlign: "center" }}><p className="muted" style={{ margin: 0 }}>Loading facilities…</p></div>
         ) : facilities.length === 0 ? (
-          <div className="card" style={{ padding: 28, textAlign: "center" }}><strong>No facility found</strong><p className="muted" style={{ marginBottom: 0 }}>Try the official facility name, MFL code, county, sub-county or facility type.</p></div>
+          <div className="card" style={{ padding: 28, textAlign: "center" }}><strong>No facility found</strong><p className="muted" style={{ marginBottom: 0 }}>Try the facility name, MFL code, county, sub-county or facility type.</p></div>
         ) : (
           <>
             <div className="facility-directory-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
