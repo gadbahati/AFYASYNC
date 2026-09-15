@@ -51,11 +51,17 @@ def get_facility_context(payload: dict = Depends(get_token_payload), user: User 
         facility_id = UUID(raw)
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=403, detail="INVALID_FACILITY_CONTEXT") from exc
-    facility = db.get(Facility, facility_id)
-    if facility is None or facility.status != "ACTIVE":
+
+    facility = db.scalar(
+        select(Facility)
+        .where(Facility.id == facility_id, Facility.status == "ACTIVE")
+        .limit(1)
+    )
+    if facility is None:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     if _is_system_administrator(db, user):
         return facility_id
+
     staff = db.scalar(
         select(Staff)
         .join(Facility, Facility.id == Staff.facility_id)
