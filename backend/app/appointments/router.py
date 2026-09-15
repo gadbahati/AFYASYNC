@@ -10,6 +10,7 @@ from app.appointments.schemas import AppointmentCreate, AppointmentResponse, Pat
 from app.appointments.service import add_to_queue, create_appointment, create_queue, handoff_patient, list_appointments, list_queue_entries, list_queues, update_queue_status
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
+from app.encounters.models import Encounter
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/appointments", tags=["Appointments & Queue"])
@@ -60,10 +61,10 @@ def add_queue_entry(payload: QueueEntryCreate, user: User = Depends(require_perm
 
 @router.post("/queues/handoff", response_model=QueueEntryResponse, status_code=status.HTTP_201_CREATED)
 def handoff(payload: PatientHandoffCreate, user: User = Depends(require_permission("queue.manage")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
-    try:
-        encounter = db.get(__import__("app.encounters.models", fromlist=["Encounter"]).Encounter, payload.encounter_id)
-        if encounter is None or encounter.facility_id != facility_id: raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
-        return handoff_patient(db, payload.model_dump(), actor_user_id=user.id)
+    encounter = db.get(Encounter, payload.encounter_id)
+    if encounter is None or encounter.facility_id != facility_id or encounter.patient_id != payload.patient_id:
+        raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
+    try: return handoff_patient(db, payload.model_dump(), actor_user_id=user.id)
     except ValueError as err: raise _error(err) from err
 
 
