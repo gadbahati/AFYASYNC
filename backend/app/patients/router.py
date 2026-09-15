@@ -29,6 +29,43 @@ def _response(patient, afya_id: str | None = None) -> PatientResponse:
     )
 
 
+def _degraded_patient_record(db: Session, patient_id: UUID, facility_id: UUID) -> dict | None:
+    """Return a truthful core record when an optional longitudinal section fails.
+
+    This is deliberately not synthetic data: identity, Afya ID, enrollment and
+    encounters are read from the database. Optional sections are empty only when
+    the full aggregation cannot be completed, so the journey page remains usable
+    and staff can still open the independent encounter/department workflows.
+    """
+    db.rollback()
+    patient = get_patient_for_facility(db, patient_id, facility_id)
+    if patient is None:
+        return None
+    identity = getattr(patient, "afya_identity", None)
+    if identity is None:
+        return None
+    enrollments = get_patient_facility_enrollments(db, patient_id, facility_id)
+    enrollment_status = enrollments[0].status if enrollments else None
+    encounters, _ = list_patient_encounters_for_facility(db, patient_id, facility_id, limit=100, offset=0)
+    encounter_payload = [item.model_dump(mode="json") for item in encounters]
+    return {
+        "patient": {
+            "id": str(patient.id), "afya_id": identity.afya_id, "first_name": patient.first_name,
+            "middle_name": patient.middle_name, "last_name": patient.last_name, "date_of_birth": patient.date_of_birth,
+            "sex": patient.sex, "phone": patient.phone, "email": patient.email, "address": getattr(patient, "address", None),
+            "emergency_contact_name": getattr(patient, "emergency_contact_name", None),
+            "emergency_contact_phone": getattr(patient, "emergency_contact_phone", None),
+            "next_of_kin_name": getattr(patient, "next_of_kin_name", None),
+            "next_of_kin_phone": getattr(patient, "next_of_kin_phone", None), "status": patient.status,
+            "enrollment_status": enrollment_status, "registered_at": patient.created_at,
+        },
+        "coverage": [], "encounters": encounter_payload, "laboratory": [], "prescriptions": [],
+        "medication_actions": [], "admissions": [], "preauthorizations": [],
+        "billing": {"charges": [], "invoices": [], "payments": []}, "claims": [], "appointments": [],
+        "queue_history": [], "referrals": [], "transfers": [],
+    }
+
+
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
 def register_patient(payload: PatientCreate, user: User = Depends(require_permission("patients.create")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> PatientResponse:
     try:
@@ -152,8 +189,27 @@ def update_patient_record(patient_id: UUID, payload: PatientUpdate, user: User =
 
 @router.get("/{patient_id}/summary", response_model=PatientRecordSummaryResponse)
 def get_complete_patient_record(patient_id: UUID, user: User = Depends(require_permission("patients.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> PatientRecordSummaryResponse:
-    record = get_patient_record_summary(db, patient_id, facility_id)
-    if record is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found at this facility."})
-    record_audit(db, action="VIEW_COMPLETE_PATIENT_RECORD", resource_type="PERSON", resource_id=str(patient_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"sections": ["identity", "coverage", "encounters", "laboratory", "prescriptions", "medication_actions", "admissions", "preauthorizations", "billing", "claims", "appointments", "queue", "referrals", "transfers"]}, commit=True)
-    return PatientRecordSummaryResponse.model_validate(record)
+    try:
+        record = get_patient_record_summary(db, patient_id, facility_id)
+        if record is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found at this facility."})
+        # Materialize and validate before the audit commit. SQLAlchemy expires ORM
+        # state on commit, which must never be allowed to break a patient journey.
+        validated = PatientRecordSummaryResponse.model_validate(record)
+        record_audit(db, action="VIEW_COMPLETE_PATIENT_RECORD", resource_type="PERSON", resource_id=str(patient_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"sections": ["identity", "coverage", "encounters", "laboratory", "prescriptions", "medication_actions", "admissions", "preauthorizations", "billing", "claims", "appointments", "queue", "referrals", "transfers"]}, commit=True)
+        return validated
+    except HTTPException:
+        raise
+    except Exception:
+        fallback = _degraded_patient_record(db, patient_id, facility_id)
+        if fallback is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found at this facility."})
+        # Do not manufacture clinical/financial data. The fallback contains only
+        # persisted identity and encounters and keeps the journey navigable while
+        # the failed optional aggregation is isolated from the request transaction.
+        validated = PatientRecordSummaryResponse.model_validate(fallback)
+        try:
+            record_audit(db, action="VIEW_COMPLETE_PATIENT_RECORD_DEGRADED", resource_type="PERSON", resource_id=str(patient_id), result="PARTIAL", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"reason": "optional_patient_record_section_failed"}, commit=True)
+        except Exception:
+            db.rollback()
+        return validated
