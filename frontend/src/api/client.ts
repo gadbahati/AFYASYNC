@@ -14,10 +14,14 @@ export class ApiError extends Error {
   }
 }
 
-function parseDetail(body: ApiErrorBody | null): string {
-  if (!body?.detail) return "REQUEST_FAILED";
-  if (typeof body.detail === "string") return body.detail;
-  return body.detail.code || body.detail.message || "REQUEST_FAILED";
+function parseError(body: ApiErrorBody | null, status: number): { code: string; message?: string } {
+  if (!body) return { code: status >= 500 ? "SERVER_ERROR" : "REQUEST_FAILED" };
+  if (typeof body.detail === "string") return { code: body.detail };
+  if (body.detail) return { code: body.detail.code || "REQUEST_FAILED", message: body.detail.message };
+  const message = typeof body.message === "string" ? body.message : undefined;
+  const requestId = body.data && typeof body.data === "object" && typeof body.data.request_id === "string" ? body.data.request_id : undefined;
+  if (status >= 500) return { code: requestId ? `SERVER_ERROR:${requestId}` : "SERVER_ERROR", message };
+  return { code: message || "REQUEST_FAILED", message };
 }
 
 function notifyAuthExpired(): void {
@@ -55,9 +59,9 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   if (!res.ok) {
     let body: ApiErrorBody | null = null;
     try { body = (await res.json()) as ApiErrorBody; } catch {}
-    const code = parseDetail(body);
+    const parsed = parseError(body, res.status);
     if (res.status === 401 && path !== "/api/v1/auth/login" && path !== "/api/v1/auth/refresh" && path !== "/api/v1/auth/logout") notifyAuthExpired();
-    throw new ApiError(res.status, code);
+    throw new ApiError(res.status, parsed.code, parsed.message);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -123,7 +127,4 @@ export const api = {
   reconcileClaim(claim_id: string, received_amount: number) { return request<any>(`/api/v1/claims/${claim_id}/reconcile`, { method: "POST", body: JSON.stringify({ received_amount }) }); },
   listClaimRejections() { return request<any[]>("/api/v1/claims/workbench/rejections"); },
   sandboxRejectClaim(claim_id: string, payload: { response_code?: string; response_message?: string; external_reference?: string } = {}) { return request<any>(`/api/v1/claims/${claim_id}/sandbox-reject`, { method: "POST", body: JSON.stringify(payload) }); },
-  commandCentre() { return request<any>("/api/v1/insight/command-centre"); },
-  fraudRadar() { return request<any>("/api/v1/insight/fraud-radar"); },
-  simulateCoverage(payload: { coverage_mode: string; patient_id?: string | null; membership_number?: string | null; lines: Array<{ code: string; description: string; quantity: number; unit_price: number }> }) { return request<any>("/api/v1/insight/coverage/simulate", { method: "POST", body: JSON.stringify(payload) }); },
 };
