@@ -12,6 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY data ./data
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
 
@@ -19,8 +20,6 @@ USER afasync
 
 EXPOSE 8000
 
-# Railway runs Alembic as a pre-deploy command; the container only starts the API.
-# The Railway service start command invokes a shell so PORT is expanded before Uvicorn starts.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:' + __import__('os').environ.get('PORT', '8000') + '/ready', timeout=4)"
 
