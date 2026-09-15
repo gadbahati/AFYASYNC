@@ -9,7 +9,7 @@ def _ok(db, patient_id, facility_id):
     return db.scalar(select(PatientFacility.id).where(PatientFacility.patient_id==patient_id, PatientFacility.facility_id==facility_id, PatientFacility.status=="ACTIVE")) is not None
 
 def list_children(db:Session,facility_id:UUID):
-    return list(db.scalars(select(ChildHealthRecord).where(ChildHealthRecord.facility_id==facility_id,ChildHealthRecord.status=="ACTIVE").order_by(ChildHealthRecord.created_at.desc()).limit(200)).all())
+    return list(db.scalars(select(ChildHealthRecord).where(ChildHealthRecord.facility_id==facility_id,ChildHealthRecord.status=="ACTIVE").order_by(ChildHealthRecord.birth_date.desc().nullslast(), ChildHealthRecord.id.desc()).limit(200)).all())
 
 def list_growth(db:Session,facility_id:UUID,child_id:UUID):
     return list(db.scalars(select(GrowthObservation).where(GrowthObservation.facility_id==facility_id,GrowthObservation.child_id==child_id).order_by(GrowthObservation.observed_at.desc()).limit(100)).all())
