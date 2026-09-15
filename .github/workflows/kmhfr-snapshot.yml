@@ -59,3 +59,4 @@ jobs:
           git push
 
 # Force-refresh trigger: run the authoritative national registry import after the facility-selector repair.
+# Triggered from the current importer revision so the workflow cannot remain pinned to an older snapshot job.
