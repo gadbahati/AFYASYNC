@@ -2,12 +2,14 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_facility_context, require_national_permission, require_permission
 from app.auth.schemas import FacilityOption
 from app.database import get_db
 from app.facilities.kmhfr_registry import start_sync, sync_state
+from app.facilities.models import FacilityRegistryHistory, FacilityRegistryRecord
 from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityQuickCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
 from app.facilities.service import _sync_kmhfr_page, create_department, create_directory_facility, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, update_department_status, update_facility, update_facility_status
 from app.rbac.models import User
@@ -88,8 +90,6 @@ def get_facility_directory(
     start_sync()
     offset = (page - 1) * page_size
     if search and search.strip():
-        # Always serve a local match immediately. Only consult the official
-        # registry when the local directory has no matching record.
         local_rows = list_facility_directory(db, search=search, limit=page_size, offset=offset)
         if local_rows:
             rows = local_rows
@@ -106,13 +106,65 @@ def get_facility_directory(
 
 @router.post("/directory", response_model=FacilityOption, status_code=status.HTTP_201_CREATED)
 def add_directory_facility(payload: FacilityQuickCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> FacilityOption:
-    """Let a user add a facility straight from the 'Select facility' search screen when it isn't already in the directory."""
     facility = create_directory_facility(db, payload.model_dump(), actor_user_id=user.id)
     return FacilityOption(facility_id=facility.id, facility_name=facility.name, county=facility.county, sub_county=facility.sub_county, facility_type=facility.facility_type, registration_number=facility.registration_number)
 
 @router.get("/directory/status")
 def get_facility_directory_status(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, int | bool | str]:
     return sync_state(db)
+
+@router.get("/directory/registry/{facility_id}")
+def get_facility_registry_record(facility_id: UUID, _: User = Depends(require_national_permission("facilities.network.read")), db: Session = Depends(get_db)) -> dict:
+    record = db.scalar(select(FacilityRegistryRecord).where(FacilityRegistryRecord.facility_id == facility_id).limit(1))
+    if record is None:
+        raise HTTPException(status_code=404, detail="FACILITY_REGISTRY_RECORD_NOT_FOUND")
+    return {
+        "facility_id": record.facility_id,
+        "source": record.source,
+        "source_id": record.source_id,
+        "mfl_code": record.mfl_code,
+        "keph_level": record.keph_level,
+        "ownership": record.ownership,
+        "ward": record.ward,
+        "constituency": record.constituency,
+        "address": record.address,
+        "phone": record.phone,
+        "email": record.email,
+        "latitude": float(record.latitude) if record.latitude is not None else None,
+        "longitude": float(record.longitude) if record.longitude is not None else None,
+        "services": record.services,
+        "source_updated_at": record.source_updated_at,
+        "last_seen_at": record.last_seen_at,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+    }
+
+@router.get("/directory/registry/{facility_id}/history")
+def get_facility_registry_history(
+    facility_id: UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    _: User = Depends(require_national_permission("facilities.network.read")),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    rows = list(db.scalars(
+        select(FacilityRegistryHistory)
+        .where(FacilityRegistryHistory.facility_id == facility_id)
+        .order_by(FacilityRegistryHistory.occurred_at.desc())
+        .limit(limit)
+    ))
+    return [
+        {
+            "id": row.id,
+            "facility_id": row.facility_id,
+            "source": row.source,
+            "action": row.action,
+            "changed_fields": row.changed_fields,
+            "before_record": row.before_record,
+            "after_record": row.after_record,
+            "occurred_at": row.occurred_at,
+        }
+        for row in rows
+    ]
 
 @router.get("/network", response_model=list[NetworkFacilityResponse])
 def get_network_facilities(limit: int = Query(default=100, ge=1, le=200), facility_status: str | None = Query(default=None), county: str | None = Query(default=None, max_length=100), _: User = Depends(require_national_permission("facilities.network.read")), db: Session = Depends(get_db)) -> list[NetworkFacilityResponse]:
