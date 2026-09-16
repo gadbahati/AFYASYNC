@@ -6,7 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
 from app.billing.models import Invoice, Service
-from app.billing.permissions import BILLING_CHARGE_WRITE, BILLING_INVOICE_WRITE, BILLING_PAYMENT_WRITE, BILLING_SERVICE_WRITE
+from app.billing.permissions import (
+    BILLING_CHARGE_WRITE,
+    BILLING_INVOICE_READ,
+    BILLING_INVOICE_WRITE,
+    BILLING_PAYMENT_WRITE,
+    BILLING_SERVICE_READ,
+    BILLING_SERVICE_WRITE,
+)
 from app.billing.schemas import ChargeResponse, InvoiceResponse, PaymentCreate, PaymentResponse, ServiceCreate, ServiceResponse
 from app.billing.service import BillingError, create_invoice, record_payment
 from app.billing.standalone_charge import StandaloneChargeCreate, create_standalone_charge
@@ -30,13 +37,13 @@ def _error(exc: BillingError) -> HTTPException:
 
 
 @router.get("/services", response_model=list[ServiceResponse])
-def list_services(db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_SERVICE_WRITE))):
+def list_services(db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_SERVICE_READ))):
     _ = user
     return list(db.scalars(select(Service).where(Service.facility_id == facility_id, Service.status == "ACTIVE").order_by(Service.code)).all())
 
 
 @router.get("/invoices", response_model=list[InvoiceResponse])
-def list_invoices(limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_INVOICE_WRITE))):
+def list_invoices(limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_INVOICE_READ))):
     _ = user
     return list(db.scalars(select(Invoice).where(Invoice.facility_id == facility_id).order_by(Invoice.created_at.desc()).limit(limit)).all())
 
