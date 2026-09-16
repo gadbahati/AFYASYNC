@@ -26,11 +26,13 @@ DEFINITIONS: list[tuple[str, str, set[str]]] = [
 
 def upgrade() -> None:
     bind = op.get_bind()
-    permissions = sa.table("permissions", sa.column("id"), sa.column("code"), sa.column("description"))
-    roles = sa.table("roles", sa.column("id"), sa.column("name"))
+    # Keep this migration compatible with the deployed permissions table. The
+    # description column is not guaranteed to exist in older production
+    # schemas, so only insert the stable required columns here.
+    permissions = sa.table("permissions", sa.column("id"), sa.column("code"))
+    roles = sa.table("roles", sa.column("id"), sa.column("name"), sa.column("description"))
     role_permissions = sa.table("role_permissions", sa.column("role_id"), sa.column("permission_id"))
 
-    # Keep the role available for facilities that use a dedicated cashier.
     cashier_role = bind.execute(sa.select(roles.c.id).where(roles.c.name == "Cashier")).scalar()
     if cashier_role is None:
         cashier_role = uuid4()
@@ -42,13 +44,11 @@ def upgrade() -> None:
             )
         )
 
-    for code, description, role_names in DEFINITIONS:
+    for code, _description, role_names in DEFINITIONS:
         permission_id = bind.execute(sa.select(permissions.c.id).where(permissions.c.code == code)).scalar()
         if permission_id is None:
             permission_id = uuid4()
-            bind.execute(
-                sa.insert(permissions).values(id=permission_id, code=code, description=description)
-            )
+            bind.execute(sa.insert(permissions).values(id=permission_id, code=code))
 
         for role_name in role_names:
             role_id = bind.execute(sa.select(roles.c.id).where(roles.c.name == role_name)).scalar()
@@ -81,7 +81,6 @@ def downgrade() -> None:
         bind.execute(sa.delete(role_permissions).where(role_permissions.c.permission_id == row.id))
         bind.execute(sa.delete(permissions).where(permissions.c.id == row.id))
 
-    # Only remove the role if it has never been assigned to staff.
     cashier_id = bind.execute(sa.select(roles.c.id).where(roles.c.name == "Cashier")).scalar()
     if cashier_id is not None:
         staff_roles = sa.table("staff_roles", sa.column("role_id"))
