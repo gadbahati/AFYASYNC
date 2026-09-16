@@ -18,11 +18,11 @@ class FacilityCreate(BaseModel):
 
 
 class FacilityQuickCreate(BaseModel):
-    """Minimal payload for adding a facility on the fly from the onboarding
-    'Select facility' search screen, when it isn't already in the directory."""
+    """Minimal payload for adding a verified registry facility during onboarding."""
 
     name: str = Field(min_length=2, max_length=200)
     facility_type: str = Field(default="HOSPITAL", min_length=2, max_length=50)
+    registration_number: str | None = None
     county: str | None = None
     sub_county: str | None = None
 
