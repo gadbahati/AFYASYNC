@@ -17,7 +17,7 @@ logger = logging.getLogger("afyasync.facilities.kmhfr")
 LOCK_KEY = "afyasync:kmhfr:facility-registry"
 SNAPSHOT = Path(__file__).resolve().parents[2] / "data" / "kmhfr_facilities.json"
 MIN_SNAPSHOT_RECORDS = 10_000
-TARGET_ACTIVE_FACILITIES = 10_000
+TARGET_REGISTRY_RECORDS = 10_000
 _lock = threading.Lock()
 _running = False
 _retry_started = False
@@ -53,6 +53,18 @@ def _number(item: dict, *keys: str) -> float | None:
         return None
 
 
+def _source_timestamp(item: dict) -> datetime | None:
+    raw = _value(item, "updated_at", "updated", "last_updated", "date_updated", "modified_at")
+    if not raw:
+        return None
+    try:
+        normalized = raw.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
 def _record_values(item: dict) -> dict:
     return {
         "source_id": _value(item, "id", "uuid", "facility_id"),
@@ -67,6 +79,7 @@ def _record_values(item: dict) -> dict:
         "latitude": _number(item, "latitude", "lat"),
         "longitude": _number(item, "longitude", "lng", "lon"),
         "services": item.get("services") if isinstance(item.get("services"), (list, dict)) else None,
+        "source_updated_at": _source_timestamp(item),
     }
 
 
@@ -117,18 +130,8 @@ def _upsert(db, item: dict) -> bool:
         changed_fields = sorted(column for column in registry if old.get(column) != registry[column])
         if existing.raw_record != item:
             changed_fields.append("raw_record")
-        existing.source_id = registry["source_id"]
-        existing.mfl_code = registry["mfl_code"]
-        existing.keph_level = registry["keph_level"]
-        existing.ownership = registry["ownership"]
-        existing.ward = registry["ward"]
-        existing.constituency = registry["constituency"]
-        existing.address = registry["address"]
-        existing.phone = registry["phone"]
-        existing.email = registry["email"]
-        existing.latitude = registry["latitude"]
-        existing.longitude = registry["longitude"]
-        existing.services = registry["services"]
+        for column, value in registry.items():
+            setattr(existing, column, value)
         existing.raw_record = item
         existing.last_seen_at = now
         if changed_fields and action == "SEEN":
@@ -137,12 +140,6 @@ def _upsert(db, item: dict) -> bool:
     if action != "SEEN":
         db.add(FacilityRegistryHistory(facility_id=facility.id, source="KMHFR", action=action, changed_fields=changed_fields, before_record=before, after_record=full_after))
     return action != "SEEN"
-
-
-def _live_sync() -> dict[str, int | bool | str]:
-    from app.facilities.kmhfr_sync import sync_all as sync_live
-    result = sync_live(force=True)
-    return {"running": bool(result.get("running", False)), "pages": int(result.get("pages", 0)), "seen": int(result.get("seen", 0)), "changed": int(result.get("changed", 0)), "message": str(result.get("message", "unknown")), "source": "official_kmhfr_api", "last_success_at": ""}
 
 
 def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
@@ -155,8 +152,8 @@ def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
         if not locked:
             return {"running": True, "pages": 0, "seen": 0, "changed": 0, "message": "already_running", "source": "snapshot"}
         if not SNAPSHOT.exists():
-            logger.warning("KMHFR snapshot unavailable; falling back to live official KMHFR API")
-            _state = _live_sync()
+            _state = {"running": False, "pages": 0, "seen": 0, "changed": 0, "message": "snapshot_unavailable", "source": "none", "last_success_at": str(_state.get("last_success_at", ""))}
+            logger.warning("KMHFR_SNAPSHOT_UNAVAILABLE; national registry will remain on local data until the official snapshot is available")
             return _state
         with SNAPSHOT.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
@@ -221,12 +218,12 @@ def start_sync_retry_loop() -> bool:
         while True:
             try:
                 with SessionLocal() as db:
-                    active = db.scalar(select(func.count(Facility.id)).where(Facility.status == "ACTIVE")) or 0
-                if active >= TARGET_ACTIVE_FACILITIES:
-                    logger.info("KMHFR_REGISTRY_READY active_facilities=%s", active)
+                    registry_records = db.scalar(select(func.count(FacilityRegistryRecord.id))) or 0
+                if registry_records >= TARGET_REGISTRY_RECORDS:
+                    logger.info("KMHFR_REGISTRY_READY registry_records=%s", registry_records)
                     return
                 if not _running:
-                    logger.info("KMHFR_REGISTRY_RETRY active_facilities=%s", active)
+                    logger.info("KMHFR_REGISTRY_RETRY registry_records=%s", registry_records)
                     start_sync()
             except Exception:
                 logger.exception("KMHFR_REGISTRY_RETRY_CHECK_FAILED")
