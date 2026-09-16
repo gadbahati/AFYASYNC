@@ -16,7 +16,7 @@ def test_create_department_audits_before_commit(monkeypatch) -> None:
     # First real use of the Department class is the duplicate-code lookup
     # (Department.facility_id / Department.code as query columns); it must
     # stay a real class here, not a stand-in, or that query breaks. Only the
-    # *result* of the lookup (no existing department) is mocked.
+    # result of the lookup (no existing department) is mocked.
     db.scalar.return_value = None
     audit_mock = Mock()
 
@@ -46,6 +46,10 @@ def test_create_facility_retries_facility_id_collision(monkeypatch) -> None:
     nested.__enter__ = Mock(return_value=nested)
     nested.__exit__ = Mock(return_value=False)
     db.begin_nested.return_value = nested
+    # _ensure_default_departments performs a scalar query after the facility
+    # flush. Keep that lookup explicitly empty so this collision test remains
+    # focused on the facility_id retry path.
+    db.scalars.return_value = []
     db.flush.side_effect = [
         IntegrityError("insert", {}, Exception("duplicate facility_id")),
         None,
