@@ -66,6 +66,7 @@ from app.national_supply.planning_router import router as national_supply_planni
 from app.national_referrals.router import router as national_referrals_router
 from app.observability.router import router as observability_router
 from app.observability.service import runtime_metrics
+from app.operations.router import router as operations_router
 from app.patients import models as patient_models
 from app.patients.national_identity_router import router as national_identity_router
 from app.patients.router import router as patients_router
@@ -194,6 +195,7 @@ app.include_router(national_supply_planning_router)
 app.include_router(national_referrals_router)
 app.include_router(national_capacity_router)
 app.include_router(observability_router)
+app.include_router(operations_router)
 app.include_router(ussd_router)
 
 @app.get("/health", tags=["System"])
