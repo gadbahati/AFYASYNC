@@ -29,15 +29,18 @@ export function FacilitySelectPage() {
   const [loading, setLoading] = useState(false);
   const [selecting, setSelecting] = useState<string | null>(null);
 
-  async function loadDirectory(search: string, targetPage = 1, showSpinner = true) {
+  async function loadDirectory(search: string, targetPage = 1, showSpinner = true): Promise<DirectoryFacility[]> {
     if (showSpinner) setLoading(true);
     try {
       const rows = await api.facilityDirectory(search, targetPage, PAGE_SIZE);
-      setFacilities(rows as DirectoryFacility[]);
+      const next = rows as DirectoryFacility[];
+      setFacilities(next);
       setPage(targetPage);
       setError(null);
+      return next;
     } catch (err) {
       setError(err instanceof ApiError ? err.message || err.code : "Unable to load facilities.");
+      return [];
     } finally {
       if (showSpinner) setLoading(false);
     }
@@ -52,18 +55,6 @@ export function FacilitySelectPage() {
   if (!auth.username || !getAccessToken()) return <Navigate to="/login" replace />;
   if (auth.facilityId && !auth.pendingFacilities) return <Navigate to="/" replace />;
 
-  async function searchFacilities(event: React.FormEvent) {
-    event.preventDefault();
-    const value = query.trim();
-    setSubmittedQuery(value);
-    await loadDirectory(value, 1);
-  }
-
-  async function changePage(nextPage: number) {
-    if (nextPage < 1 || loading) return;
-    await loadDirectory(submittedQuery, nextPage);
-  }
-
   async function choose(facility: DirectoryFacility) {
     if (selecting) return;
     setSelecting(facility.facility_id);
@@ -77,6 +68,34 @@ export function FacilitySelectPage() {
     }
   }
 
+  async function searchFacilities(event: React.FormEvent) {
+    event.preventDefault();
+    const value = query.trim();
+    if (!value) {
+      setSubmittedQuery("");
+      await loadDirectory("", 1);
+      return;
+    }
+
+    setSubmittedQuery(value);
+    const results = await loadDirectory(value, 1);
+
+    // A direct facility name/code match opens the facility dashboard immediately.
+    const normalized = value.toLowerCase();
+    const exact = results.find((facility) =>
+      [facility.facility_name, facility.facility_code, facility.registration_number]
+        .filter(Boolean)
+        .some((candidate) => String(candidate).trim().toLowerCase() === normalized),
+    );
+    if (exact) await choose(exact);
+    else if (results.length === 1) await choose(results[0]);
+  }
+
+  async function changePage(nextPage: number) {
+    if (nextPage < 1 || loading) return;
+    await loadDirectory(submittedQuery, nextPage);
+  }
+
   const canGoNext = facilities.length === PAGE_SIZE;
   const firstResult = facilities.length ? (page - 1) * PAGE_SIZE + 1 : 0;
   const lastResult = (page - 1) * PAGE_SIZE + facilities.length;
@@ -84,23 +103,35 @@ export function FacilitySelectPage() {
   return (
     <main className="auth-page" aria-label="Facility selection" style={{ padding: "24px 14px", alignItems: "flex-start" }}>
       <section className="card" style={{ width: "min(1600px, 100%)", padding: 24, overflow: "hidden" }}>
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: 20 }}>
           <h1 style={{ marginBottom: 8 }}>Select facility</h1>
-          <p className="muted" style={{ margin: 0 }}>Your staff account has access to more than one facility. Select the facility where you are working now.</p>
+          <p className="muted" style={{ margin: 0 }}>Choose the hospital or health facility where you are working.</p>
         </div>
 
-        <form onSubmit={searchFacilities} style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search facility name, MFL code, county, sub-county or facility type…" aria-label="Search facilities" autoComplete="off" style={{ flex: "1 1 520px", minWidth: 0, height: 48, padding: "0 15px", border: "1px solid #cbd5e1", borderRadius: 10, fontSize: 15 }} />
-          <button type="submit" disabled={loading} style={{ height: 48, padding: "0 26px", border: 0, borderRadius: 10, fontWeight: 700 }}>{loading ? "Searching…" : "Search"}</button>
-          {submittedQuery && <button type="button" onClick={() => { setQuery(""); setSubmittedQuery(""); void loadDirectory("", 1); }} style={{ height: 48 }}>Clear</button>}
+        <form onSubmit={searchFacilities} style={{ marginBottom: 22 }}>
+          <label htmlFor="facility-search" style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Find your hospital or facility</label>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <input
+              id="facility-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Type your hospital or facility name and press Enter…"
+              aria-label="Hospital or facility name"
+              autoComplete="off"
+              autoFocus
+              style={{ flex: "1 1 560px", minWidth: 0, height: 50, padding: "0 16px", border: "1px solid #cbd5e1", borderRadius: 11, fontSize: 15 }}
+            />
+            <button type="submit" disabled={loading || selecting !== null} style={{ height: 50, padding: "0 28px", border: 0, borderRadius: 11, fontWeight: 700 }}>{loading ? "Finding…" : "Continue"}</button>
+          </div>
+          <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>Press Enter after typing the facility name. An exact or single matching facility opens its dashboard automatically.</p>
         </form>
 
         {error && <div className="error" role="alert" style={{ marginBottom: 16 }}>{error}</div>}
 
         {loading ? (
-          <div className="card" style={{ padding: 28, textAlign: "center" }}><p className="muted" style={{ margin: 0 }}>Loading facilities…</p></div>
+          <div className="card" style={{ padding: 28, textAlign: "center" }}><p className="muted" style={{ margin: 0 }}>Finding facilities…</p></div>
         ) : facilities.length === 0 ? (
-          <div className="card" style={{ padding: 28, textAlign: "center" }}><strong>No facility found</strong><p className="muted" style={{ marginBottom: 0 }}>Try the facility name, MFL code, county, sub-county or facility type.</p></div>
+          <div className="card" style={{ padding: 28, textAlign: "center" }}><strong>No facility found</strong><p className="muted" style={{ marginBottom: 0 }}>Try the hospital name, MFL code, county, sub-county or facility type.</p></div>
         ) : (
           <>
             <div className="facility-directory-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
