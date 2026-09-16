@@ -28,6 +28,7 @@ export function FacilitySelectPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selecting, setSelecting] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   async function loadDirectory(search: string, targetPage = 1, showSpinner = true): Promise<DirectoryFacility[]> {
     if (showSpinner) setLoading(true);
@@ -75,6 +76,21 @@ export function FacilitySelectPage() {
     await loadDirectory(value, 1);
   }
 
+  async function addAsNewFacility() {
+    const name = submittedQuery.trim();
+    if (!name || adding || selecting) return;
+    setAdding(true);
+    setError(null);
+    try {
+      const created = await api.addDirectoryFacility({ name });
+      await choose(created as DirectoryFacility);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message || err.code : "Unable to add this facility.");
+    } finally {
+      setAdding(false);
+    }
+  }
+
   async function changePage(nextPage: number) {
     if (nextPage < 1 || loading) return;
     await loadDirectory(submittedQuery, nextPage);
@@ -115,7 +131,15 @@ export function FacilitySelectPage() {
         {loading ? (
           <div className="card" style={{ padding: 28, textAlign: "center" }}><p className="muted" style={{ margin: 0 }}>Finding facilities…</p></div>
         ) : facilities.length === 0 ? (
-          <div className="card" style={{ padding: 28, textAlign: "center" }}><strong>No facility found</strong><p className="muted" style={{ marginBottom: 0 }}>Try the hospital name, MFL code, county, sub-county or facility type.</p></div>
+          <div className="card" style={{ padding: 28, textAlign: "center" }}>
+            <strong>No facility found</strong>
+            <p className="muted" style={{ marginBottom: submittedQuery ? 16 : 0 }}>Try the hospital name, MFL code, county, sub-county or facility type.</p>
+            {submittedQuery && (
+              <button type="button" onClick={() => void addAsNewFacility()} disabled={adding} style={{ minHeight: 42, padding: "0 20px", fontWeight: 700 }}>
+                {adding ? "Adding…" : `Add "${submittedQuery}" as a new facility`}
+              </button>
+            )}
+          </div>
         ) : (
           <>
             <div className="facility-directory-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
