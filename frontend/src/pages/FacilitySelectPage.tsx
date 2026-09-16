@@ -14,9 +14,82 @@ type DirectoryFacility = FacilityOption & {
   owner?: string | null;
   operation_status?: string | null;
   registration_number?: string | null;
+  source?: "local" | "kmhfr";
 };
 
+type KmhfrRecord = Record<string, unknown>;
+
 const PAGE_SIZE = 100;
+const KMHFR_ENDPOINTS = [
+  "https://api.kmhfr.health.go.ke/api/public/facilities/",
+  "https://api.kmhfr.health.go.ke/api/facilities/facilities/",
+];
+
+function textValue(item: KmhfrRecord, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const raw = item[key];
+    const value = raw && typeof raw === "object"
+      ? ((raw as Record<string, unknown>).name ?? (raw as Record<string, unknown>).label ?? (raw as Record<string, unknown>).value ?? (raw as Record<string, unknown>).code)
+      : raw;
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return null;
+}
+
+function normalizeKmhfrRecord(item: KmhfrRecord): DirectoryFacility | null {
+  const id = textValue(item, "id", "uuid");
+  const name = textValue(item, "name", "facility_official_name", "official_name", "facility_name");
+  if (!name) return null;
+  const code = textValue(item, "code", "mfl_code", "facility_code", "facility_code_number");
+  return {
+    facility_id: `kmhfr:${id || code || name}`,
+    facility_name: name,
+    facility_code: code,
+    registration_number: textValue(item, "registration_number", "registrationNo"),
+    county: textValue(item, "county", "county_name"),
+    sub_county: textValue(item, "sub_county", "subcounty", "sub_county_name"),
+    facility_type: textValue(item, "facility_type_name", "facility_type", "type"),
+    keph_level: textValue(item, "keph_level", "keph_level_name", "level"),
+    owner: textValue(item, "owner", "owner_name", "facility_owner"),
+    operation_status: textValue(item, "operation_status_name", "operation_status", "status") || "ACTIVE",
+    source: "kmhfr",
+  };
+}
+
+async function searchOfficialKmhfr(search: string): Promise<DirectoryFacility[]> {
+  const term = search.trim();
+  if (!term) return [];
+  for (const endpoint of KMHFR_ENDPOINTS) {
+    try {
+      const url = new URL(endpoint);
+      url.searchParams.set("search", term);
+      url.searchParams.set("page_size", String(PAGE_SIZE));
+      url.searchParams.set("page", "1");
+      const response = await fetch(url.toString(), {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) continue;
+      const payload: unknown = await response.json();
+      const results = Array.isArray(payload)
+        ? payload
+        : payload && typeof payload === "object" && Array.isArray((payload as KmhfrRecord).results)
+          ? (payload as KmhfrRecord).results as unknown[]
+          : payload && typeof payload === "object" && (payload as KmhfrRecord).data && typeof (payload as KmhfrRecord).data === "object" && Array.isArray(((payload as KmhfrRecord).data as KmhfrRecord).results)
+            ? ((payload as KmhfrRecord).data as KmhfrRecord).results as unknown[]
+            : [];
+      const normalized = results
+        .filter((item): item is KmhfrRecord => Boolean(item && typeof item === "object"))
+        .map(normalizeKmhfrRecord)
+        .filter((item): item is DirectoryFacility => Boolean(item));
+      if (normalized.length) return normalized;
+    } catch {
+      // The Ministry registry is sometimes unreachable from cloud hosts. The browser
+      // can still reach it in many networks, so try the alternate public endpoint.
+    }
+  }
+  return [];
+}
 
 export function FacilitySelectPage() {
   const auth = useAuth();
@@ -35,11 +108,27 @@ export function FacilitySelectPage() {
     try {
       const rows = await api.facilityDirectory(search, targetPage, PAGE_SIZE);
       const next = rows as DirectoryFacility[];
-      setFacilities(next);
-      setPage(targetPage);
+      if (next.length || !search.trim()) {
+        setFacilities(next.map((facility) => ({ ...facility, source: "local" })));
+        setPage(targetPage);
+        setError(null);
+        return next;
+      }
+      const official = await searchOfficialKmhfr(search);
+      setFacilities(official);
+      setPage(1);
       setError(null);
-      return next;
+      return official;
     } catch (err) {
+      if (search.trim()) {
+        const official = await searchOfficialKmhfr(search);
+        if (official.length) {
+          setFacilities(official);
+          setPage(1);
+          setError(null);
+          return official;
+        }
+      }
       setError(err instanceof ApiError ? err.message || err.code : "Unable to load facilities.");
       return [];
     } finally {
@@ -61,7 +150,18 @@ export function FacilitySelectPage() {
     setSelecting(facility.facility_id);
     setError(null);
     try {
-      await auth.selectFacility(facility);
+      let selected = facility;
+      if (facility.source === "kmhfr") {
+        const created = await api.addDirectoryFacility({
+          name: facility.facility_name,
+          facility_type: facility.facility_type || "HEALTH_FACILITY",
+          registration_number: facility.registration_number || facility.facility_code || null,
+          county: facility.county || null,
+          sub_county: facility.sub_county || null,
+        });
+        selected = { ...facility, ...created, source: "local" };
+      }
+      await auth.selectFacility(selected);
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message || err.code : "Unable to open this facility.");
@@ -96,7 +196,7 @@ export function FacilitySelectPage() {
     await loadDirectory(submittedQuery, nextPage);
   }
 
-  const canGoNext = facilities.length === PAGE_SIZE;
+  const canGoNext = facilities.length === PAGE_SIZE && !facilities.some((facility) => facility.source === "kmhfr");
   const firstResult = facilities.length ? (page - 1) * PAGE_SIZE + 1 : 0;
   const lastResult = (page - 1) * PAGE_SIZE + facilities.length;
 
