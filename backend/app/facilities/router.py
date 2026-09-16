@@ -156,7 +156,7 @@ def update_current_facility(payload: FacilityUpdate, facility_id: UUID = Depends
 @router.patch("/me/status", response_model=FacilityResponse)
 def change_current_facility_status(payload: FacilityStatusUpdate, facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("facilities.manage")), db: Session = Depends(get_db)) -> FacilityResponse:
     try:
-        return update_facility_status(db, facility_id, payload.status, reason=payload.status, actor_user_id=user.id)
+        return update_facility_status(db, facility_id, payload.status, reason=payload.reason, actor_user_id=user.id)
     except ValueError as exc:
         code = str(exc)
         raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "INVALID_FACILITY_STATUS": 400, "FACILITY_STATUS_UNCHANGED": 400, "INVALID_FACILITY_STATUS_TRANSITION": 409, "FACILITY_STATUS_REASON_REQUIRED": 400}.get(code, 400), detail=code) from exc
