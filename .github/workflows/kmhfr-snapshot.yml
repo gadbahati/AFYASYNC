@@ -32,7 +32,18 @@ jobs:
         with:
           python-version: '3.12'
       - name: Download and validate official KMHFR registry
-        run: python backend/app/scripts/update_kmhfr_snapshot_v5.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/app/scripts/update_kmhfr_snapshot_v5.py')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace(
+              'DIRECTORY_ENDPOINT = "https://kmhfr.health.go.ke/public/facilities"',
+              'DIRECTORY_ENDPOINT = "https://admin.kmhfltraining.health.go.ke/public/facilities"',
+          )
+          p.write_text(text, encoding='utf-8')
+          PY
+          python backend/app/scripts/update_kmhfr_snapshot_v5.py
       - name: Validate snapshot before publishing
         run: |
           python - <<'PY'
