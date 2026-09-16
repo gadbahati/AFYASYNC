@@ -71,24 +71,8 @@ export function FacilitySelectPage() {
   async function searchFacilities(event: React.FormEvent) {
     event.preventDefault();
     const value = query.trim();
-    if (!value) {
-      setSubmittedQuery("");
-      await loadDirectory("", 1);
-      return;
-    }
-
     setSubmittedQuery(value);
-    const results = await loadDirectory(value, 1);
-
-    // A direct facility name/code match opens the facility dashboard immediately.
-    const normalized = value.toLowerCase();
-    const exact = results.find((facility) =>
-      [facility.facility_name, facility.facility_code, facility.registration_number]
-        .filter(Boolean)
-        .some((candidate) => String(candidate).trim().toLowerCase() === normalized),
-    );
-    if (exact) await choose(exact);
-    else if (results.length === 1) await choose(results[0]);
+    await loadDirectory(value, 1);
   }
 
   async function changePage(nextPage: number) {
@@ -123,7 +107,7 @@ export function FacilitySelectPage() {
             />
             <button type="submit" disabled={loading || selecting !== null} style={{ height: 50, padding: "0 28px", border: 0, borderRadius: 11, fontWeight: 700 }}>{loading ? "Finding…" : "Continue"}</button>
           </div>
-          <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>Press Enter after typing the facility name. An exact or single matching facility opens its dashboard automatically.</p>
+          <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>Press Enter after typing the facility name. Your matching facility will appear below; select <strong>Open facility</strong> to continue.</p>
         </form>
 
         {error && <div className="error" role="alert" style={{ marginBottom: 16 }}>{error}</div>}
