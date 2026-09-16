@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PatientRecordSummaryResponse(BaseModel):
@@ -9,7 +9,7 @@ class PatientRecordSummaryResponse(BaseModel):
     patient: dict[str, Any]
     coverage: list[dict[str, Any]]
     encounters: list[dict[str, Any]]
-    care_plans: list[dict[str, Any]]
+    care_plans: list[dict[str, Any]] = Field(default_factory=list)
     laboratory: list[dict[str, Any]]
     prescriptions: list[dict[str, Any]]
     medication_actions: list[dict[str, Any]]
