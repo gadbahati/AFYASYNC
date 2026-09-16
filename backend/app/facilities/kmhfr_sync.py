@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import threading
 import time
 from math import ceil
 
 import httpx
+from bs4 import BeautifulSoup
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -18,9 +20,11 @@ logger = logging.getLogger("afyasync.facilities.kmhfr")
 SYNC_LOCK_KEY = "afyasync:kmhfr:facility-registry"
 DEFAULT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/public/facilities/"
 DIRECT_KMHFR_URL = "https://api.kmhfr.health.go.ke/api/facilities/facilities/"
+PUBLIC_DIRECTORY_URL = "https://kmhfr.health.go.ke/public/facilities"
+TRAINING_DIRECTORY_URL = "https://admin.kmhfltraining.health.go.ke/public/facilities"
 MAX_PAGES = 1000
-PAGE_SIZE = 100
-REQUEST_TIMEOUT = httpx.Timeout(connect=60.0, read=180.0, write=30.0, pool=30.0)
+PAGE_SIZE = 30
+REQUEST_TIMEOUT = httpx.Timeout(connect=45.0, read=90.0, write=30.0, pool=30.0)
 RETRY_INTERVAL_SECONDS = 60
 _sync_thread_lock = threading.Lock()
 _sync_running = False
@@ -84,14 +88,69 @@ def _advisory_unlock(db: Session) -> None:
     db.execute(text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), {"key": SYNC_LOCK_KEY})
 
 
+def _html_directory_page(html: str) -> list[dict]:
+    """Extract the visible facility cards from the KMHFR public directory."""
+    soup = BeautifulSoup(html, "html.parser")
+    excluded = {"Facilities", "Search for a Facility", "Facility Info", "Administrative Unit", "Services", "Facility Details", "Availability"}
+    records: list[dict] = []
+    seen: set[str] = set()
+    for heading in soup.find_all(["h2", "h3", "h4"]):
+        name = " ".join(heading.get_text(" ", strip=True).split())
+        if not name or name in excluded or len(name) < 2 or len(name) > 160:
+            continue
+        container = heading.parent
+        for _ in range(4):
+            if container is None:
+                break
+            text_value = " ".join(container.get_text(" ", strip=True).split())
+            if "County:" in text_value and "Level" in text_value and ("Operational" in text_value or "Non-Operational" in text_value or "Closed" in text_value):
+                break
+            container = container.parent
+        if container is None:
+            continue
+        text_value = " ".join(container.get_text(" ", strip=True).split())
+        if "County:" not in text_value or "Level" not in text_value:
+            continue
+        if name in seen:
+            continue
+        seen.add(name)
+        county_match = re.search(r"County:\s*([^:]+?)(?=\s+Sub-?county:|\s+Ward:|\s+Constituency:|$)", text_value, re.I)
+        sub_match = re.search(r"Sub-?county:\s*([^:]+?)(?=\s+Ward:|\s+Constituency:|$)", text_value, re.I)
+        type_match = re.search(r"\b([A-Za-z][A-Za-z /&-]{2,60})\s+Level\s+[2-6]\b", text_value)
+        level_match = re.search(r"Level\s+([2-6])", text_value, re.I)
+        code_match = re.findall(r"#\s*(\d+)", text_value)
+        status = "ACTIVE" if re.search(r"\bOperational\b", text_value, re.I) and not re.search(r"Non-Operational", text_value, re.I) else "INACTIVE"
+        records.append({
+            "name": name,
+            "code": code_match[0] if code_match else None,
+            "county": county_match.group(1).strip() if county_match else None,
+            "sub_county": sub_match.group(1).strip() if sub_match else None,
+            "facility_type": type_match.group(1).strip() if type_match else "HEALTH_FACILITY",
+            "operation_status": "Operational" if status == "ACTIVE" else "Non-Operational",
+            "keph_level": level_match.group(1) if level_match else None,
+        })
+    return records
+
+
+def _fetch_html_page(client: httpx.Client, page: int) -> tuple[dict, int | None, str]:
+    for endpoint, source in ((PUBLIC_DIRECTORY_URL, "official_public_directory"), (TRAINING_DIRECTORY_URL, "official_kmhfl_training_directory")):
+        try:
+            response = client.get(endpoint, params={"page": page}, headers={"Accept": "text/html"})
+            response.raise_for_status()
+            records = _html_directory_page(response.text)
+            if records:
+                logger.info("KMHFR_HTML_PAGE_SOURCE page=%s source=%s records=%s", page, source, len(records))
+                return {"results": records}, None, source
+        except Exception as exc:
+            logger.warning("KMHFR_HTML_PAGE_FAILED page=%s source=%s error=%s", page, source, type(exc).__name__)
+    raise RuntimeError(f"KMHFR_HTML_REQUEST_FAILED page={page}")
+
+
 def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | None, str]:
-    candidates = [
-        (DEFAULT_KMHFR_URL, "official_public_api"),
-        (DIRECT_KMHFR_URL, "official_facilities_api"),
-    ]
+    candidates = [(DEFAULT_KMHFR_URL, "official_public_api"), (DIRECT_KMHFR_URL, "official_facilities_api")]
     last_error: Exception | None = None
     for endpoint, source in candidates:
-        for attempt in range(1, 4):
+        for attempt in range(1, 3):
             try:
                 response = client.get(endpoint, params={"page_size": PAGE_SIZE, "page": page, "format": "json"})
                 response.raise_for_status()
@@ -105,14 +164,14 @@ def _fetch_page(client: httpx.Client, page: int) -> tuple[dict | list, int | Non
                         total_pages = ceil(count / PAGE_SIZE)
                     logger.info("KMHFR_PAGE_SOURCE page=%s source=%s count=%s total_pages=%s", page, source, count, total_pages)
                     return payload, int(total_pages) if total_pages else None, source
-                logger.info("KMHFR_PAGE_SOURCE page=%s source=%s", page, source)
                 return payload, None, source
             except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError, ValueError) as exc:
                 last_error = exc
                 logger.warning("KMHFR_PAGE_ATTEMPT_FAILED page=%s source=%s attempt=%s error=%s", page, source, attempt, type(exc).__name__)
-                if attempt < 3:
-                    time.sleep(2 ** (attempt - 1))
-    raise RuntimeError(f"KMHFR_REQUEST_FAILED page={page}: {last_error}") from last_error
+                if attempt < 2:
+                    time.sleep(1)
+    logger.warning("KMHFR_API_UNAVAILABLE page=%s; trying official public directory", page)
+    return _fetch_html_page(client, page)
 
 
 def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
@@ -127,17 +186,18 @@ def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
             _last_sync_result = result
             return result
         logger.info("KMHFR_SYNC_START page_size=%s force=%s", PAGE_SIZE, force)
-        with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True, headers={"Accept": "application/json", "User-Agent": "AfyaSync/1.0 national-facility-sync"}) as client:
+        with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True, headers={"User-Agent": "AfyaSync/1.0 national-facility-sync"}) as client:
             page = 1
             total_pages: int | None = None
+            html_mode = False
             while page <= MAX_PAGES:
                 payload, discovered_pages, source = _fetch_page(client, page)
                 if discovered_pages:
                     total_pages = discovered_pages
+                if source.startswith("official_public_directory") or source.startswith("official_kmhfl_training"):
+                    html_mode = True
                 results = payload.get("results", []) if isinstance(payload, dict) else payload
-                if not isinstance(results, list):
-                    raise ValueError("KMHFR_INVALID_RESULTS")
-                if not results:
+                if not isinstance(results, list) or not results:
                     break
                 for item in results:
                     if isinstance(item, dict):
@@ -148,6 +208,8 @@ def sync_all(*, force: bool = False) -> dict[str, int | str | bool]:
                 pages += 1
                 if pages % 10 == 0:
                     logger.info("KMHFR_SYNC_PROGRESS pages=%s seen=%s changed=%s total_pages=%s source=%s", pages, seen, changed, total_pages, source)
+                if html_mode and len(results) < PAGE_SIZE:
+                    break
                 if total_pages and page >= total_pages:
                     break
                 if len(results) < PAGE_SIZE and not total_pages:
