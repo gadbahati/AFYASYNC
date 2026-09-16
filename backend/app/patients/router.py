@@ -30,13 +30,7 @@ def _response(patient, afya_id: str | None = None) -> PatientResponse:
 
 
 def _degraded_patient_record(db: Session, patient_id: UUID, facility_id: UUID) -> dict | None:
-    """Return a truthful core record when an optional longitudinal section fails.
-
-    This is deliberately not synthetic data: identity, Afya ID, enrollment and
-    encounters are read from the database. Optional sections are empty only when
-    the full aggregation cannot be completed, so the journey page remains usable
-    and staff can still open the independent encounter/department workflows.
-    """
+    """Return a truthful core record when an optional longitudinal section fails."""
     db.rollback()
     patient = get_patient_for_facility(db, patient_id, facility_id)
     if patient is None:
@@ -89,7 +83,7 @@ def register_patient(payload: PatientCreate, user: User = Depends(require_permis
 
 
 @router.get("", response_model=PatientListResponse)
-def list_patient_records(limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), enrollment_status: Literal["ACTIVE", "INACTIVE"] | None = Query(default="ACTIVE"), user: User = Depends(require_permission("patients.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> PatientListResponse:
+def list_patient_records(limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0), enrollment_status: Literal["ACTIVE", "INACTIVE"] | None = Query(default="ACTIVE"), user: User = Depends(require_permission("patients.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> PatientListResponse:
     try:
         results, total = list_patients_for_facility(db, facility_id, limit=limit, offset=offset, enrollment_status=enrollment_status)
     except ValueError as exc:
@@ -193,8 +187,6 @@ def get_complete_patient_record(patient_id: UUID, user: User = Depends(require_p
         record = get_patient_record_summary(db, patient_id, facility_id)
         if record is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found at this facility."})
-        # Materialize and validate before the audit commit. SQLAlchemy expires ORM
-        # state on commit, which must never be allowed to break a patient journey.
         validated = PatientRecordSummaryResponse.model_validate(record)
         record_audit(db, action="VIEW_COMPLETE_PATIENT_RECORD", resource_type="PERSON", resource_id=str(patient_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"sections": ["identity", "coverage", "encounters", "laboratory", "prescriptions", "medication_actions", "admissions", "preauthorizations", "billing", "claims", "appointments", "queue", "referrals", "transfers"]}, commit=True)
         return validated
@@ -204,12 +196,9 @@ def get_complete_patient_record(patient_id: UUID, user: User = Depends(require_p
         fallback = _degraded_patient_record(db, patient_id, facility_id)
         if fallback is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found at this facility."})
-        # Do not manufacture clinical/financial data. The fallback contains only
-        # persisted identity and encounters and keeps the journey navigable while
-        # the failed optional aggregation is isolated from the request transaction.
         validated = PatientRecordSummaryResponse.model_validate(fallback)
         try:
-            record_audit(db, action="VIEW_COMPLETE_PATIENT_RECORD_DEGRADED", resource_type="PERSON", resource_id=str(patient_id), result="PARTIAL", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"reason": "optional_patient_record_section_failed"}, commit=True)
+            record_audit(db, action="VIEW_COMPLETE_PATIENT_RECORD_DEGRADED", resource_type="PERSON", resource_id=str(patient_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"degraded": True, "sections": ["identity", "encounters"]}, commit=True)
         except Exception:
             db.rollback()
         return validated
