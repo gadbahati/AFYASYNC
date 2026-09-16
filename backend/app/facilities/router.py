@@ -1,5 +1,6 @@
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
@@ -8,10 +9,50 @@ from app.auth.schemas import FacilityOption
 from app.database import get_db
 from app.facilities.kmhfr_registry import start_sync, sync_state
 from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
-from app.facilities.service import create_department, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, update_department_status, update_facility, update_facility_status
+from app.facilities.service import _sync_kmhfr_page, create_department, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, update_department_status, update_facility, update_facility_status
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/facilities", tags=["Facilities"])
+
+_KMHFR_SEARCH_ENDPOINTS = (
+    "https://api.kmhfr.health.go.ke/api/public/facilities/",
+    "https://api.kmhfr.health.go.ke/api/facilities/facilities/",
+)
+
+
+def _lookup_kmhfr_facilities(db: Session, search: str) -> int:
+    """Resolve a typed facility name/code directly against the official KMHFR registry.
+
+    The national background sync is intentionally asynchronous. This targeted lookup
+    makes the facility picker useful immediately when a requested facility has not
+    reached the local database yet.
+    """
+    term = search.strip()
+    if not term:
+        return 0
+
+    headers = {"Accept": "application/json", "User-Agent": "AfyaSync/1.0 facility-search"}
+    for endpoint in _KMHFR_SEARCH_ENDPOINTS:
+        for parameter in ("name", "search"):
+            try:
+                with httpx.Client(timeout=10.0, follow_redirects=True, headers=headers) as client:
+                    response = client.get(endpoint, params={parameter: term, "page_size": 30, "page": 1, "format": "json"})
+                    response.raise_for_status()
+                    payload = response.json()
+                    results = payload.get("results", payload if isinstance(payload, list) else [])
+                    if not isinstance(results, list) or not results:
+                        continue
+                    imported = 0
+                    for item in results:
+                        if isinstance(item, dict) and _sync_kmhfr_page(item, db):
+                            imported += 1
+                    db.commit()
+                    return len(results)
+            except Exception:
+                db.rollback()
+                continue
+    return 0
+
 
 @router.post("", response_model=FacilityResponse, status_code=status.HTTP_201_CREATED)
 def register_facility(payload: FacilityCreate, user: User = Depends(require_permission("facilities.create")), db: Session = Depends(get_db)) -> FacilityResponse:
@@ -30,7 +71,12 @@ def get_facility_directory(
     _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[FacilityOption]:
+    # Keep the national import running in the background, but resolve an active
+    # typed search directly against KMHFR so a facility can be opened before the
+    # full registry has finished importing locally.
     start_sync()
+    if search and search.strip():
+        _lookup_kmhfr_facilities(db, search)
     offset = (page - 1) * page_size
     rows = list_facility_directory(db, search=search, limit=page_size, offset=offset)
     total_rows = list_facility_directory(db, search=search, limit=1, offset=0, count_only=True)
@@ -88,7 +134,7 @@ def update_current_facility(payload: FacilityUpdate, facility_id: UUID = Depends
 @router.patch("/me/status", response_model=FacilityResponse)
 def change_current_facility_status(payload: FacilityStatusUpdate, facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("facilities.manage")), db: Session = Depends(get_db)) -> FacilityResponse:
     try:
-        return update_facility_status(db, facility_id, payload.status, reason=payload.reason, actor_user_id=user.id)
+        return update_facility_status(db, facility_id, payload.status, reason=reason, actor_user_id=user.id)
     except ValueError as exc:
         code = str(exc)
         raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "INVALID_FACILITY_STATUS": 400, "FACILITY_STATUS_UNCHANGED": 400, "INVALID_FACILITY_STATUS_TRANSITION": 409, "FACILITY_STATUS_REASON_REQUIRED": 400}.get(code, 400), detail=code) from exc
@@ -117,4 +163,4 @@ def change_department_status(facility_id: UUID, department_id: UUID, payload: De
         return update_department_status(db, facility_id, department_id, payload.status, actor_user_id=user.id)
     except ValueError as exc:
         code = str(exc)
-        raise HTTPException(status_code={"DEPARTMENT_NOT_FOUND": 404, "INVALID_DEPARTMENT_STATUS": 400, "DEPARTMENT_STATUS_UNCHANGED": 400, "FACILITY_NOT_FOUND": 404}.get(code, 400), detail=code) from exc
+        raise HTTPException(status_code={"DEPARTMENT_NOT_FOUND": 404, "INVALID_DEPARTMENT_STATUS": 400, "FACILITY_NOT_FOUND": 404}.get(code, 400), detail=code) from exc
