@@ -5,12 +5,13 @@ import json
 import logging
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import func, select, text
 
 from app.database import SessionLocal
-from app.facilities.models import Facility
+from app.facilities.models import Facility, FacilityRegistryHistory, FacilityRegistryRecord
 
 logger = logging.getLogger("afyasync.facilities.kmhfr")
 LOCK_KEY = "afyasync:kmhfr:facility-registry"
@@ -21,12 +22,8 @@ _lock = threading.Lock()
 _running = False
 _retry_started = False
 _state: dict[str, int | bool | str] = {
-    "running": False,
-    "pages": 0,
-    "seen": 0,
-    "changed": 0,
-    "message": "not_started",
-    "source": "none",
+    "running": False, "pages": 0, "seen": 0, "changed": 0,
+    "message": "not_started", "source": "none", "last_success_at": ""
 }
 
 
@@ -41,82 +38,111 @@ def _value(item: dict, *keys: str) -> str | None:
 
 
 def _active(item: dict) -> bool:
-    return (_value(item, "operation_status", "operation_status_name", "status") or "Operational").lower() in {
-        "operational", "active", "open", "operating"
-    }
+    return (_value(item, "operation_status", "operation_status_name", "status") or "Operational").lower() in {"operational", "active", "open", "operating"}
 
 
 def _facility_id(key: str) -> str:
     return "KMHFR-" + hashlib.sha256(key.encode()).hexdigest()[:25]
 
 
+def _number(item: dict, *keys: str) -> float | None:
+    value = _value(item, *keys)
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_values(item: dict) -> dict:
+    return {
+        "source_id": _value(item, "id", "uuid", "facility_id"),
+        "mfl_code": _value(item, "code", "mfl_code", "facility_code", "facility_code_number"),
+        "keph_level": _value(item, "keph_level", "keph_level_name", "level"),
+        "ownership": _value(item, "owner_name", "owner", "ownership_name", "ownership"),
+        "ward": _value(item, "ward_name", "ward"),
+        "constituency": _value(item, "constituency_name", "constituency"),
+        "address": _value(item, "address", "physical_address", "location"),
+        "phone": _value(item, "phone", "telephone", "phone_number", "mobile"),
+        "email": _value(item, "email", "email_address"),
+        "latitude": _number(item, "latitude", "lat"),
+        "longitude": _number(item, "longitude", "lng", "lon"),
+        "services": item.get("services") if isinstance(item.get("services"), (list, dict)) else None,
+    }
+
+
 def _upsert(db, item: dict) -> bool:
-    code = _value(item, "code", "mfl_code", "facility_code", "facility_code_number")
-    external = _value(item, "id", "uuid", "facility_id")
-    name = _value(item, "name", "facility_official_name", "official_name")
+    name = _value(item, "name", "facility_official_name", "official_name", "facility_unique_name")
     if not name:
         return False
-    key = code or external or f"{name}|{_value(item, 'county_name', 'county') or ''}|{_value(item, 'sub_county_name', 'sub_county', 'subcounty') or ''}"
+    registry = _record_values(item)
+    registration = registry["mfl_code"] or registry["source_id"]
     county = _value(item, "county_name", "county")
     sub_county = _value(item, "sub_county_name", "sub_county", "subcounty")
     kind = _value(item, "facility_type_name", "facility_type", "type") or "HEALTH_FACILITY"
-    registration = code or external
+    active = _active(item)
 
-    existing = db.scalar(select(Facility).where(Facility.registration_number == registration).limit(1)) if registration else None
+    facility = db.scalar(select(Facility).where(Facility.registration_number == registration).limit(1)) if registration else None
+    if facility is None:
+        facility = db.scalar(select(Facility).where(func.lower(Facility.name) == name.lower(), func.lower(func.coalesce(Facility.county, "")) == (county or "").lower()).limit(1))
+
+    action = "UPDATED"
+    if facility is None:
+        identity = registration or f"{name}|{county or ''}|{sub_county or ''}"
+        facility = Facility(facility_id=_facility_id(identity), name=name, facility_type=kind, registration_number=registration, county=county, sub_county=sub_county, status="ACTIVE" if active else "INACTIVE")
+        db.add(facility)
+        db.flush()
+        action = "CREATED"
+        before = None
+    else:
+        before = {"name": facility.name, "facility_type": facility.facility_type, "registration_number": facility.registration_number, "county": facility.county, "sub_county": facility.sub_county, "status": facility.status}
+        changed = False
+        for field, value in {"name": name, "facility_type": kind, "county": county, "sub_county": sub_county, "status": "ACTIVE" if active else "INACTIVE", "registration_number": registration}.items():
+            if value is not None and getattr(facility, field) != value:
+                setattr(facility, field, value)
+                changed = True
+        if not changed:
+            action = "SEEN"
+
+    existing = db.scalar(select(FacilityRegistryRecord).where(FacilityRegistryRecord.facility_id == facility.id).limit(1))
+    now = datetime.now(timezone.utc)
+    full_after = {"name": name, "facility_type": kind, "registration_number": registration, "county": county, "sub_county": sub_county, "status": "ACTIVE" if active else "INACTIVE", **registry}
     if existing is None:
-        existing = db.scalar(
-            select(Facility)
-            .where(
-                func.lower(Facility.name) == name.lower(),
-                func.lower(func.coalesce(Facility.county, "")) == (county or "").lower(),
-            )
-            .limit(1)
-        )
+        existing = FacilityRegistryRecord(facility_id=facility.id, source="KMHFR", **registry, raw_record=item, last_seen_at=now)
+        db.add(existing)
+        if action == "SEEN":
+            action = "CREATED"
+        changed_fields = sorted(full_after.keys())
+    else:
+        old = {column: getattr(existing, column) for column in registry}
+        changed_fields = sorted(column for column in registry if old.get(column) != registry[column])
+        if existing.raw_record != item:
+            changed_fields.append("raw_record")
+        existing.source_id = registry["source_id"]
+        existing.mfl_code = registry["mfl_code"]
+        existing.keph_level = registry["keph_level"]
+        existing.ownership = registry["ownership"]
+        existing.ward = registry["ward"]
+        existing.constituency = registry["constituency"]
+        existing.address = registry["address"]
+        existing.phone = registry["phone"]
+        existing.email = registry["email"]
+        existing.latitude = registry["latitude"]
+        existing.longitude = registry["longitude"]
+        existing.services = registry["services"]
+        existing.raw_record = item
+        existing.last_seen_at = now
+        if changed_fields and action == "SEEN":
+            action = "UPDATED"
 
-    if existing is None:
-        db.add(
-            Facility(
-                facility_id=_facility_id(key),
-                name=name,
-                facility_type=kind,
-                registration_number=registration,
-                county=county,
-                sub_county=sub_county,
-                status="ACTIVE" if _active(item) else "INACTIVE",
-            )
-        )
-        return True
-
-    changed = False
-    values = {
-        "name": name,
-        "facility_type": kind,
-        "county": county,
-        "sub_county": sub_county,
-        "status": "ACTIVE" if _active(item) else "INACTIVE",
-    }
-    if registration:
-        values["registration_number"] = registration
-    for field, value in values.items():
-        if value is not None and getattr(existing, field) != value:
-            setattr(existing, field, value)
-            changed = True
-    return changed
+    if action != "SEEN":
+        db.add(FacilityRegistryHistory(facility_id=facility.id, source="KMHFR", action=action, changed_fields=changed_fields, before_record=before, after_record=full_after))
+    return action != "SEEN"
 
 
 def _live_sync() -> dict[str, int | bool | str]:
-    """Use the live official KMHFR API when a GitHub snapshot is unavailable."""
     from app.facilities.kmhfr_sync import sync_all as sync_live
-
     result = sync_live(force=True)
-    return {
-        "running": bool(result.get("running", False)),
-        "pages": int(result.get("pages", 0)),
-        "seen": int(result.get("seen", 0)),
-        "changed": int(result.get("changed", 0)),
-        "message": str(result.get("message", "unknown")),
-        "source": "official_kmhfr_api",
-    }
+    return {"running": bool(result.get("running", False)), "pages": int(result.get("pages", 0)), "seen": int(result.get("seen", 0)), "changed": int(result.get("changed", 0)), "message": str(result.get("message", "unknown")), "source": "official_kmhfr_api", "last_success_at": ""}
 
 
 def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
@@ -125,26 +151,18 @@ def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
     seen = changed = 0
     locked = False
     try:
+        locked = bool(db.execute(text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"), {"key": LOCK_KEY}).scalar())
+        if not locked:
+            return {"running": True, "pages": 0, "seen": 0, "changed": 0, "message": "already_running", "source": "snapshot"}
         if not SNAPSHOT.exists():
             logger.warning("KMHFR snapshot unavailable; falling back to live official KMHFR API")
             _state = _live_sync()
             return _state
-
-        locked = bool(
-            db.execute(
-                text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"),
-                {"key": LOCK_KEY},
-            ).scalar()
-        )
-        if not locked:
-            return {"running": True, "pages": 0, "seen": 0, "changed": 0, "message": "already_running", "source": "snapshot"}
-
         with SNAPSHOT.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
         records = payload.get("records") if isinstance(payload, dict) else payload
         if not isinstance(records, list) or len(records) < MIN_SNAPSHOT_RECORDS:
             raise RuntimeError(f"KMHFR_SNAPSHOT_INVALID:{len(records) if isinstance(records, list) else 0}")
-
         logger.info("KMHFR_SNAPSHOT_IMPORT_START records=%s source=%s", len(records), payload.get("source") if isinstance(payload, dict) else "unknown")
         for item in records:
             if isinstance(item, dict):
@@ -156,13 +174,13 @@ def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
                 if seen % 5000 == 0:
                     logger.info("KMHFR_SNAPSHOT_IMPORT_PROGRESS seen=%s changed=%s", seen, changed)
         db.commit()
-
-        _state = {"running": False, "pages": 1, "seen": seen, "changed": changed, "message": "complete", "source": "official_kmhfr_snapshot"}
+        timestamp = datetime.now(timezone.utc).isoformat()
+        _state = {"running": False, "pages": 1, "seen": seen, "changed": changed, "message": "complete", "source": "official_kmhfr_snapshot", "last_success_at": timestamp}
         logger.info("KMHFR_SNAPSHOT_IMPORT_COMPLETE seen=%s changed=%s", seen, changed)
         return _state
     except Exception as exc:
         db.rollback()
-        _state = {"running": False, "pages": 0, "seen": seen, "changed": changed, "message": f"failed:{type(exc).__name__}", "source": "snapshot"}
+        _state = {"running": False, "pages": 0, "seen": seen, "changed": changed, "message": f"failed:{type(exc).__name__}", "source": "snapshot", "last_success_at": str(_state.get("last_success_at", ""))}
         logger.exception("KMHFR_REGISTRY_IMPORT_FAILED seen=%s", seen)
         return _state
     finally:
@@ -180,7 +198,6 @@ def start_sync() -> bool:
         if _running:
             return False
         _running = True
-
     def worker():
         global _running
         try:
@@ -188,7 +205,6 @@ def start_sync() -> bool:
         finally:
             with _lock:
                 _running = False
-
     threading.Thread(target=worker, name="kmhfr-registry-import", daemon=True).start()
     return True
 
@@ -199,7 +215,6 @@ def start_sync_retry_loop() -> bool:
         if _retry_started:
             return False
         _retry_started = True
-
     def worker():
         time.sleep(10)
         while True:
@@ -215,7 +230,6 @@ def start_sync_retry_loop() -> bool:
             except Exception:
                 logger.exception("KMHFR_REGISTRY_RETRY_CHECK_FAILED")
             time.sleep(60)
-
     threading.Thread(target=worker, name="kmhfr-registry-retry", daemon=True).start()
     return True
 
@@ -223,4 +237,5 @@ def start_sync_retry_loop() -> bool:
 def sync_state(db) -> dict[str, int | bool | str]:
     active = db.scalar(select(func.count(Facility.id)).where(Facility.status == "ACTIVE")) or 0
     total = db.scalar(select(func.count(Facility.id))) or 0
-    return {"active_facilities": int(active), "total_facilities": int(total), "sync_running": _running, **_state}
+    registry = db.scalar(select(func.count(FacilityRegistryRecord.id))) or 0
+    return {"active_facilities": int(active), "total_facilities": int(total), "registry_records": int(registry), "sync_running": _running, **_state}
