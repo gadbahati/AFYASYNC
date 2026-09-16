@@ -5,3 +5,5 @@ This file intentionally triggers the authoritative KMHFR snapshot workflow when 
 The workflow downloads the live official Kenya Master Health Facility Registry, validates the complete dataset, and publishes the snapshot used by AfyaSync.
 
 Refresh requested: 2026-09-16 — populate the national facility directory now.
+
+Retry after switching the fallback directory endpoint to the active Ministry of Health KMHFR public directory.
