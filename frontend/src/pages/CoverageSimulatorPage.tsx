@@ -38,7 +38,7 @@ export function CoverageSimulatorPage() {
         membership_number: membership.trim() || null,
         lines,
       });
-      setResult(res);
+      setResult(res as SimResult);
     } catch (err) {
       setError(err instanceof ApiError ? err.code : "SIMULATE_FAILED");
     } finally {
