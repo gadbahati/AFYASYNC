@@ -27,12 +27,9 @@ def _lookup_kmhfr_facilities(db: Session, search: str) -> int:
         return 0
 
     headers = {"Accept": "application/json", "User-Agent": "AfyaSync/1.0 facility-search"}
-    # KMHFR's public registry supports full-text `search`. Do not use the
-    # legacy `name` parameter first: some registry deployments ignore it and
-    # return the first page, which made AfyaSync appear to find only local rows.
     for endpoint in _KMHFR_SEARCH_ENDPOINTS:
         try:
-            with httpx.Client(timeout=15.0, follow_redirects=True, headers=headers) as client:
+            with httpx.Client(timeout=3.0, follow_redirects=True, headers=headers) as client:
                 response = client.get(endpoint, params={"search": term, "page_size": 100, "page": 1})
                 response.raise_for_status()
                 payload = response.json()
@@ -89,10 +86,18 @@ def get_facility_directory(
     db: Session = Depends(get_db),
 ) -> list[FacilityOption]:
     start_sync()
-    if search and search.strip():
-        _lookup_kmhfr_facilities(db, search)
     offset = (page - 1) * page_size
-    rows = list_facility_directory(db, search=search, limit=page_size, offset=offset)
+    if search and search.strip():
+        # Always serve a local match immediately. Only consult the official
+        # registry when the local directory has no matching record.
+        local_rows = list_facility_directory(db, search=search, limit=page_size, offset=offset)
+        if local_rows:
+            rows = local_rows
+        else:
+            _lookup_kmhfr_facilities(db, search)
+            rows = list_facility_directory(db, search=search, limit=page_size, offset=offset)
+    else:
+        rows = list_facility_directory(db, search=search, limit=page_size, offset=offset)
     total_rows = list_facility_directory(db, search=search, limit=1, offset=0, count_only=True)
     response.headers["X-Facility-Total"] = str(total_rows)
     response.headers["X-Facility-Page"] = str(page)
@@ -101,9 +106,7 @@ def get_facility_directory(
 
 @router.post("/directory", response_model=FacilityOption, status_code=status.HTTP_201_CREATED)
 def add_directory_facility(payload: FacilityQuickCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> FacilityOption:
-    """Let a user add a facility straight from the 'Select facility' search
-    screen when it isn't already in the directory. No facility context is
-    required yet since this runs before the user has picked one."""
+    """Let a user add a facility straight from the 'Select facility' search screen when it isn't already in the directory."""
     facility = create_directory_facility(db, payload.model_dump(), actor_user_id=user.id)
     return FacilityOption(facility_id=facility.id, facility_name=facility.name, county=facility.county, sub_county=facility.sub_county, facility_type=facility.facility_type, registration_number=facility.registration_number)
 
