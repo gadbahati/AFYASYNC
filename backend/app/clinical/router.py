@@ -13,7 +13,9 @@ from app.database import get_db
 from app.encounters.models import Encounter
 from app.rbac.models import Staff, User
 
-router = APIRouter(prefix="/api/v1/encounters", tags=["Clinical"])
+router = APIRouter()
+encounter_router = APIRouter(prefix="/api/v1/encounters", tags=["Clinical"])
+care_plan_router = APIRouter(prefix="/api/v1/patients", tags=["Care Plans"])
 
 
 def _encounter(db: Session, encounter_id: UUID, facility_id: UUID) -> Encounter:
@@ -29,7 +31,7 @@ def _staff(db: Session, user: User, facility_id: UUID) -> Staff:
     return staff
 
 
-@router.get("/{encounter_id}/clinical", response_model=ClinicalTimelineSummary)
+@encounter_router.get("/{encounter_id}/clinical", response_model=ClinicalTimelineSummary)
 def get_clinical_timeline(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> ClinicalTimelineSummary:
     try:
         summary = get_encounter_clinical_summary(db, encounter_id, facility_id)
@@ -44,28 +46,28 @@ def get_clinical_timeline(encounter_id: UUID, user: User = Depends(require_permi
         raise HTTPException(status_code=400, detail=code) from err
 
 
-@router.post("/{encounter_id}/vitals", response_model=VitalResponse, status_code=status.HTTP_201_CREATED)
+@encounter_router.post("/{encounter_id}/vitals", response_model=VitalResponse, status_code=status.HTTP_201_CREATED)
 def create_vitals(encounter_id: UUID, payload: VitalCreate, user: User = Depends(require_permission("clinical.vitals.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> VitalResponse:
     encounter = _encounter(db, encounter_id, facility_id)
     try: return record_vitals(db, encounter.id, _staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
     except ValueError as err: raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/{encounter_id}/consultation", response_model=ConsultationResponse)
+@encounter_router.post("/{encounter_id}/consultation", response_model=ConsultationResponse)
 def save_consultation(encounter_id: UUID, payload: ConsultationCreate, user: User = Depends(require_permission("clinical.consultation.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> ConsultationResponse:
     encounter = _encounter(db, encounter_id, facility_id)
     try: return create_or_update_consultation(db, encounter.id, _staff(db, user, facility_id).id, payload.model_dump(), actor_user_id=user.id)
     except ValueError as err: raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/{encounter_id}/diagnoses", response_model=DiagnosisResponse, status_code=status.HTTP_201_CREATED)
+@encounter_router.post("/{encounter_id}/diagnoses", response_model=DiagnosisResponse, status_code=status.HTTP_201_CREATED)
 def create_diagnosis(encounter_id: UUID, payload: DiagnosisCreate, user: User = Depends(require_permission("clinical.diagnosis.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> DiagnosisResponse:
     encounter = _encounter(db, encounter_id, facility_id)
     try: return add_diagnosis(db, encounter.id, _staff(db, user, facility_id).id, payload.model_dump(), actor_user_id=user.id)
     except ValueError as err: raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.get("/patients/{patient_id}/care-plans", response_model=list[CarePlanResponse])
+@care_plan_router.get("/{patient_id}/care-plans", response_model=list[CarePlanResponse])
 def get_patient_care_plans(patient_id: UUID, status_filter: str | None = Query(default=None, alias="status", pattern="^(ACTIVE|COMPLETED|CANCELLED)$"), user: User = Depends(require_permission("clinical.care_plan.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     try:
         plans = list_care_plans(db, patient_id, facility_id, status_filter)
@@ -76,7 +78,7 @@ def get_patient_care_plans(patient_id: UUID, status_filter: str | None = Query(d
         raise HTTPException(status_code=404 if code in {"PATIENT_NOT_FOUND", "PATIENT_NOT_IN_FACILITY"} else 400, detail=code) from exc
 
 
-@router.post("/patients/{patient_id}/care-plans", response_model=CarePlanResponse, status_code=status.HTTP_201_CREATED)
+@care_plan_router.post("/{patient_id}/care-plans", response_model=CarePlanResponse, status_code=status.HTTP_201_CREATED)
 def create_patient_care_plan(patient_id: UUID, payload: CarePlanCreate, user: User = Depends(require_permission("clinical.care_plan.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     try:
         return create_care_plan(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
@@ -85,7 +87,7 @@ def create_patient_care_plan(patient_id: UUID, payload: CarePlanCreate, user: Us
         raise HTTPException(status_code=404 if code in {"PATIENT_NOT_FOUND", "PATIENT_NOT_IN_FACILITY", "ENCOUNTER_NOT_FOUND"} else 403 if code == "FACILITY_ACCESS_DENIED" else 400, detail=code) from exc
 
 
-@router.patch("/patients/{patient_id}/care-plans/{care_plan_id}", response_model=CarePlanResponse)
+@care_plan_router.patch("/{patient_id}/care-plans/{care_plan_id}", response_model=CarePlanResponse)
 def update_patient_care_plan(patient_id: UUID, care_plan_id: UUID, payload: CarePlanUpdate, user: User = Depends(require_permission("clinical.care_plan.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     plan = db.get(CarePlan, care_plan_id)
     if plan is None or plan.patient_id != patient_id:
@@ -95,3 +97,7 @@ def update_patient_care_plan(patient_id: UUID, care_plan_id: UUID, payload: Care
     except ValueError as exc:
         code = str(exc)
         raise HTTPException(status_code=409 if code == "INVALID_CARE_PLAN_TRANSITION" else 403 if code == "FACILITY_ACCESS_DENIED" else 404 if code == "ENCOUNTER_NOT_FOUND" else 400, detail=code) from exc
+
+
+router.include_router(encounter_router)
+router.include_router(care_plan_router)
