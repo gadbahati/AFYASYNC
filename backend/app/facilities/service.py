@@ -73,6 +73,30 @@ def create_facility(db: Session, data: dict, *, actor_user_id: UUID | None = Non
     raise RuntimeError("FACILITY_ID_ALLOCATION_FAILED")
 
 
+def create_directory_facility(db: Session, data: dict, *, actor_user_id: UUID | None = None) -> Facility:
+    """Add a facility from the onboarding facility-select screen when a search
+    finds nothing. Made ACTIVE immediately so it's selectable right away and
+    shows up in future directory searches. If a facility with the same name
+    (and county, when given) already exists, that record is reused instead of
+    creating a duplicate."""
+    name = data["name"].strip()
+    county = (data.get("county") or "").strip() or None
+    existing_stmt = select(Facility).where(func.lower(Facility.name) == name.lower())
+    if county:
+        existing_stmt = existing_stmt.where(func.lower(func.coalesce(Facility.county, "")) == county.lower())
+    existing = db.scalar(existing_stmt.limit(1))
+    if existing is not None:
+        return existing
+    payload = {
+        "name": name,
+        "facility_type": (data.get("facility_type") or "HOSPITAL").strip(),
+        "county": county,
+        "sub_county": (data.get("sub_county") or "").strip() or None,
+        "status": "ACTIVE",
+    }
+    return create_facility(db, payload, actor_user_id=actor_user_id)
+
+
 def list_facilities(db: Session, limit: int = 50) -> list[Facility]:
     limit = min(max(limit, 1), 100)
     return list(db.scalars(select(Facility).order_by(Facility.name).limit(limit)))

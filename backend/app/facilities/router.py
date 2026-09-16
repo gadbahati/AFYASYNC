@@ -8,8 +8,8 @@ from app.auth.dependencies import get_current_user, get_facility_context, requir
 from app.auth.schemas import FacilityOption
 from app.database import get_db
 from app.facilities.kmhfr_registry import start_sync, sync_state
-from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
-from app.facilities.service import _sync_kmhfr_page, create_department, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, update_department_status, update_facility, update_facility_status
+from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityQuickCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
+from app.facilities.service import _sync_kmhfr_page, create_department, create_directory_facility, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, update_department_status, update_facility, update_facility_status
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/facilities", tags=["Facilities"])
@@ -75,6 +75,14 @@ def get_facility_directory(
     response.headers["X-Facility-Page"] = str(page)
     response.headers["X-Facility-Page-Size"] = str(page_size)
     return [FacilityOption(facility_id=row.id, facility_name=row.name, county=row.county, sub_county=row.sub_county, facility_type=row.facility_type, registration_number=row.registration_number) for row in rows]
+
+@router.post("/directory", response_model=FacilityOption, status_code=status.HTTP_201_CREATED)
+def add_directory_facility(payload: FacilityQuickCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> FacilityOption:
+    """Let a user add a facility straight from the 'Select facility' search
+    screen when it isn't already in the directory. No facility context is
+    required yet since this runs before the user has picked one."""
+    facility = create_directory_facility(db, payload.model_dump(), actor_user_id=user.id)
+    return FacilityOption(facility_id=facility.id, facility_name=facility.name, county=facility.county, sub_county=facility.sub_county, facility_type=facility.facility_type, registration_number=facility.registration_number)
 
 @router.get("/directory/status")
 def get_facility_directory_status(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, int | bool | str]:
