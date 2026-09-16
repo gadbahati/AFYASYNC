@@ -194,6 +194,7 @@ def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
 
 def start_sync() -> bool:
     global _running
+    start_sync_retry_loop()
     with _lock:
         if _running:
             return False
