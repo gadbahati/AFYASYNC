@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -52,3 +52,23 @@ class Diagnosis(Base):
     status: Mapped[str] = mapped_column(String(30), default="ACTIVE")
     recorded_by: Mapped[UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CarePlan(Base):
+    __tablename__ = "care_plans"
+    __table_args__ = (Index("ix_care_plans_facility_patient_status", "facility_id", "patient_id", "status"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    patient_id: Mapped[UUID] = mapped_column(ForeignKey("persons.id", ondelete="RESTRICT"), index=True)
+    facility_id: Mapped[UUID] = mapped_column(ForeignKey("facilities.id", ondelete="RESTRICT"), index=True)
+    encounter_id: Mapped[UUID | None] = mapped_column(ForeignKey("encounters.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    title: Mapped[str] = mapped_column(String(200))
+    goals: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interventions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    clinical_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE", index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
