@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.encounters.schemas import EncounterResponse
+
 
 class VitalCreate(BaseModel):
     systolic_bp: int | None = Field(default=None, ge=50, le=300)
@@ -34,7 +36,6 @@ class ConsultationCreate(BaseModel):
 
 
 class ConsultationResponse(ConsultationCreate):
-    model_config = ConfigDict(from_attributes=True)
     id: UUID
     encounter_id: UUID
     doctor_id: UUID
@@ -50,20 +51,40 @@ class DiagnosisCreate(BaseModel):
 
 
 class DiagnosisResponse(DiagnosisCreate):
-    model_config = ConfigDict(from_attributes=True)
     id: UUID
     encounter_id: UUID
     recorded_by: UUID
     created_at: datetime
 
 
+class LabOrderSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    order_id: str
+    encounter_id: UUID
+    patient_id: UUID
+    priority: str
+    status: str
+    created_at: datetime
+
+
+class PrescriptionSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    prescription_id: str
+    encounter_id: UUID
+    patient_id: UUID
+    status: str
+    created_at: datetime
+
+
 class ClinicalTimelineSummary(BaseModel):
-    encounter: object
+    encounter: EncounterResponse
     vitals: list[VitalResponse]
     consultation: ConsultationResponse | None
     diagnoses: list[DiagnosisResponse]
-    lab_orders: list[object]
-    prescriptions: list[object]
+    lab_orders: list[LabOrderSummary]
+    prescriptions: list[PrescriptionSummary]
 
 
 class CarePlanCreate(BaseModel):
