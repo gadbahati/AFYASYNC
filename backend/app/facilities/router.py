@@ -33,7 +33,7 @@ def _lookup_kmhfr_facilities(db: Session, search: str) -> int:
     for endpoint in _KMHFR_SEARCH_ENDPOINTS:
         try:
             with httpx.Client(timeout=15.0, follow_redirects=True, headers=headers) as client:
-                response = client.get(endpoint, params={"search": term, "page_size": 100, "page": 1, "is_published": "true"})
+                response = client.get(endpoint, params={"search": term, "page_size": 100, "page": 1})
                 response.raise_for_status()
                 payload = response.json()
                 if isinstance(payload, dict):
@@ -48,8 +48,6 @@ def _lookup_kmhfr_facilities(db: Session, search: str) -> int:
                 for item in results:
                     if not isinstance(item, dict):
                         continue
-                    # The public API has used slightly different field names
-                    # across deployments. Normalize them before persisting.
                     normalized = {
                         "id": item.get("id") or item.get("uuid"),
                         "code": item.get("code") or item.get("mfl_code") or item.get("facility_code") or item.get("facility_code_number"),
@@ -59,10 +57,14 @@ def _lookup_kmhfr_facilities(db: Session, search: str) -> int:
                         "facility_type": item.get("facility_type_name") or item.get("facility_type") or item.get("type"),
                         "operation_status": item.get("operation_status_name") or item.get("operation_status") or item.get("status"),
                     }
+                    name_text = " ".join(str(value) for value in normalized.values() if value is not None).lower()
+                    search_tokens = [token for token in term.lower().split() if len(token) > 1]
+                    if search_tokens and not all(token in name_text for token in search_tokens):
+                        continue
                     if _sync_kmhfr_page(normalized, db):
                         hydrated += 1
                 db.commit()
-                return hydrated if results else 0
+                return hydrated
         except Exception:
             db.rollback()
             continue
@@ -154,7 +156,7 @@ def update_current_facility(payload: FacilityUpdate, facility_id: UUID = Depends
 @router.patch("/me/status", response_model=FacilityResponse)
 def change_current_facility_status(payload: FacilityStatusUpdate, facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("facilities.manage")), db: Session = Depends(get_db)) -> FacilityResponse:
     try:
-        return update_facility_status(db, facility_id, payload.status, reason=payload.reason, actor_user_id=user.id)
+        return update_facility_status(db, facility_id, payload.status, reason=payload.status, actor_user_id=user.id)
     except ValueError as exc:
         code = str(exc)
         raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "INVALID_FACILITY_STATUS": 400, "FACILITY_STATUS_UNCHANGED": 400, "INVALID_FACILITY_STATUS_TRANSITION": 409, "FACILITY_STATUS_REASON_REQUIRED": 400}.get(code, 400), detail=code) from exc
