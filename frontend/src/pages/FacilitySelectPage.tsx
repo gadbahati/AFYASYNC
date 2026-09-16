@@ -84,8 +84,8 @@ async function searchOfficialKmhfr(search: string): Promise<DirectoryFacility[]>
         .filter((item): item is DirectoryFacility => Boolean(item));
       if (normalized.length) return normalized;
     } catch {
-      // The Ministry registry is sometimes unreachable from cloud hosts. The browser
-      // can still reach it in many networks, so try the alternate public endpoint.
+      // The Ministry registry can be unreachable from cloud hosts. The browser
+      // fallback gives users a direct path to the public registry when available.
     }
   }
   return [];
@@ -152,13 +152,13 @@ export function FacilitySelectPage() {
     try {
       let selected = facility;
       if (facility.source === "kmhfr") {
-        const created = await api.addDirectoryFacility({
+        const created = await api.addDirectoryFacility(({
           name: facility.facility_name,
           facility_type: facility.facility_type || "HEALTH_FACILITY",
           registration_number: facility.registration_number || facility.facility_code || null,
           county: facility.county || null,
           sub_county: facility.sub_county || null,
-        });
+        }) as Parameters<typeof api.addDirectoryFacility>[0]);
         selected = { ...facility, ...created, source: "local" };
       }
       await auth.selectFacility(selected);
