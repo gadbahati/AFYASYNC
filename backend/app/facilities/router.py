@@ -21,30 +21,51 @@ _KMHFR_SEARCH_ENDPOINTS = (
 
 
 def _lookup_kmhfr_facilities(db: Session, search: str) -> int:
-    """Resolve a typed facility name/code directly against the official KMHFR registry."""
+    """Look up the typed term in the official KMHFR registry and hydrate the local directory."""
     term = search.strip()
     if not term:
         return 0
 
     headers = {"Accept": "application/json", "User-Agent": "AfyaSync/1.0 facility-search"}
+    # KMHFR's public registry supports full-text `search`. Do not use the
+    # legacy `name` parameter first: some registry deployments ignore it and
+    # return the first page, which made AfyaSync appear to find only local rows.
     for endpoint in _KMHFR_SEARCH_ENDPOINTS:
-        for parameter in ("name", "search"):
-            try:
-                with httpx.Client(timeout=10.0, follow_redirects=True, headers=headers) as client:
-                    response = client.get(endpoint, params={parameter: term, "page_size": 30, "page": 1, "format": "json"})
-                    response.raise_for_status()
-                    payload = response.json()
-                    results = payload.get("results", payload if isinstance(payload, list) else [])
-                    if not isinstance(results, list) or not results:
+        try:
+            with httpx.Client(timeout=15.0, follow_redirects=True, headers=headers) as client:
+                response = client.get(endpoint, params={"search": term, "page_size": 100, "page": 1, "is_published": "true"})
+                response.raise_for_status()
+                payload = response.json()
+                if isinstance(payload, dict):
+                    results = payload.get("results", [])
+                elif isinstance(payload, list):
+                    results = payload
+                else:
+                    results = []
+                if not isinstance(results, list):
+                    continue
+                hydrated = 0
+                for item in results:
+                    if not isinstance(item, dict):
                         continue
-                    for item in results:
-                        if isinstance(item, dict):
-                            _sync_kmhfr_page(item, db)
-                    db.commit()
-                    return len(results)
-            except Exception:
-                db.rollback()
-                continue
+                    # The public API has used slightly different field names
+                    # across deployments. Normalize them before persisting.
+                    normalized = {
+                        "id": item.get("id") or item.get("uuid"),
+                        "code": item.get("code") or item.get("mfl_code") or item.get("facility_code") or item.get("facility_code_number"),
+                        "name": item.get("name") or item.get("facility_official_name") or item.get("official_name") or item.get("facility_name"),
+                        "county": item.get("county") or item.get("county_name"),
+                        "sub_county": item.get("sub_county") or item.get("subcounty") or item.get("sub_county_name"),
+                        "facility_type": item.get("facility_type_name") or item.get("facility_type") or item.get("type"),
+                        "operation_status": item.get("operation_status_name") or item.get("operation_status") or item.get("status"),
+                    }
+                    if _sync_kmhfr_page(normalized, db):
+                        hydrated += 1
+                db.commit()
+                return hydrated if results else 0
+        except Exception:
+            db.rollback()
+            continue
     return 0
 
 
