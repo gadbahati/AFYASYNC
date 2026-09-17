@@ -9,6 +9,7 @@ from app.auth.dependencies import get_token_payload, require_permission
 from app.database import get_db
 from app.encounters.models import Encounter
 from app.encounters.service import close_encounter
+from app.clinical.models import Allergy
 from app.pharmacy.models import InventoryBatch, InventoryItem, Medication, Prescription, PrescriptionItem, StockMovement
 from app.pharmacy.permissions import PHARMACY_CREATE_MEDICATION, PHARMACY_CREATE_PRESCRIPTION, PHARMACY_DISPENSE, PHARMACY_RECEIVE_INVENTORY
 from app.pharmacy.schemas import DispenseRequest, DispenseResponse, InventoryReceive, InventoryResponse, MedicationCreate, MedicationResponse, PrescriptionCreate, PrescriptionResponse
@@ -33,6 +34,11 @@ def _error(exc: PharmacyError) -> HTTPException:
     mapping = {"ENCOUNTER_NOT_FOUND": 404, "PRESCRIPTION_NOT_FOUND": 404, "MEDICATION_NOT_STOCKED": 409, "INSUFFICIENT_STOCK": 409, "INSUFFICIENT_BATCH_STOCK": 409, "ENCOUNTER_CLOSED": 409, "PRESCRIPTION_ALREADY_DISPENSED": 409, "PRESCRIPTION_NOT_DISPENSABLE": 409, "PRESCRIPTION_EMPTY": 409, "DUPLICATE_BILLING_ITEM": 400, "BILLING_ITEMS_MUST_MATCH_PRESCRIPTION": 400, "BILLING_SERVICE_NOT_FOUND": 404, "BILLING_FACILITY_ACCESS_DENIED": 403}
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
+def _allergy_conflicts(db: Session, patient_id: UUID, medication: Medication, facility_id: UUID) -> list[Allergy]:
+    terms = {str(value).strip().casefold() for value in (medication.name, medication.generic_name, medication.code) if value}
+    allergies = db.scalars(select(Allergy).where(Allergy.patient_id == patient_id, Allergy.facility_id == facility_id, Allergy.status == "ACTIVE")).all()
+    return [a for a in allergies if a.allergen.strip().casefold() and any(a.allergen.strip().casefold() == t or a.allergen.strip().casefold() in t or t in a.allergen.strip().casefold() for t in terms)]
+
 @router.get("/medications", response_model=list[MedicationResponse])
 def list_medications(db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_CREATE_PRESCRIPTION)), token: dict = Depends(get_token_payload)):
     _facility(token); _ = user
@@ -47,10 +53,8 @@ def list_inventory(db: Session = Depends(get_db), user: User = Depends(require_p
 def list_prescriptions(status_filter: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_DISPENSE)), token: dict = Depends(get_token_payload)):
     facility_id = _facility(token); _ = user
     stmt = select(Prescription).join(Encounter, Encounter.id == Prescription.encounter_id).where(Encounter.facility_id == facility_id)
-    if status_filter:
-        stmt = stmt.where(Prescription.status == status_filter.upper())
-    stmt = stmt.order_by(Prescription.created_at.desc()).limit(limit)
-    return list(db.scalars(stmt).all())
+    if status_filter: stmt = stmt.where(Prescription.status == status_filter.upper())
+    return list(db.scalars(stmt.order_by(Prescription.created_at.desc()).limit(limit)).all())
 
 @router.post("/medications", response_model=MedicationResponse, status_code=201)
 def create_medication(payload: MedicationCreate, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_CREATE_MEDICATION)), token: dict = Depends(get_token_payload)) -> Medication:
@@ -66,12 +70,27 @@ def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_d
     if encounter is None: raise HTTPException(status_code=404, detail="ENCOUNTER_NOT_FOUND")
     if encounter.facility_id != facility_id: raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     if encounter.status != "OPEN": raise HTTPException(status_code=409, detail="ENCOUNTER_CLOSED")
-    prescription = Prescription(prescription_id=f"RX-{uuid4().hex[:20].upper()}", encounter_id=encounter.id, patient_id=encounter.patient_id, prescribed_by=staff.id); db.add(prescription); db.flush()
+    medications = []
+    conflicts = []
     for item in payload.items:
         medication = db.get(Medication, item.medication_id)
-        if medication is None or medication.status != "ACTIVE": db.rollback(); raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
-        db.add(PrescriptionItem(prescription_id=prescription.id, **item.model_dump()))
-    db.flush(); record_audit(db, action="PHARMACY_PRESCRIPTION_CREATED", resource_type="PRESCRIPTION", resource_id=str(prescription.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"item_count": len(payload.items)}, commit=False); db.commit(); db.refresh(prescription); return prescription
+        if medication is None or medication.status != "ACTIVE": raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
+        medications.append((medication, item))
+        conflicts.extend((medication, allergy) for allergy in _allergy_conflicts(db, encounter.patient_id, medication, facility_id))
+    severe = [(m, a) for m, a in conflicts if a.severity in {"SEVERE", "LIFE_THREATENING"}]
+    if severe:
+        record_audit(db, action="PHARMACY_PRESCRIPTION_BLOCKED_ALLERGY", resource_type="ENCOUNTER", resource_id=str(encounter.id), result="DENIED", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"conflict_count": len(conflicts), "severe_conflict_count": len(severe)}, commit=True)
+        raise HTTPException(status_code=409, detail="SEVERE_ALLERGY_CONFLICT")
+    if conflicts and not payload.allergy_override_reason:
+        record_audit(db, action="PHARMACY_PRESCRIPTION_REQUIRES_ALLERGY_REVIEW", resource_type="ENCOUNTER", resource_id=str(encounter.id), result="DENIED", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"conflict_count": len(conflicts)}, commit=True)
+        raise HTTPException(status_code=409, detail="ALLERGY_REVIEW_REQUIRED")
+    prescription = Prescription(prescription_id=f"RX-{uuid4().hex[:20].upper()}", encounter_id=encounter.id, patient_id=encounter.patient_id, prescribed_by=staff.id); db.add(prescription); db.flush()
+    for medication, item in medications: db.add(PrescriptionItem(prescription_id=prescription.id, **item.model_dump()))
+    db.flush()
+    metadata = {"item_count": len(payload.items), "allergy_conflict_count": len(conflicts), "allergy_override": bool(conflicts)}
+    if payload.allergy_override_reason: metadata["allergy_override_reason"] = payload.allergy_override_reason
+    record_audit(db, action="PHARMACY_PRESCRIPTION_CREATED", resource_type="PRESCRIPTION", resource_id=str(prescription.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata=metadata, commit=False)
+    db.commit(); db.refresh(prescription); return prescription
 
 @router.post("/inventory/receive", response_model=InventoryResponse, status_code=201)
 def receive_inventory(payload: InventoryReceive, db: Session = Depends(get_db), user: User = Depends(require_permission(PHARMACY_RECEIVE_INVENTORY)), token: dict = Depends(get_token_payload)) -> InventoryItem:
@@ -103,10 +122,8 @@ def dispense(prescription_id: UUID, payload: DispenseRequest, db: Session = Depe
     if admission is not None and admission.status == "ADMITTED":
         close_encounter(db, encounter.id, actor_user_id=user.id, commit=False)
         assignment = db.scalar(select(__import__('app.wards.models', fromlist=['BedAssignment']).BedAssignment).where(__import__('app.wards.models', fromlist=['BedAssignment']).BedAssignment.admission_id == admission.id, __import__('app.wards.models', fromlist=['BedAssignment']).BedAssignment.released_at.is_(None)).with_for_update())
-        if assignment is not None:
-            release_bed(db, facility_id, user.id, assignment.bed_id, commit=False)
+        if assignment is not None: release_bed(db, facility_id, user.id, assignment.bed_id, commit=False)
         admission.status = "DISCHARGED"; admission.discharged_at = datetime.now(timezone.utc)
-        record_audit(db, action="PATIENT_RELEASED_AFTER_PHARMACY", resource_type="ADMISSION", resource_id=str(admission.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"prescription_id": str(prescription_id), "encounter_id": str(encounter.id), "bed_released": assignment is not None}, commit=False)
-        db.commit()
+        record_audit(db, action="PATIENT_RELEASED_AFTER_PHARMACY", resource_type="ADMISSION", resource_id=str(admission.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"prescription_id": str(prescription_id), "encounter_id": str(encounter.id), "bed_released": assignment is not None}, commit=False); db.commit()
     prescription = db.get(Prescription, prescription_id)
     return DispenseResponse(prescription_id=prescription.id, status=prescription.status, movements_created=len(movements), charges_created=charges_created)
