@@ -70,6 +70,7 @@ from app.operations.router import router as operations_router
 from app.patients import models as patient_models
 from app.patients.national_identity_router import router as national_identity_router
 from app.patients.router import router as patients_router
+from app.patients.timeline_router import router as patient_timeline_router
 from app.pharmacy import models as pharmacy_models
 from app.pharmacy.router import router as pharmacy_router
 from app.portal.router import router as portal_router
@@ -155,6 +156,7 @@ def initialize_database():
 
 app.include_router(auth_router.router)
 app.include_router(patients_router)
+app.include_router(patient_timeline_router)
 app.include_router(national_identity_router)
 app.include_router(coverage_router)
 app.include_router(sha_eligibility_router)
