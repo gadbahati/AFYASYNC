@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
-from app.clinical.models import CarePlan, Consultation, Diagnosis, Vital
+from app.clinical.models import Allergy, CarePlan, Consultation, Diagnosis, Vital
 from app.encounters.models import Encounter
 from app.laboratory.models import LabOrder
 from app.patients.models import PatientFacility, Person
@@ -163,3 +163,44 @@ def update_care_plan(db: Session, plan: CarePlan, user_id: UUID, facility_id: UU
     db.commit()
     db.refresh(plan)
     return plan
+
+
+def create_allergy(db: Session, patient_id: UUID, facility_id: UUID, user_id: UUID, data: dict) -> Allergy:
+    _active_patient_at_facility(db, patient_id, facility_id)
+    allergen = data.get("allergen", "").strip()
+    if not allergen:
+        raise ValueError("ALLERGEN_REQUIRED")
+    duplicate = db.scalar(select(Allergy).where(Allergy.patient_id == patient_id, Allergy.facility_id == facility_id, Allergy.status == "ACTIVE", Allergy.allergen.ilike(allergen)))
+    if duplicate is not None:
+        raise ValueError("ACTIVE_ALLERGY_ALREADY_EXISTS")
+    allergy = Allergy(patient_id=patient_id, facility_id=facility_id, recorded_by=user_id, allergen=allergen, **{k: v for k, v in data.items() if k != "allergen"})
+    db.add(allergy)
+    db.flush()
+    record_audit(db, action="CREATE_ALLERGY", resource_type="ALLERGY", resource_id=str(allergy.id), result="SUCCESS", user_id=user_id, facility_id=facility_id, patient_id=patient_id, metadata={"severity": allergy.severity, "status": allergy.status}, commit=False)
+    db.commit()
+    db.refresh(allergy)
+    return allergy
+
+
+def list_allergies(db: Session, patient_id: UUID, facility_id: UUID, include_inactive: bool = False) -> list[Allergy]:
+    _active_patient_at_facility(db, patient_id, facility_id)
+    query = select(Allergy).where(Allergy.patient_id == patient_id, Allergy.facility_id == facility_id)
+    if not include_inactive:
+        query = query.where(Allergy.status == "ACTIVE")
+    return list(db.scalars(query.order_by(Allergy.status.asc(), Allergy.updated_at.desc(), Allergy.created_at.desc())))
+
+
+def update_allergy(db: Session, allergy: Allergy, facility_id: UUID, user_id: UUID, changes: dict) -> Allergy:
+    if allergy.facility_id != facility_id:
+        raise ValueError("FACILITY_ACCESS_DENIED")
+    if not changes:
+        raise ValueError("NO_CHANGES")
+    for key, value in changes.items():
+        if value is not None:
+            setattr(allergy, key, value.strip() if isinstance(value, str) and key == "allergen" else value)
+    db.add(allergy)
+    db.flush()
+    record_audit(db, action="UPDATE_ALLERGY", resource_type="ALLERGY", resource_id=str(allergy.id), result="SUCCESS", user_id=user_id, facility_id=facility_id, patient_id=allergy.patient_id, metadata={"changed_fields": sorted(changes.keys()), "severity": allergy.severity, "status": allergy.status}, commit=False)
+    db.commit()
+    db.refresh(allergy)
+    return allergy
