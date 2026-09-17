@@ -11,6 +11,7 @@ from app.clinical.schemas import AllergyCreate, AllergyResponse, AllergyUpdate, 
 from app.clinical.service import add_diagnosis, create_allergy, create_care_plan, create_or_update_consultation, get_encounter_clinical_summary, list_allergies, list_care_plans, record_vitals, update_allergy, update_care_plan
 from app.database import get_db
 from app.encounters.models import Encounter
+from app.pharmacy.models import Medication
 from app.rbac.models import Staff, User
 
 router = APIRouter()
@@ -81,8 +82,7 @@ def get_patient_care_plans(patient_id: UUID, status_filter: str | None = Query(d
 
 @care_plan_router.post("/{patient_id}/care-plans", response_model=CarePlanResponse, status_code=status.HTTP_201_CREATED)
 def create_patient_care_plan(patient_id: UUID, payload: CarePlanCreate, user: User = Depends(require_permission("clinical.care_plan.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
-    try:
-        return create_care_plan(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
+    try: return create_care_plan(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
     except ValueError as exc:
         code = str(exc)
         raise HTTPException(status_code=404 if code in {"PATIENT_NOT_FOUND", "PATIENT_NOT_IN_FACILITY", "ENCOUNTER_NOT_FOUND"} else 403 if code == "FACILITY_ACCESS_DENIED" else 400, detail=code) from exc
@@ -91,10 +91,8 @@ def create_patient_care_plan(patient_id: UUID, payload: CarePlanCreate, user: Us
 @care_plan_router.patch("/{patient_id}/care-plans/{care_plan_id}", response_model=CarePlanResponse)
 def update_patient_care_plan(patient_id: UUID, care_plan_id: UUID, payload: CarePlanUpdate, user: User = Depends(require_permission("clinical.care_plan.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     plan = db.get(CarePlan, care_plan_id)
-    if plan is None or plan.patient_id != patient_id:
-        raise HTTPException(status_code=404, detail="CARE_PLAN_NOT_FOUND")
-    try:
-        return update_care_plan(db, plan, user.id, facility_id, payload.model_dump(exclude_unset=True))
+    if plan is None or plan.patient_id != patient_id: raise HTTPException(status_code=404, detail="CARE_PLAN_NOT_FOUND")
+    try: return update_care_plan(db, plan, user.id, facility_id, payload.model_dump(exclude_unset=True))
     except ValueError as exc:
         code = str(exc)
         raise HTTPException(status_code=409 if code == "INVALID_CARE_PLAN_TRANSITION" else 403 if code == "FACILITY_ACCESS_DENIED" else 404 if code == "ENCOUNTER_NOT_FOUND" else 400, detail=code) from exc
@@ -113,8 +111,7 @@ def get_patient_allergies(patient_id: UUID, include_inactive: bool = Query(defau
 
 @allergy_router.post("/{patient_id}/allergies", response_model=AllergyResponse, status_code=status.HTTP_201_CREATED)
 def create_patient_allergy(patient_id: UUID, payload: AllergyCreate, user: User = Depends(require_permission("clinical.allergy.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
-    try:
-        return create_allergy(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
+    try: return create_allergy(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
     except ValueError as exc:
         code = str(exc)
         raise HTTPException(status_code=409 if code == "ACTIVE_ALLERGY_ALREADY_EXISTS" else 404 if code in {"PATIENT_NOT_FOUND", "PATIENT_NOT_IN_FACILITY"} else 400, detail=code) from exc
@@ -123,13 +120,27 @@ def create_patient_allergy(patient_id: UUID, payload: AllergyCreate, user: User 
 @allergy_router.patch("/{patient_id}/allergies/{allergy_id}", response_model=AllergyResponse)
 def update_patient_allergy(patient_id: UUID, allergy_id: UUID, payload: AllergyUpdate, user: User = Depends(require_permission("clinical.allergy.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     allergy = db.get(Allergy, allergy_id)
-    if allergy is None or allergy.patient_id != patient_id:
-        raise HTTPException(status_code=404, detail="ALLERGY_NOT_FOUND")
-    try:
-        return update_allergy(db, allergy, facility_id, user.id, payload.model_dump(exclude_unset=True))
+    if allergy is None or allergy.patient_id != patient_id: raise HTTPException(status_code=404, detail="ALLERGY_NOT_FOUND")
+    try: return update_allergy(db, allergy, facility_id, user.id, payload.model_dump(exclude_unset=True))
     except ValueError as exc:
         code = str(exc)
         raise HTTPException(status_code=403 if code == "FACILITY_ACCESS_DENIED" else 400, detail=code) from exc
+
+
+@allergy_router.get("/{patient_id}/allergy-safety/medications/{medication_id}")
+def check_medication_allergy_safety(patient_id: UUID, medication_id: UUID, user: User = Depends(require_permission("clinical.allergy.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    medication = db.get(Medication, medication_id)
+    if medication is None or medication.status != "ACTIVE": raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
+    try: allergies = list_allergies(db, patient_id, facility_id, include_inactive=False)
+    except ValueError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
+    medication_terms = {str(value).strip().casefold() for value in (medication.name, medication.generic_name, medication.code) if value}
+    conflicts = []
+    for allergy in allergies:
+        allergen = allergy.allergen.strip().casefold()
+        if allergen and any(allergen == term or allergen in term or term in allergen for term in medication_terms):
+            conflicts.append({"allergy_id": str(allergy.id), "allergen": allergy.allergen, "reaction": allergy.reaction, "severity": allergy.severity, "status": allergy.status})
+    record_audit(db, action="CHECK_MEDICATION_ALLERGY_SAFETY", resource_type="MEDICATION", resource_id=str(medication.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"conflict_count": len(conflicts), "medication_id": str(medication.id)}, commit=True)
+    return {"patient_id": str(patient_id), "medication_id": str(medication.id), "medication": medication.name, "safe_match": len(conflicts) == 0, "requires_clinical_review": any(item["severity"] in {"SEVERE", "LIFE_THREATENING"} for item in conflicts), "conflicts": conflicts}
 
 
 router.include_router(encounter_router)
