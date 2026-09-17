@@ -4,10 +4,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
+from app.clinical.models import Allergy
 from app.database import get_db
 from app.patients.record_service import get_patient_record_summary
 from app.rbac.models import User
@@ -147,6 +149,11 @@ def patient_timeline(patient_id: UUID, limit: int = Query(default=50, ge=1, le=2
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "PATIENT_NOT_FOUND", "message": "Patient record not found at this facility."})
     events = _build_events(record)
+    allergies = list(db.scalars(select(Allergy).where(Allergy.patient_id == patient_id, Allergy.facility_id == facility_id).order_by(Allergy.updated_at.desc(), Allergy.created_at.desc())))
+    for allergy in allergies:
+        event = _event(f"allergy:{allergy.id}", "ALLERGY", allergy.updated_at or allergy.created_at, f"Allergy recorded: {allergy.allergen}", allergy.status, None, str(allergy.id), {"reaction": allergy.reaction, "severity": allergy.severity, "onset_date": allergy.onset_date})
+        if event: events.append(event)
+    events.sort(key=lambda item: item.occurred_at, reverse=True)
     page = events[offset:offset + limit]
     record_audit(db, action="VIEW_PATIENT_TIMELINE", resource_type="PERSON", resource_id=str(patient_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"total": len(events), "limit": limit, "offset": offset}, commit=True)
     return PatientTimelineResponse(patient_id=patient_id, items=page, total=len(events), limit=limit, offset=offset)
