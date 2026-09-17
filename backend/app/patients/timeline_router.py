@@ -106,6 +106,33 @@ def _build_events(record: dict[str, Any]) -> list[PatientTimelineEvent]:
         tid = str(transfer["id"])
         event = _event(f"transfer:{tid}", "TRANSFER", transfer.get("created_at"), "Patient transfer created", transfer.get("status"), transfer.get("encounter_id"), tid, {"reason": transfer.get("reason"), "destination": transfer.get("destination_facility_name")})
         if event: events.append(event)
+
+    billing = record.get("billing") or {}
+    for charge in billing.get("charges", []):
+        cid = str(charge["id"])
+        event = _event(f"charge:{cid}", "CHARGE", charge.get("created_at"), charge.get("service_name") or f"Charge {charge.get('charge_id') or cid}", charge.get("status"), charge.get("encounter_id"), cid, {"service_code": charge.get("service_code"), "quantity": charge.get("quantity"), "total_amount": charge.get("total_amount")})
+        if event: events.append(event)
+    for invoice in billing.get("invoices", []):
+        iid = str(invoice["id"])
+        event = _event(f"invoice:{iid}", "INVOICE", invoice.get("created_at"), f"Invoice {invoice.get('invoice_id') or iid}", invoice.get("status"), invoice.get("encounter_id"), iid, {"total_amount": invoice.get("total_amount"), "payer_amount": invoice.get("payer_amount"), "patient_amount": invoice.get("patient_amount")})
+        if event: events.append(event)
+    for payment in billing.get("payments", []):
+        pid = str(payment["id"])
+        event = _event(f"payment:{pid}", "PAYMENT", payment.get("confirmed_at") or payment.get("created_at"), f"Payment {payment.get('transaction_id') or pid}", payment.get("status"), None, pid, {"invoice_id": payment.get("invoice_id"), "amount": payment.get("amount"), "payment_method": payment.get("payment_method"), "provider": payment.get("provider")})
+        if event: events.append(event)
+    for claim in record.get("claims", []):
+        cid = str(claim["id"])
+        claim_event = _event(f"claim:{cid}", "CLAIM", claim.get("submitted_at"), f"Claim {claim.get('claim_id') or cid}", claim.get("status"), claim.get("encounter_id"), cid, {"payer": claim.get("payer_name"), "claim_amount": claim.get("claim_amount"), "approved_amount": claim.get("approved_amount"), "paid_amount": claim.get("paid_amount")})
+        if claim_event: events.append(claim_event)
+        for response in claim.get("responses", []):
+            rid = str(response["id"])
+            response_event = _event(f"claim-response:{rid}", "CLAIM_RESPONSE", response.get("received_at"), "Claim response received", response.get("status"), claim.get("encounter_id"), rid, {"external_reference": response.get("external_reference"), "response_code": response.get("response_code"), "response_message": response.get("response_message")})
+            if response_event: events.append(response_event)
+        reconciliation = claim.get("reconciliation")
+        if reconciliation:
+            reconciliation_event = _event(f"claim-reconciliation:{reconciliation['id']}", "CLAIM_RECONCILIATION", reconciliation.get("reconciled_at"), "Claim reconciliation recorded", reconciliation.get("status"), claim.get("encounter_id"), str(reconciliation["id"]), {"expected_amount": reconciliation.get("expected_amount"), "received_amount": reconciliation.get("received_amount"), "difference": reconciliation.get("difference")})
+            if reconciliation_event: events.append(reconciliation_event)
+
     events.sort(key=lambda item: item.occurred_at, reverse=True)
     return events
 
