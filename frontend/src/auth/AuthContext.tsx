@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, ApiError } from "../api/client";
-import type { FacilityOption, FacilitySelectionRequired, LoginResult, TokenResponse } from "../api/types";
+import type { AuthMe, FacilityOption, FacilitySelectionRequired, LoginResult, TokenResponse } from "../api/types";
 import { clearSession, getAccessToken, getFacilityId, getFacilityName, getRefreshToken, setSession } from "./storage";
 
 type AuthState = {
@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     api.me()
-      .then((me) => {
+      .then((me: AuthMe) => {
         setUsername(me.data.username);
         setFacilityId(getFacilityId());
         setFacilityName(getFacilityName());
@@ -77,19 +77,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const facilities = await api.facilities();
       if (facilities.length === 1) {
-        setSession({
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
-          facility_id: facilities[0].facility_id,
-          facility_name: facilities[0].facility_name,
-        });
+        setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, facility_id: facilities[0].facility_id, facility_name: facilities[0].facility_name });
         setFacilityId(facilities[0].facility_id);
         setFacilityName(facilities[0].facility_name);
       }
     } catch {
       // Facility context may already be carried by the authenticated session.
     }
-    const me = await api.me();
+    const me: AuthMe = await api.me();
     setUsername(me.data.username);
     setPendingFacilities(null);
     return "ready";
@@ -97,27 +92,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const selectFacility = useCallback(async (facility: FacilityOption) => {
     const tokens = await api.selectFacility(facility.facility_id);
-    setSession({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      facility_id: facility.facility_id,
-      facility_name: facility.facility_name,
-    });
+    setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, facility_id: facility.facility_id, facility_name: facility.facility_name });
     setFacilityId(facility.facility_id);
     setFacilityName(facility.facility_name);
     setPendingFacilities(null);
-    const me = await api.me();
+    const me: AuthMe = await api.me();
     setUsername(me.data.username);
   }, []);
 
   const logout = useCallback(async () => {
     const refresh = getRefreshToken();
     if (refresh) {
-      try {
-        await api.logout(refresh);
-      } catch (err) {
-        if (!(err instanceof ApiError)) throw err;
-      }
+      try { await api.logout(refresh); }
+      catch (err) { if (!(err instanceof ApiError)) throw err; }
     }
     clearSession();
     setUsername(null);
@@ -126,11 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingFacilities(null);
   }, []);
 
-  const value = useMemo(
-    () => ({ ready, username, facilityId, facilityName, pendingFacilities, login, selectFacility, logout }),
-    [ready, username, facilityId, facilityName, pendingFacilities, login, selectFacility, logout],
-  );
-
+  const value = useMemo(() => ({ ready, username, facilityId, facilityName, pendingFacilities, login, selectFacility, logout }), [ready, username, facilityId, facilityName, pendingFacilities, login, selectFacility, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
