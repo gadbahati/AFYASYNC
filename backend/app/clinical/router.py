@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
-from app.clinical.models import CarePlan
-from app.clinical.schemas import CarePlanCreate, CarePlanResponse, CarePlanUpdate, ClinicalTimelineSummary, ConsultationCreate, ConsultationResponse, DiagnosisCreate, DiagnosisResponse, VitalCreate, VitalResponse
-from app.clinical.service import add_diagnosis, create_care_plan, create_or_update_consultation, get_encounter_clinical_summary, list_care_plans, record_vitals, update_care_plan
+from app.clinical.models import Allergy, CarePlan
+from app.clinical.schemas import AllergyCreate, AllergyResponse, AllergyUpdate, CarePlanCreate, CarePlanResponse, CarePlanUpdate, ClinicalTimelineSummary, ConsultationCreate, ConsultationResponse, DiagnosisCreate, DiagnosisResponse, VitalCreate, VitalResponse
+from app.clinical.service import add_diagnosis, create_allergy, create_care_plan, create_or_update_consultation, get_encounter_clinical_summary, list_allergies, list_care_plans, record_vitals, update_allergy, update_care_plan
 from app.database import get_db
 from app.encounters.models import Encounter
 from app.rbac.models import Staff, User
@@ -16,6 +16,7 @@ from app.rbac.models import Staff, User
 router = APIRouter()
 encounter_router = APIRouter(prefix="/api/v1/encounters", tags=["Clinical"])
 care_plan_router = APIRouter(prefix="/api/v1/patients", tags=["Care Plans"])
+allergy_router = APIRouter(prefix="/api/v1/patients", tags=["Clinical Safety"])
 
 
 def _encounter(db: Session, encounter_id: UUID, facility_id: UUID) -> Encounter:
@@ -99,5 +100,38 @@ def update_patient_care_plan(patient_id: UUID, care_plan_id: UUID, payload: Care
         raise HTTPException(status_code=409 if code == "INVALID_CARE_PLAN_TRANSITION" else 403 if code == "FACILITY_ACCESS_DENIED" else 404 if code == "ENCOUNTER_NOT_FOUND" else 400, detail=code) from exc
 
 
+@allergy_router.get("/{patient_id}/allergies", response_model=list[AllergyResponse])
+def get_patient_allergies(patient_id: UUID, include_inactive: bool = Query(default=False), user: User = Depends(require_permission("clinical.allergy.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    try:
+        allergies = list_allergies(db, patient_id, facility_id, include_inactive)
+        record_audit(db, action="LIST_ALLERGIES", resource_type="PERSON", resource_id=str(patient_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"count": len(allergies), "include_inactive": include_inactive}, commit=True)
+        return allergies
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=404 if code in {"PATIENT_NOT_FOUND", "PATIENT_NOT_IN_FACILITY"} else 400, detail=code) from exc
+
+
+@allergy_router.post("/{patient_id}/allergies", response_model=AllergyResponse, status_code=status.HTTP_201_CREATED)
+def create_patient_allergy(patient_id: UUID, payload: AllergyCreate, user: User = Depends(require_permission("clinical.allergy.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    try:
+        return create_allergy(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=409 if code == "ACTIVE_ALLERGY_ALREADY_EXISTS" else 404 if code in {"PATIENT_NOT_FOUND", "PATIENT_NOT_IN_FACILITY"} else 400, detail=code) from exc
+
+
+@allergy_router.patch("/{patient_id}/allergies/{allergy_id}", response_model=AllergyResponse)
+def update_patient_allergy(patient_id: UUID, allergy_id: UUID, payload: AllergyUpdate, user: User = Depends(require_permission("clinical.allergy.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    allergy = db.get(Allergy, allergy_id)
+    if allergy is None or allergy.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail="ALLERGY_NOT_FOUND")
+    try:
+        return update_allergy(db, allergy, facility_id, user.id, payload.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=403 if code == "FACILITY_ACCESS_DENIED" else 400, detail=code) from exc
+
+
 router.include_router(encounter_router)
 router.include_router(care_plan_router)
+router.include_router(allergy_router)
