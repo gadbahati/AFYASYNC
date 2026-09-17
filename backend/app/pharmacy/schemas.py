@@ -31,6 +31,7 @@ class PrescriptionItemCreate(BaseModel):
 class PrescriptionCreate(BaseModel):
     encounter_id: UUID
     items: list[PrescriptionItemCreate] = Field(min_length=1)
+    allergy_override_reason: str | None = Field(default=None, min_length=10, max_length=500)
 
 
 class PrescriptionResponse(BaseModel):
