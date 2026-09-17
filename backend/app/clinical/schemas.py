@@ -122,3 +122,36 @@ class CarePlanResponse(BaseModel):
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class AllergyCreate(BaseModel):
+    allergen: str = Field(min_length=1, max_length=200)
+    reaction: str | None = Field(default=None, max_length=5000)
+    severity: str = Field(default="UNKNOWN", pattern="^(UNKNOWN|MILD|MODERATE|SEVERE|LIFE_THREATENING)$")
+    onset_date: date | None = None
+    notes: str | None = Field(default=None, max_length=10000)
+
+
+class AllergyUpdate(BaseModel):
+    allergen: str | None = Field(default=None, min_length=1, max_length=200)
+    reaction: str | None = Field(default=None, max_length=5000)
+    severity: str | None = Field(default=None, pattern="^(UNKNOWN|MILD|MODERATE|SEVERE|LIFE_THREATENING)$")
+    status: str | None = Field(default=None, pattern="^(ACTIVE|INACTIVE)$")
+    onset_date: date | None = None
+    notes: str | None = Field(default=None, max_length=10000)
+
+
+class AllergyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    patient_id: UUID
+    facility_id: UUID
+    recorded_by: UUID
+    allergen: str
+    reaction: str | None
+    severity: str
+    status: str
+    onset_date: date | None
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
