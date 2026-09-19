@@ -152,5 +152,6 @@ export const api: any = {
   commandCentre: () => request("/api/v1/command-centre"),
   fraudRadar: () => request("/api/v1/fraud-radar"),
   allergySafety: (patientId: string, medicationId: string) => request(`/api/v1/patients/${patientId}/allergy-safety/medications/${medicationId}`),
+  getFhirPatient: (patientId: string, accessReason: string) => request(`/api/v1/interoperability/Patient/${patientId}?access_reason=${encodeURIComponent(accessReason)}`),
   getFhirAllergies: (patientId: string, accessReason: string, includeInactive = true) => request(`/api/v1/interoperability/AllergyIntolerance/${patientId}?access_reason=${encodeURIComponent(accessReason)}&include_inactive=${includeInactive}`),
 };
