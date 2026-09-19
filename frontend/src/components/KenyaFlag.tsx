@@ -1,23 +1,21 @@
-export function KenyaFlag({ className = "kenya-flag" }: { className?: string }) {
+/** Official Coat of Arms of Kenya (not the flag). */
+const COAT_OF_ARMS =
+  "https://upload.wikimedia.org/wikipedia/commons/f/f6/Coat_of_arms_of_Kenya_%28Official%29.svg";
+
+export function KenyaFlag({ className = "kenya-crest" }: { className?: string }) {
   return (
-    <svg
+    <img
       className={className}
-      viewBox="0 0 36 24"
-      width="44"
-      height="30"
-      role="img"
-      aria-label="Flag of Kenya"
-    >
-      <rect width="36" height="24" fill="#fff" />
-      <rect y="0" width="36" height="6" fill="#000" />
-      <rect y="6" width="36" height="1.5" fill="#fff" />
-      <rect y="7.5" width="36" height="9" fill="#bb0000" />
-      <rect y="16.5" width="36" height="1.5" fill="#fff" />
-      <rect y="18" width="36" height="6" fill="#006600" />
-      <ellipse cx="18" cy="12" rx="5.2" ry="7.2" fill="#fff" />
-      <ellipse cx="18" cy="12" rx="3.6" ry="6" fill="#000" />
-      <path d="M16.2 7.2 L19.8 12 L16.2 16.8 L15 15.4 L17.4 12 L15 8.6 Z" fill="#bb0000" />
-      <path d="M19.8 7.2 L21 8.6 L18.6 12 L21 15.4 L19.8 16.8 L16.2 12 Z" fill="#bb0000" />
-    </svg>
+      src={COAT_OF_ARMS}
+      alt="Coat of arms of Kenya"
+      width={48}
+      height={48}
+      decoding="async"
+    />
   );
+}
+
+/** Prefer this name in new code */
+export function KenyaCrest({ className = "kenya-crest" }: { className?: string }) {
+  return <KenyaFlag className={className} />;
 }
