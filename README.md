@@ -6,6 +6,11 @@ AfyaSync is a standalone healthcare platform designed to connect patients, healt
 
 > AfyaSync is the platform. SHA is an integrated capability.
 
+**Developed by Bahati GAD**
+
+© 2026 AfyaSync. Developed by Bahati GAD. All rights reserved.  
+Unauthorized copying, reverse engineering, redistribution, or commercial use of this software, its design, architecture, source code, or documentation is strictly prohibited and will be prosecuted under Kenyan and international law.
+
 ## Project status
 
 Active platform development with production-readiness controls and a national healthcare operating architecture. The repository is not a claim of regulatory approval or government adoption.
@@ -30,6 +35,8 @@ Active platform development with production-readiness controls and a national he
 - Authorised payer integrations with signed callbacks, idempotency, retry handling, and transaction monitoring
 - Audit trails and facility isolation throughout sensitive workflows
 - Production observability with request IDs and privacy-safe aggregate runtime metrics
+- Patient-controlled sensitive disease disclosure with digital consent
+- Support for SHA Treat Abroad (overseas treatment) workflows
 
 ## Repository structure
 
@@ -57,6 +64,7 @@ afasync/
 - Schema changes are applied through Alembic rather than application startup table creation.
 - Healthcare delivery must remain usable without a payer integration being available.
 - Operational telemetry must not contain patient payloads or patient identifiers.
+- Sensitive clinical information is only shareable across facilities when the patient has given explicit digital consent.
 
 ## Main care and financing flow
 
@@ -78,3 +86,10 @@ Coverage-enabled financing extends through:
 ## Security
 
 AfyaSync is intended for regulated healthcare use. Production deployment requires appropriate legal, regulatory, privacy, security, licensing, accreditation, payer, and integration review before real patient data is used.
+
+## Copyright & Ownership
+
+© 2026 AfyaSync. Developed by Bahati GAD. All rights reserved.
+
+This software and its associated documentation are the intellectual property of Bahati GAD.  
+Any unauthorized use, copying, modification, distribution, reverse engineering, or commercial exploitation is strictly prohibited and will be subject to legal action under the laws of Kenya and applicable international treaties.
