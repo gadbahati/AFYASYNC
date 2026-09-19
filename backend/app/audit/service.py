@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditLog
+from app.security.privacy import redact_sensitive
 
 
 def record_audit(
@@ -30,7 +31,7 @@ def record_audit(
         result=result,
         ip_address=ip_address,
         device_id=device_id,
-        metadata_json=metadata or {},
+        metadata_json=redact_sensitive(metadata or {}),
     )
     db.add(entry)
     if commit:
