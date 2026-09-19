@@ -10,8 +10,13 @@ from app.appointments.models import Appointment
 from app.audit.service import record_audit
 from app.facilities.models import Department, Facility
 from app.notifications.events import notify_patient_event
+from app.notifications.models import Notification
 from app.portal.messaging_models import AppointmentRequest, FacilityMessage
 from app.rbac.models import Staff, User
+
+MAX_REASON = 2000
+MAX_MESSAGE = 5000
+MAX_PENDING_PER_FACILITY = 10
 
 
 def list_bookable_facilities(db: Session) -> list[Facility]:
@@ -34,6 +39,49 @@ def list_facility_departments(db: Session, facility_id: UUID) -> list[Department
     )
 
 
+def _staff_users_at_facility(db: Session, facility_id: UUID) -> list[User]:
+    return list(
+        db.scalars(
+            select(User)
+            .join(Staff, Staff.person_id == User.person_id)
+            .where(
+                Staff.facility_id == facility_id,
+                Staff.status == "ACTIVE",
+                User.status == "ACTIVE",
+                User.person_id.is_not(None),
+            )
+            .distinct()
+        )
+    )
+
+
+def _notify_facility_staff(
+    db: Session,
+    *,
+    facility_id: UUID,
+    notification_type: str,
+    title: str,
+    message: str,
+    action_url: str,
+    metadata: dict,
+    priority: str = "NORMAL",
+) -> None:
+    for u in _staff_users_at_facility(db, facility_id):
+        db.add(
+            Notification(
+                user_id=u.id,
+                person_id=None,
+                facility_id=facility_id,
+                notification_type=notification_type,
+                title=title,
+                message=message[:500],
+                priority=priority,
+                action_url=action_url,
+                metadata_json=metadata,
+            )
+        )
+
+
 def create_appointment_request(
     db: Session,
     *,
@@ -49,45 +97,65 @@ def create_appointment_request(
     if facility is None or facility.status != "ACTIVE":
         raise ValueError("FACILITY_NOT_FOUND")
 
+    reason_clean = (reason or "").strip()
+    if len(reason_clean) < 5:
+        raise ValueError("REASON_TOO_SHORT")
+    if len(reason_clean) > MAX_REASON:
+        raise ValueError("REASON_TOO_LONG")
+
     if department_id is not None:
         dept = db.get(Department, department_id)
         if dept is None or dept.facility_id != facility_id or dept.status != "ACTIVE":
             raise ValueError("DEPARTMENT_NOT_FOUND")
+
+    pending_count = db.scalar(
+        select(AppointmentRequest.id)
+        .where(
+            AppointmentRequest.patient_id == patient_id,
+            AppointmentRequest.facility_id == facility_id,
+            AppointmentRequest.status == "PENDING",
+        )
+        .limit(MAX_PENDING_PER_FACILITY)
+    )
+    # Cap concurrent pending requests per patient+facility
+    open_pending = list(
+        db.scalars(
+            select(AppointmentRequest).where(
+                AppointmentRequest.patient_id == patient_id,
+                AppointmentRequest.facility_id == facility_id,
+                AppointmentRequest.status == "PENDING",
+            )
+        )
+    )
+    if len(open_pending) >= MAX_PENDING_PER_FACILITY:
+        raise ValueError("TOO_MANY_PENDING_REQUESTS")
+
+    notes_clean = patient_notes.strip() if patient_notes else None
+    if notes_clean and len(notes_clean) > MAX_REASON:
+        notes_clean = notes_clean[:MAX_REASON]
 
     req = AppointmentRequest(
         patient_id=patient_id,
         facility_id=facility_id,
         department_id=department_id,
         preferred_date=preferred_date,
-        reason=reason.strip(),
-        patient_notes=patient_notes.strip() if patient_notes else None,
+        reason=reason_clean,
+        patient_notes=notes_clean,
         status="PENDING",
     )
     db.add(req)
     db.flush()
 
-    # Notify facility staff via in-app notification to users with staff at that facility
-    staff_users = db.scalars(
-        select(User)
-        .join(Staff, Staff.person_id == User.person_id)
-        .where(Staff.facility_id == facility_id, Staff.status == "ACTIVE", User.status == "ACTIVE")
-    ).all()
-    from app.notifications.models import Notification
-
-    for u in staff_users:
-        db.add(
-            Notification(
-                user_id=u.id,
-                person_id=None,
-                facility_id=facility_id,
-                notification_type="APPOINTMENT_REQUEST",
-                title="New appointment request",
-                message=f"A patient requested an appointment: {reason[:120]}",
-                priority="HIGH",
-                action_url=f"/appointments/requests/{req.id}",
-                metadata_json={"request_id": str(req.id), "patient_id": str(patient_id)},
-            )
-        )
+    _notify_facility_staff(
+        db,
+        facility_id=facility_id,
+        notification_type="APPOINTMENT_REQUEST",
+        title="New appointment request",
+        message=f"A patient requested an appointment: {reason_clean[:120]}",
+        action_url="/appointments",
+        metadata={"request_id": str(req.id), "patient_id": str(patient_id)},
+        priority="HIGH",
+    )
 
     record_audit(
         db,
@@ -118,7 +186,7 @@ def list_facility_requests(
 ) -> list[AppointmentRequest]:
     stmt = select(AppointmentRequest).where(AppointmentRequest.facility_id == facility_id)
     if status:
-        stmt = stmt.where(AppointmentRequest.status == status)
+        stmt = stmt.where(AppointmentRequest.status == status.upper())
     return list(db.scalars(stmt.order_by(AppointmentRequest.created_at.desc())))
 
 
@@ -133,7 +201,6 @@ def respond_to_request(
     department_id: UUID | None,
     actor_user_id: UUID,
 ) -> AppointmentRequest:
-    """Facility accepts (with date), declines, or proposes a different time."""
     req = db.get(AppointmentRequest, request_id)
     if req is None or req.facility_id != facility_id:
         raise ValueError("REQUEST_NOT_FOUND")
@@ -147,8 +214,20 @@ def respond_to_request(
     if decision in {"ACCEPTED", "RESCHEDULED"} and offered_appointment_at is None:
         raise ValueError("OFFERED_TIME_REQUIRED")
 
+    if offered_appointment_at is not None:
+        now = datetime.now(timezone.utc)
+        # Reject clearly past times (allow small clock skew)
+        if offered_appointment_at.tzinfo is None:
+            offered_appointment_at = offered_appointment_at.replace(tzinfo=timezone.utc)
+        if offered_appointment_at < now:
+            raise ValueError("OFFERED_TIME_IN_PAST")
+
+    notes = (response_notes or "").strip() or None
+    if notes and len(notes) > MAX_REASON:
+        notes = notes[:MAX_REASON]
+
     req.status = decision
-    req.facility_response_notes = response_notes
+    req.facility_response_notes = notes
     req.offered_appointment_at = offered_appointment_at
     req.responded_by = actor_user_id
     req.responded_at = datetime.now(timezone.utc)
@@ -156,7 +235,6 @@ def respond_to_request(
     if decision in {"ACCEPTED", "RESCHEDULED"} and offered_appointment_at is not None:
         dept_id = department_id or req.department_id
         if dept_id is None:
-            # Pick first active department at facility if none specified
             dept = db.scalar(
                 select(Department)
                 .where(Department.facility_id == facility_id, Department.status == "ACTIVE")
@@ -165,6 +243,10 @@ def respond_to_request(
             if dept is None:
                 raise ValueError("NO_DEPARTMENT")
             dept_id = dept.id
+        else:
+            dept = db.get(Department, dept_id)
+            if dept is None or dept.facility_id != facility_id:
+                raise ValueError("DEPARTMENT_NOT_FOUND")
 
         appt = Appointment(
             patient_id=req.patient_id,
@@ -183,7 +265,7 @@ def respond_to_request(
             patient_id=req.patient_id,
             facility_id=facility_id,
             event_type="APPOINTMENT_CONFIRMED",
-            action_url=f"/portal/appointments",
+            action_url="/portal/book",
             metadata={
                 "request_id": str(req.id),
                 "appointment_id": str(appt.id),
@@ -198,7 +280,7 @@ def respond_to_request(
             patient_id=req.patient_id,
             facility_id=facility_id,
             event_type="APPOINTMENT_DECLINED",
-            action_url=f"/portal/appointments",
+            action_url="/portal/book",
             metadata={"request_id": str(req.id), "decision": decision},
             actor_user_id=actor_user_id,
             commit=False,
@@ -259,43 +341,38 @@ def send_message(
     if facility is None or facility.status != "ACTIVE":
         raise ValueError("FACILITY_NOT_FOUND")
 
+    text = (body or "").strip()
+    if not text:
+        raise ValueError("EMPTY_MESSAGE")
+    if len(text) > MAX_MESSAGE:
+        raise ValueError("MESSAGE_TOO_LONG")
+
+    if related_request_id is not None:
+        req = db.get(AppointmentRequest, related_request_id)
+        if req is None or req.patient_id != patient_id or req.facility_id != facility_id:
+            raise ValueError("INVALID_RELATED_REQUEST")
+
     msg = FacilityMessage(
         patient_id=patient_id,
         facility_id=facility_id,
         sender_type=sender_type,
         sender_user_id=sender_user_id,
-        body=body.strip(),
+        body=text,
         related_request_id=related_request_id,
     )
     db.add(msg)
     db.flush()
 
     if sender_type == "PATIENT":
-        # Notify facility staff
-        staff_users = db.scalars(
-            select(User)
-            .join(Staff, Staff.person_id == User.person_id)
-            .where(
-                Staff.facility_id == facility_id,
-                Staff.status == "ACTIVE",
-                User.status == "ACTIVE",
-            )
-        ).all()
-        from app.notifications.models import Notification
-
-        for u in staff_users:
-            db.add(
-                Notification(
-                    user_id=u.id,
-                    facility_id=facility_id,
-                    notification_type="PATIENT_MESSAGE",
-                    title="Message from patient",
-                    message=body[:200],
-                    priority="NORMAL",
-                    action_url=f"/messages/patient/{patient_id}",
-                    metadata_json={"message_id": str(msg.id)},
-                )
-            )
+        _notify_facility_staff(
+            db,
+            facility_id=facility_id,
+            notification_type="PATIENT_MESSAGE",
+            title="Message from patient",
+            message=text[:200],
+            action_url="/messages",
+            metadata={"message_id": str(msg.id), "patient_id": str(patient_id)},
+        )
     else:
         notify_patient_event(
             db,
@@ -308,6 +385,18 @@ def send_message(
             commit=False,
         )
 
+    record_audit(
+        db,
+        action="FACILITY_MESSAGE_SENT",
+        resource_type="FacilityMessage",
+        resource_id=str(msg.id),
+        result="SUCCESS",
+        user_id=sender_user_id,
+        facility_id=facility_id,
+        patient_id=patient_id,
+        metadata={"sender_type": sender_type},
+        commit=False,
+    )
     return msg
 
 
@@ -327,7 +416,6 @@ def list_thread(
 
 
 def list_patient_threads(db: Session, patient_id: UUID) -> list[dict]:
-    """Distinct facilities the patient has messaged, with last message preview."""
     messages = list(
         db.scalars(
             select(FacilityMessage)
@@ -346,6 +434,41 @@ def list_patient_threads(db: Session, patient_id: UUID) -> list[dict]:
             {
                 "facility_id": m.facility_id,
                 "facility_name": facility.name if facility else "Facility",
+                "last_message": m.body[:120],
+                "last_at": m.created_at,
+                "sender_type": m.sender_type,
+            }
+        )
+    return threads
+
+
+def list_facility_inbox(db: Session, facility_id: UUID) -> list[dict]:
+    """Distinct patients who have messaged this facility, newest first."""
+    messages = list(
+        db.scalars(
+            select(FacilityMessage)
+            .where(FacilityMessage.facility_id == facility_id)
+            .order_by(FacilityMessage.created_at.desc())
+        )
+    )
+    seen: set[UUID] = set()
+    threads: list[dict] = []
+    for m in messages:
+        if m.patient_id in seen:
+            continue
+        seen.add(m.patient_id)
+        from app.patients.models import Person
+
+        person = db.get(Person, m.patient_id)
+        name = (
+            f"{person.first_name} {person.last_name}".strip()
+            if person
+            else str(m.patient_id)
+        )
+        threads.append(
+            {
+                "patient_id": str(m.patient_id),
+                "patient_name": name,
                 "last_message": m.body[:120],
                 "last_at": m.created_at,
                 "sender_type": m.sender_type,
