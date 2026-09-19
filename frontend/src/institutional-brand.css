@@ -14,11 +14,11 @@
 }
 
 .app-shell { grid-template-columns: 270px minmax(0, 1fr); background: var(--canvas); }
-.sidebar { background: linear-gradient(180deg, #10283d 0%, #0c2031 100%); padding: 22px 17px 18px; box-shadow: 5px 0 22px rgba(10, 28, 43, .10); }
+.sidebar { background: #10283d; padding: 22px 17px 18px; box-shadow: 5px 0 22px rgba(10, 28, 43, .10); }
 .brand-row { min-height: 74px; padding-bottom: 18px; gap: 13px; }
 .brand-row > div { flex-direction: column; }
 .brand-mark { width: 45px; height: 56px; display: grid; place-items: center; flex: 0 0 auto; }
-.kenya-crest { width: 43px; height: 52px; object-fit: contain; display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,.18)); }
+.kenya-crest { width: 43px; height: 52px; object-fit: contain; display: block; }
 .brand-copy strong { font-size: 17px; letter-spacing: .015em; color: #fff; }
 .brand-copy span { color: #aebdca; font-size: 11px; }
 .institution-strip { border: 1px solid rgba(255,255,255,.13); background: rgba(255,255,255,.045); border-radius: 7px; padding: 11px 12px; display: grid; gap: 2px; }
@@ -30,7 +30,7 @@
 .nav-section { color: #8299aa; font-size: 10px; letter-spacing: .10em; font-weight: 700; }
 .sidebar a { color: #d8e3eb; border-left-color: transparent; }
 .sidebar a.active { background: rgba(255,255,255,.10); border-left-color: #c5a04d; color: #fff; }
-.sidebar a:hover { background: rgba(255,255,255,.065); }
+.sidebar a:hover { background: rgba(255,255,255,.12); color: #fff; }
 .nav-dot { width: 5px; height: 5px; display: inline-block; border-radius: 50%; background: #6f8799; margin-right: 9px; vertical-align: 2px; }
 .sidebar a.active .nav-dot { background: #c5a04d; }
 .sidebar-footer { border-top-color: rgba(255,255,255,.12); }
@@ -56,7 +56,13 @@
 .card, .table-wrap, .stat-card { box-shadow: 0 2px 12px rgba(20,35,48,.045); }
 button, .button { background: #17324d; border-color: #10263a; }
 button:hover, .button:hover { background: #10263a; }
-.facility-picker { align-items: flex-start; justify-content: center; padding: 36px 18px; min-height: 100vh; background: radial-gradient(circle at top, #e9f0f5 0, #f5f7f9 45%, #edf1f4 100%); }
+.facility-picker {
+  align-items: flex-start;
+  justify-content: center;
+  padding: 36px 18px;
+  min-height: 100vh;
+  background: var(--canvas);
+}
 .facility-picker-card { width: min(1180px, 100%); max-width: none; }
 .facility-picker-card h1 { margin-bottom: 7px; }
 .facility-search { display: flex; align-items: center; gap: 10px; margin: 22px 0 12px; padding: 4px 10px; border: 1px solid var(--border-strong); border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgba(20,35,48,.07); }
@@ -66,8 +72,29 @@ button:hover, .button:hover { background: #10263a; }
 .facility-picker-meta { display: flex; align-items: baseline; gap: 6px; color: var(--muted); margin: 12px 0 14px; font-size: 12px; }
 .facility-picker-meta strong { color: var(--brand); font-size: 17px; }
 .facility-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-height: 62vh; overflow: auto; padding: 3px; }
-.facility-card { position: relative; display: grid; grid-template-columns: 34px minmax(0,1fr) 20px; gap: 11px; align-items: center; text-align: left; padding: 16px 14px; border: 1px solid var(--border); border-radius: 11px; background: #fff; color: var(--ink); transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease; }
-.facility-card:hover:not(:disabled) { transform: translateY(-2px); border-color: #9eafbd; box-shadow: 0 8px 22px rgba(20,35,48,.10); background: #fff; }
+.facility-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0,1fr) 20px;
+  gap: 11px;
+  align-items: center;
+  text-align: left;
+  padding: 16px 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: #fff;
+  color: var(--ink);
+  transition: border-color .1s ease, background-color .1s ease, box-shadow .1s ease;
+}
+.facility-card:hover:not(:disabled),
+.facility-card:focus-visible:not(:disabled) {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: 0 4px 14px rgba(20,35,48,.08);
+}
+.facility-card:active:not(:disabled) {
+  background: var(--brand-tint-strong);
+}
 .facility-card:disabled { opacity: .68; cursor: wait; }
 .facility-card-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--brand-tint); color: var(--brand); font-size: 20px; font-weight: 500; }
 .facility-card-body { min-width: 0; display: grid; gap: 4px; }
