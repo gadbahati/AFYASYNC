@@ -1,4 +1,4 @@
-"""API routes for SHA Treat Abroad."""
+"""API routes for SHA Treat Abroad — hardened."""
 
 from uuid import UUID
 
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_facility_context
 from app.database import get_db
-from app.rbac.models import Staff
+from app.rbac.models import Staff, User
 from app.treat_abroad.schemas import (
     ApprovedProcedureOut,
     OverseasCaseCreate,
@@ -27,7 +27,7 @@ from app.treat_abroad.service import (
 router = APIRouter(prefix="/api/v1/treat-abroad", tags=["Treat Abroad"])
 
 
-def _staff_for_user(db: Session, user, facility_id: UUID) -> UUID:
+def _staff_for_user(db: Session, user: User, facility_id: UUID) -> UUID:
     if user.person_id is None:
         raise HTTPException(status_code=403, detail="STAFF_PROFILE_REQUIRED")
     staff = db.scalar(
@@ -42,11 +42,22 @@ def _staff_for_user(db: Session, user, facility_id: UUID) -> UUID:
     return staff.id
 
 
+def _map_create_error(code: str) -> int:
+    if code in {"PATIENT_NOT_FOUND", "PROCEDURE_NOT_FOUND_OR_INACTIVE"}:
+        return status.HTTP_404_NOT_FOUND
+    if code == "TOO_MANY_OPEN_CASES":
+        return status.HTTP_409_CONFLICT
+    return status.HTTP_400_BAD_REQUEST
+
+
 @router.get("/procedures", response_model=list[ApprovedProcedureOut])
 def get_approved_procedures(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    facility_id: UUID = Depends(require_facility_context),
 ):
+    """List active SHA-approved overseas procedures (facility staff only)."""
+    _ = facility_id  # ensure facility-scoped session
     rows = list_approved_procedures(db, active_only=True)
     if not rows:
         seed_approved_procedures(db)
@@ -59,15 +70,14 @@ def get_approved_procedures(
 def create_overseas_case(
     payload: OverseasCaseCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     facility_id: UUID = Depends(require_facility_context),
 ):
     if payload.facility_id != facility_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="facility_id must match current facility context",
+            detail="FACILITY_MISMATCH",
         )
-    # Always bind referring clinician to authenticated staff at this facility
     clinician_id = _staff_for_user(db, current_user, facility_id)
     data = payload.model_copy(update={"referring_clinician_id": clinician_id})
     try:
@@ -76,7 +86,8 @@ def create_overseas_case(
         db.refresh(case)
         return case
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        code = str(exc)
+        raise HTTPException(status_code=_map_create_error(code), detail=code) from exc
 
 
 @router.get("/cases", response_model=list[OverseasCaseOut])
@@ -84,7 +95,7 @@ def list_overseas_cases(
     patient_id: UUID | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     facility_id: UUID = Depends(require_facility_context),
 ):
     return list_cases(
@@ -99,7 +110,7 @@ def list_overseas_cases(
 def get_overseas_case(
     case_id: UUID,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     facility_id: UUID = Depends(require_facility_context),
 ):
     try:
@@ -119,7 +130,7 @@ def patch_overseas_case(
     case_id: UUID,
     payload: OverseasCaseUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     facility_id: UUID = Depends(require_facility_context),
 ):
     try:
@@ -132,10 +143,12 @@ def patch_overseas_case(
         return updated
     except ValueError as exc:
         detail = str(exc)
-        if detail.startswith("INVALID_STATUS_TRANSITION"):
+        if detail.startswith("INVALID_STATUS_TRANSITION") or detail == "CASE_CLOSED":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
         if detail == "CASE_NOT_FOUND":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
         if detail == "FACILITY_ACCESS_DENIED":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail) from exc
+        if detail in {"AMOUNT_EXCEEDS_PROCEDURE_CAP", "INVALID_AMOUNT"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
