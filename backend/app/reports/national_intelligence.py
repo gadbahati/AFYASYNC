@@ -82,7 +82,7 @@ def _trend(metric: str, label: str, current: float, previous: float) -> National
 
 
 def build_national_intelligence(db, start_date: date, end_date: date, *, actor_user_id) -> NationalIntelligenceResponse:
-    if end_date < start_date:
+    if end_date < start_date or (end_date - start_date).days > 365:
         raise ValueError("INVALID_REPORT_DATE_RANGE")
 
     report = build_national_report(db, start_date, end_date, actor_user_id=actor_user_id)
