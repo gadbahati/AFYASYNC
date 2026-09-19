@@ -24,21 +24,17 @@ from app.rbac.models import User
 
 RESET_CODE_TTL_MINUTES = 15
 
-# Universal test patient — remove or change when production API is live.
 TEST_AFYA_ID = "AFYA-TEST-001"
 TEST_PASSWORD = "TestPatient@2026"
 
 
 def ensure_test_patient(db: Session) -> None:
-    """Create the pilot test patient if missing. Disabled in production."""
     from app.config import settings
 
     if settings.environment == "production":
         return
 
-    existing = db.scalar(
-        select(AfyaIdentity).where(AfyaIdentity.afya_id == TEST_AFYA_ID)
-    )
+    existing = db.scalar(select(AfyaIdentity).where(AfyaIdentity.afya_id == TEST_AFYA_ID))
     if existing is not None:
         user = db.scalar(select(User).where(User.person_id == existing.person_id))
         if user is not None and user.password_hash:
@@ -70,11 +66,7 @@ def ensure_test_patient(db: Session) -> None:
     db.add(person)
     db.flush()
 
-    identity = AfyaIdentity(
-        person_id=person.id,
-        afya_id=TEST_AFYA_ID,
-        status="ACTIVE",
-    )
+    identity = AfyaIdentity(person_id=person.id, afya_id=TEST_AFYA_ID, status="ACTIVE")
     db.add(identity)
     db.flush()
 
@@ -234,7 +226,6 @@ def login_patient(
 ) -> tuple[User, str, str, int]:
     from app.config import settings
 
-    # Ensure pilot test account exists (non-production only)
     ensure_test_patient(db)
 
     try:
@@ -285,15 +276,19 @@ def request_password_reset(
     *,
     payload: PatientPasswordResetRequest,
     ip_address: str | None = None,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
+    """Returns (channel, destination_hint, plain_code, destination).
+
+    plain_code and destination must never be returned in the HTTP body.
+    """
     try:
         person, _identity = resolve_patient_by_identifier(db, payload.identifier)
     except ValueError:
-        return payload.channel, "***", ""
+        return payload.channel, "***", "", ""
 
     user = db.scalar(select(User).where(User.person_id == person.id))
     if user is None or not user.password_hash:
-        return payload.channel, "***", ""
+        return payload.channel, "***", "", ""
 
     if payload.channel == "EMAIL":
         destination = (person.email or "").strip()
@@ -338,7 +333,7 @@ def request_password_reset(
         commit=False,
     )
 
-    return payload.channel, _mask_destination(destination, payload.channel), code
+    return payload.channel, _mask_destination(destination, payload.channel), code, destination
 
 
 def confirm_password_reset(
