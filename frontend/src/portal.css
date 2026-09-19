@@ -1,0 +1,285 @@
+/* ===========================================================
+   Patient portal — same design system as facility app
+   Clean, clinical, mobile-friendly
+   =========================================================== */
+
+.portal-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 16px 48px;
+  background: var(--canvas);
+  background-image: linear-gradient(
+    180deg,
+    var(--brand-darker) 0%,
+    var(--brand-darker) 160px,
+    var(--canvas) 160px
+  );
+}
+
+.portal-shell {
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.portal-shell.wide {
+  width: min(520px, 100%);
+}
+
+.portal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 24px 22px;
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 14px;
+}
+
+.portal-card h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.portal-card h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.portal-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--brand-dark);
+  margin: 8px 0 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+}
+
+.portal-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.portal-brand .brand-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--flag-red);
+}
+
+.portal-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.portal-tile {
+  display: block;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  border-left: 3px solid var(--brand);
+}
+
+.portal-tile:hover {
+  text-decoration: none;
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: var(--shadow-sm);
+}
+
+.portal-tile strong {
+  display: block;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.portal-tile .muted {
+  margin: 4px 0 0;
+}
+
+.portal-form {
+  display: grid;
+  gap: 12px;
+}
+
+.portal-form button[type="submit"] {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.portal-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0;
+}
+
+.portal-list-item {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.portal-list-item:first-child {
+  border-top: none;
+  padding-top: 4px;
+}
+
+.portal-status {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--canvas);
+  color: var(--muted);
+}
+
+.portal-status.pending {
+  background: var(--amber-tint);
+  border-color: var(--amber-border);
+  color: var(--amber);
+}
+
+.portal-status.accepted,
+.portal-status.rescheduled {
+  background: var(--brand-tint);
+  border-color: var(--brand-tint-strong);
+  color: var(--brand-dark);
+}
+
+.portal-status.declined,
+.portal-status.cancelled_by_patient {
+  background: var(--flag-red-tint);
+  border-color: #f0c4ca;
+  color: var(--flag-red);
+}
+
+.portal-thread-btn {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  min-height: auto;
+  font-weight: 400;
+}
+
+.portal-thread-btn:hover {
+  background: var(--brand-tint);
+  border-color: var(--brand);
+  color: var(--ink);
+}
+
+.portal-thread-btn.active {
+  border-color: var(--brand);
+  border-width: 2px;
+  background: var(--brand-tint);
+}
+
+.portal-chat {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: var(--canvas);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.portal-bubble {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.portal-bubble.patient {
+  align-self: flex-end;
+  background: var(--brand);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.portal-bubble.facility {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  border-bottom-left-radius: 4px;
+}
+
+.portal-bubble .who {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-bottom: 2px;
+}
+
+.portal-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.portal-signout {
+  background: transparent;
+  border: none;
+  color: var(--brand);
+  padding: 0;
+  min-height: auto;
+  font-weight: 500;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.portal-signout:hover {
+  background: transparent;
+  text-decoration: underline;
+  color: var(--brand-dark);
+}
+
+.portal-meta {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .portal-page {
+    padding: 16px 12px 36px;
+    background-image: linear-gradient(
+      180deg,
+      var(--brand-darker) 0%,
+      var(--brand-darker) 120px,
+      var(--canvas) 120px
+    );
+  }
+  .portal-card {
+    padding: 18px 16px;
+  }
+}
