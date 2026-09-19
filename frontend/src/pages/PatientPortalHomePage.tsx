@@ -8,7 +8,6 @@ type Profile = {
   first_name: string;
   last_name: string;
   afya_id?: string | null;
-  phone?: string | null;
 };
 
 export function PatientPortalHomePage() {
@@ -37,9 +36,11 @@ export function PatientPortalHomePage() {
 
   if (!auth.ready) {
     return (
-      <div className="auth-page">
-        <div className="card auth-card">
-          <p className="muted">Loading…</p>
+      <div className="portal-page">
+        <div className="portal-shell">
+          <div className="portal-card">
+            <p className="muted">Loading…</p>
+          </div>
         </div>
       </div>
     );
@@ -50,77 +51,64 @@ export function PatientPortalHomePage() {
   }
 
   return (
-    <main className="auth-page" style={{ alignItems: "flex-start", paddingTop: "2rem" }}>
-      <div className="card auth-card" style={{ maxWidth: "32rem", width: "100%" }}>
-        <div className="auth-brand">
-          <KenyaFlag />
-          <div>
-            <div className="brand-kicker">Patient portal</div>
-            <h1>AfyaSync</h1>
+    <div className="portal-page">
+      <div className="portal-shell">
+        <div className="portal-card">
+          <div className="portal-brand">
+            <KenyaFlag />
+            <div>
+              <div className="brand-kicker">Patient portal</div>
+              <h1>AfyaSync</h1>
+            </div>
           </div>
-        </div>
 
-        {profile ? (
-          <div>
-            <h2>
-              {profile.first_name} {profile.last_name}
-            </h2>
-            {profile.afya_id && <p className="muted">Afya ID: {profile.afya_id}</p>}
+          {profile ? (
+            <div>
+              <h2>
+                {profile.first_name} {profile.last_name}
+              </h2>
+              {profile.afya_id && <p className="portal-meta">Afya ID: {profile.afya_id}</p>}
+            </div>
+          ) : (
+            <p className="muted">{error || "Loading your profile…"}</p>
+          )}
+
+          <div className="portal-actions">
+            <Link to="/portal/book" className="portal-tile">
+              <strong>Book appointment</strong>
+              <p className="muted small">Choose any hospital — they accept, propose a time, or decline</p>
+            </Link>
+            <Link to="/portal/messages" className="portal-tile">
+              <strong>Messages</strong>
+              <p className="muted small">Chat with a facility about your care</p>
+            </Link>
+            <Link to="/portal/encounters" className="portal-tile">
+              <strong>My visits</strong>
+              <p className="muted small">Encounters and clinical summaries</p>
+            </Link>
+            <Link to="/portal/consents" className="portal-tile">
+              <strong>Sensitive disclosure decisions</strong>
+              <p className="muted small">
+                {consentsCount != null
+                  ? `${consentsCount} recorded`
+                  : "Manage what can be shared across facilities"}
+              </p>
+            </Link>
+            <Link to="/portal/coverage" className="portal-tile">
+              <strong>My coverage</strong>
+              <p className="muted small">SHA and other membership details</p>
+            </Link>
           </div>
-        ) : (
-          <p className="muted">{error || "Loading your profile…"}</p>
-        )}
 
-        <div style={{ display: "grid", gap: "0.75rem", marginTop: "1.25rem" }}>
-          <Link to="/portal/book" className="entry-choice" style={linkStyle}>
-            <strong>Book appointment</strong>
-            <p className="muted small" style={{ margin: "0.25rem 0 0" }}>
-              Choose any hospital — they accept, propose a time, or decline
-            </p>
-          </Link>
-          <Link to="/portal/messages" className="entry-choice" style={linkStyle}>
-            <strong>Messages</strong>
-            <p className="muted small" style={{ margin: "0.25rem 0 0" }}>
-              Chat with a facility about your care
-            </p>
-          </Link>
-          <Link to="/portal/encounters" className="entry-choice" style={linkStyle}>
-            <strong>My visits</strong>
-            <p className="muted small" style={{ margin: "0.25rem 0 0" }}>
-              Encounters and clinical summaries
-            </p>
-          </Link>
-          <Link to="/portal/consents" className="entry-choice" style={linkStyle}>
-            <strong>Sensitive disclosure decisions</strong>
-            <p className="muted small" style={{ margin: "0.25rem 0 0" }}>
-              {consentsCount != null ? `${consentsCount} recorded` : "Manage what can be shared across facilities"}
-            </p>
-          </Link>
-          <Link to="/portal/coverage" className="entry-choice" style={linkStyle}>
-            <strong>My coverage</strong>
-            <p className="muted small" style={{ margin: "0.25rem 0 0" }}>
-              SHA and other membership details
-            </p>
-          </Link>
+          <button type="button" className="portal-signout" onClick={() => void auth.logout()}>
+            Sign out
+          </button>
+
+          <p className="muted small auth-note">
+            © {new Date().getFullYear()} AfyaSync. Developed by Bahati GAD Wangwe.
+          </p>
         </div>
-
-        <button type="button" className="linkish" style={{ marginTop: "1.5rem" }} onClick={() => void auth.logout()}>
-          Sign out
-        </button>
-
-        <p className="muted small auth-note" style={{ marginTop: "1rem" }}>
-          © {new Date().getFullYear()} AfyaSync. Developed by Bahati GAD Wangwe.
-        </p>
       </div>
-    </main>
+    </div>
   );
 }
-
-const linkStyle: React.CSSProperties = {
-  display: "block",
-  padding: "0.85rem 1rem",
-  border: "1px solid var(--border, #d0d7de)",
-  borderRadius: "8px",
-  textDecoration: "none",
-  color: "inherit",
-};
