@@ -15,6 +15,13 @@ Polished facility **Claims & rework** page (`/claims`):
 | **Sandbox reject** | Demo rejection without live SHA |
 | **Rejection workbench** | Code, problem, fix guide, owner |
 
+## UI hardening (branding)
+
+- Kenya **flag** replaced site-wide with official **Coat of Arms**
+- **No gradients** on auth, facility select, portal, or sidebar
+- Solid background colours only
+- Clear **hover / focus / active** states on tiles, buttons, facility cards
+
 ## API used
 
 - `GET /api/v1/claims/invoices/{id}/preflight`
