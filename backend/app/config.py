@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _DEFAULT_JWT_SECRET = "change-this-development-secret"
 _DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:5173"
 
-# Keep backend deployments tied to the national KMHFR facility-directory import.
+
 class Settings(BaseSettings):
     app_name: str = "AfyaSync API"
     app_version: str = "0.1.0"
@@ -25,6 +25,21 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = 5.0
     cors_origins: str = _DEFAULT_CORS_ORIGINS
     ussd_webhook_secret: str = ""
+
+    # --- Phase 7: outbound messaging ---
+    # SMS: console | http
+    sms_provider: str = "console"
+    sms_http_url: str = ""
+    sms_http_api_key: str = ""
+    sms_sender_id: str = "AfyaSync"
+    # Email: console | smtp
+    email_provider: str = "console"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "noreply@afyasync.local"
+    smtp_use_tls: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -48,7 +63,15 @@ class Settings(BaseSettings):
             url = "postgresql+psycopg://" + url[len("postgresql://"):]
         return url
 
-    @field_validator("access_token_minutes", "refresh_token_days", "db_pool_size", "db_max_overflow", "db_pool_timeout_seconds", "db_pool_recycle_seconds")
+    @field_validator(
+        "access_token_minutes",
+        "refresh_token_days",
+        "db_pool_size",
+        "db_max_overflow",
+        "db_pool_timeout_seconds",
+        "db_pool_recycle_seconds",
+        "smtp_port",
+    )
     @classmethod
     def validate_positive_settings(cls, value: int) -> int:
         if value <= 0:
@@ -62,18 +85,27 @@ class Settings(BaseSettings):
             raise ValueError("WORKER_POLL_SECONDS must be greater than 0 and at most 300")
         return value
 
+    @field_validator("sms_provider", "email_provider")
+    @classmethod
+    def normalize_providers(cls, value: str) -> str:
+        return (value or "console").strip().lower()
+
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
         if self.environment == "production":
             secret = self.jwt_secret.strip()
             if not secret or secret == _DEFAULT_JWT_SECRET:
-                raise ValueError("JWT_SECRET must be set to a strong non-default value when ENVIRONMENT=production")
+                raise ValueError(
+                    "JWT_SECRET must be set to a strong non-default value when ENVIRONMENT=production"
+                )
             if len(secret) < 32:
                 raise ValueError("JWT_SECRET must be at least 32 characters in production")
             if len(set(secret)) < 8 or re.fullmatch(r"(.)\1+", secret):
                 raise ValueError("JWT_SECRET is too predictable for production")
             if self.jwt_algorithm != "HS256":
-                raise ValueError("JWT_ALGORITHM must be HS256 for the configured shared-secret token implementation")
+                raise ValueError(
+                    "JWT_ALGORITHM must be HS256 for the configured shared-secret token implementation"
+                )
             parsed_db = urlparse(self.database_url)
             if parsed_db.scheme != "postgresql+psycopg":
                 raise ValueError("DATABASE_URL must use the PostgreSQL psycopg driver in production")
@@ -81,11 +113,28 @@ class Settings(BaseSettings):
                 raise ValueError("DATABASE_URL must not use the development database in production")
             origins = self.cors_origin_list()
             if not origins:
-                raise ValueError("CORS_ORIGINS must contain at least one trusted browser origin in production")
+                raise ValueError(
+                    "CORS_ORIGINS must contain at least one trusted browser origin in production"
+                )
             for origin in origins:
                 parsed = urlparse(origin)
-                if parsed.scheme != "https" or not parsed.netloc or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
-                    raise ValueError("CORS_ORIGINS must contain only explicit HTTPS origins in production")
+                if (
+                    parsed.scheme != "https"
+                    or not parsed.netloc
+                    or parsed.path not in ("", "/")
+                    or parsed.query
+                    or parsed.fragment
+                ):
+                    raise ValueError(
+                        "CORS_ORIGINS must contain only explicit HTTPS origins in production"
+                    )
+            # Warn-level soft checks: prefer real providers in production
+            if self.sms_provider == "console":
+                pass  # still allowed; ops should set SMS_PROVIDER=http
+            if self.sms_provider == "http" and not self.sms_http_url.strip():
+                raise ValueError("SMS_HTTP_URL is required when SMS_PROVIDER=http")
+            if self.email_provider == "smtp" and not self.smtp_host.strip():
+                raise ValueError("SMTP_HOST is required when EMAIL_PROVIDER=smtp")
         return self
 
     def cors_origin_list(self) -> list[str]:
