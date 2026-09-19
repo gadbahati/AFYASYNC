@@ -89,6 +89,8 @@ from app.theatre import models as theatre_models
 from app.theatre.router import router as theatre_router
 from app.radiology import models as radiology_models
 from app.radiology.router import router as radiology_router
+from app.treat_abroad import models as treat_abroad_models
+from app.treat_abroad.router import router as treat_abroad_router
 from app.wards import models as ward_models
 from app.wards.router import router as wards_router
 from app.wards.movement_router import router as ward_movement_router
@@ -207,6 +209,7 @@ app.include_router(observability_router)
 app.include_router(operations_router)
 app.include_router(ussd_router)
 app.include_router(consent_router)
+app.include_router(treat_abroad_router)
 
 @app.get("/health", tags=["System"])
 def health_check():
