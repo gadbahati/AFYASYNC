@@ -12,6 +12,8 @@ from app.rbac.models import User
 EVENT_TEMPLATES = {
     "APPOINTMENT_CONFIRMED": ("Appointment confirmed", "Your AfyaSync appointment has been confirmed."),
     "APPOINTMENT_REMINDER": ("Appointment reminder", "You have an upcoming AfyaSync appointment."),
+    "APPOINTMENT_DECLINED": ("Appointment request declined", "A facility responded to your appointment request. Open the portal for details."),
+    "FACILITY_MESSAGE": ("Message from facility", "You have a new message from a healthcare facility."),
     "QUEUE_CHECKIN": ("Check-in complete", "Your AfyaSync check-in has been recorded."),
     "QUEUE_STATUS_CHANGED": ("Queue status updated", "Your AfyaSync queue status has been updated."),
     "LAB_RESULT_READY": ("Lab result available", "A laboratory result is available in your AfyaSync account."),
