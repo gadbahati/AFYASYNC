@@ -102,6 +102,11 @@ export const api: any = {
   facilityMessageThread: (patientId: string) => request(`/api/v1/facility/messages/${patientId}`),
   facilitySendMessage: (payload: any) => request("/api/v1/facility/messages", { method: "POST", body: JSON.stringify(payload) }),
 
+  listTreatAbroadProcedures: () => request("/api/v1/treat-abroad/procedures"),
+  listTreatAbroadCases: (status?: string) => request(`/api/v1/treat-abroad/cases${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  createTreatAbroadCase: (payload: any) => request("/api/v1/treat-abroad/cases", { method: "POST", body: JSON.stringify(payload) }),
+  updateTreatAbroadCase: (id: string, payload: any) => request(`/api/v1/treat-abroad/cases/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
   listPatients: (limit = 50, offset = 0) => request(`/api/v1/patients?limit=${limit}&offset=${offset}`),
   getPatient: (id: string) => request(`/api/v1/patients/${id}`),
   getPatientRecord: (id: string) => request(`/api/v1/patients/${id}/summary`),
