@@ -6,9 +6,9 @@ AfyaSync is a standalone healthcare platform designed to connect patients, healt
 
 > AfyaSync is the platform. SHA is an integrated capability.
 
-**Developed by Bahati GAD**
+**Developed by Bahati GAD Wangwe**
 
-© 2026 AfyaSync. Developed by Bahati GAD. All rights reserved.  
+© 2026 AfyaSync. Developed by Bahati GAD Wangwe. All rights reserved.  
 Unauthorized copying, reverse engineering, redistribution, or commercial use of this software, its design, architecture, source code, or documentation is strictly prohibited and will be prosecuted under Kenyan and international law.
 
 ## Project status
@@ -89,7 +89,7 @@ AfyaSync is intended for regulated healthcare use. Production deployment require
 
 ## Copyright & Ownership
 
-© 2026 AfyaSync. Developed by Bahati GAD. All rights reserved.
+© 2026 AfyaSync. Developed by Bahati GAD Wangwe. All rights reserved.
 
-This software and its associated documentation are the intellectual property of Bahati GAD.  
+This software and its associated documentation are the intellectual property of Bahati GAD Wangwe.  
 Any unauthorized use, copying, modification, distribution, reverse engineering, or commercial exploitation is strictly prohibited and will be subject to legal action under the laws of Kenya and applicable international treaties.
