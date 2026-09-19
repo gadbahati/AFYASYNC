@@ -7,7 +7,6 @@ type Procedure = {
   code: string;
   name: string;
   max_cover_kes?: number;
-  description?: string | null;
 };
 
 type CaseRow = {
@@ -16,11 +15,8 @@ type CaseRow = {
   patient_id: string;
   procedure_id: string;
   status: string;
-  clinical_summary: string;
-  local_unavailability_reason: string;
   foreign_hospital_name?: string | null;
   foreign_hospital_country?: string | null;
-  sha_preauth_reference?: string | null;
   created_at: string;
 };
 
@@ -102,23 +98,23 @@ export function TreatAbroadPage() {
       return;
     }
     if (!patientId || !procedureId || summary.trim().length < 20 || localReason.trim().length < 10) {
-      setError("Patient, procedure, clinical summary (20+ chars) and local unavailability reason (10+ chars) are required.");
+      setError(
+        "Patient, procedure, clinical summary (20+ chars) and local unavailability reason (10+ chars) are required.",
+      );
       return;
     }
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      // referring_clinician_id: use a stable placeholder UUID from me if needed — API requires UUID
-      const me = await api.me();
-      const clinicianId = me?.data?.id || me?.id;
+      // referring_clinician_id is required by schema; server overwrites with facility staff of current user
       await api.createTreatAbroadCase({
         patient_id: patientId,
         facility_id: auth.facilityId,
         procedure_id: procedureId,
         clinical_summary: summary.trim(),
         local_unavailability_reason: localReason.trim(),
-        referring_clinician_id: clinicianId,
+        referring_clinician_id: "00000000-0000-0000-0000-000000000000",
         foreign_hospital_name: hospitalName || null,
         foreign_hospital_country: hospitalCountry || null,
         foreign_hospital_city: hospitalCity || null,
@@ -137,12 +133,12 @@ export function TreatAbroadPage() {
     }
   }
 
-  async function advance(caseId: string, status: string) {
+  async function advance(caseId: string, nextStatus: string) {
     setSaving(true);
     setError(null);
     try {
-      await api.updateTreatAbroadCase(caseId, { status });
-      setNotice(`Case moved to ${status}.`);
+      await api.updateTreatAbroadCase(caseId, { status: nextStatus });
+      setNotice(`Case moved to ${nextStatus}.`);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message || err.code : "UPDATE_FAILED");
