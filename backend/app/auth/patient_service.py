@@ -1,4 +1,4 @@
-"""Patient portal authentication — real identity lookup, no dummy accounts."""
+"""Patient portal authentication — real identity lookup + temporary test account."""
 
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -23,6 +23,70 @@ from app.patients.models import AfyaIdentity, Person
 from app.rbac.models import User
 
 RESET_CODE_TTL_MINUTES = 15
+
+# Universal test patient — remove or change when production API is live.
+TEST_AFYA_ID = "AFYA-TEST-001"
+TEST_PASSWORD = "TestPatient@2026"
+
+
+def ensure_test_patient(db: Session) -> None:
+    """Create the pilot test patient if missing. Disabled in production."""
+    from app.config import settings
+
+    if settings.environment == "production":
+        return
+
+    existing = db.scalar(
+        select(AfyaIdentity).where(AfyaIdentity.afya_id == TEST_AFYA_ID)
+    )
+    if existing is not None:
+        user = db.scalar(select(User).where(User.person_id == existing.person_id))
+        if user is not None and user.password_hash:
+            return
+        if user is None:
+            user = User(
+                person_id=existing.person_id,
+                username=TEST_AFYA_ID,
+                password_hash=hash_password(TEST_PASSWORD),
+                status="ACTIVE",
+            )
+            db.add(user)
+            db.flush()
+            return
+        user.password_hash = hash_password(TEST_PASSWORD)
+        user.status = "ACTIVE"
+        db.add(user)
+        db.flush()
+        return
+
+    person = Person(
+        first_name="Test",
+        last_name="Patient",
+        phone="0700000001",
+        email="test.patient@afyasync.local",
+        sex="UNKNOWN",
+        status="ACTIVE",
+    )
+    db.add(person)
+    db.flush()
+
+    identity = AfyaIdentity(
+        person_id=person.id,
+        afya_id=TEST_AFYA_ID,
+        status="ACTIVE",
+    )
+    db.add(identity)
+    db.flush()
+
+    user = User(
+        person_id=person.id,
+        username=TEST_AFYA_ID,
+        phone=person.phone,
+        password_hash=hash_password(TEST_PASSWORD),
+        status="ACTIVE",
+    )
+    db.add(user)
+    db.flush()
 
 
 def _hash_code(code: str) -> str:
@@ -170,6 +234,9 @@ def login_patient(
 ) -> tuple[User, str, str, int]:
     from app.config import settings
 
+    # Ensure pilot test account exists (non-production only)
+    ensure_test_patient(db)
+
     try:
         person, identity = resolve_patient_by_identifier(db, payload.identifier)
     except ValueError:
@@ -238,7 +305,6 @@ def request_password_reset(
             raise ValueError("NO_PHONE_ON_FILE")
 
     now = datetime.now(timezone.utc)
-    # Invalidate prior unused tokens for this user
     db.execute(
         update(PatientPasswordResetToken)
         .where(
@@ -310,7 +376,6 @@ def confirm_password_reset(
     db.add(user)
     db.flush()
 
-    # Invalidate any other outstanding reset tokens
     db.execute(
         update(PatientPasswordResetToken)
         .where(
