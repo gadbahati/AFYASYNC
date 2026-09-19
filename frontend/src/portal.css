@@ -1,7 +1,4 @@
-/* ===========================================================
-   Patient portal — same design system as facility app
-   Clean, clinical, mobile-friendly
-   =========================================================== */
+/* Patient portal — plain solid colours, no gradients */
 
 .portal-page {
   min-height: 100vh;
@@ -10,12 +7,6 @@
   align-items: center;
   padding: 28px 16px 48px;
   background: var(--canvas);
-  background-image: linear-gradient(
-    180deg,
-    var(--brand-darker) 0%,
-    var(--brand-darker) 160px,
-    var(--canvas) 160px
-  );
 }
 
 .portal-shell {
@@ -34,7 +25,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 24px 22px;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
   display: grid;
   gap: 14px;
 }
@@ -50,13 +41,12 @@
 }
 
 .portal-card h3 {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--brand-dark);
   margin: 8px 0 0;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-size: 12px;
 }
 
 .portal-brand {
@@ -67,12 +57,18 @@
   border-bottom: 1px solid var(--border);
 }
 
+.portal-brand .kenya-crest {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
 .portal-brand .brand-kicker {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--flag-red);
+  color: var(--brand-dark);
 }
 
 .portal-actions {
@@ -89,15 +85,20 @@
   background: var(--surface);
   text-decoration: none;
   color: inherit;
-  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  transition: border-color 100ms ease, background-color 100ms ease, box-shadow 100ms ease;
   border-left: 3px solid var(--brand);
 }
 
-.portal-tile:hover {
+.portal-tile:hover,
+.portal-tile:focus-visible {
   text-decoration: none;
   border-color: var(--brand);
   background: var(--brand-tint);
   box-shadow: var(--shadow-sm);
+}
+
+.portal-tile:active {
+  background: var(--brand-tint-strong);
 }
 
 .portal-tile strong {
@@ -185,7 +186,8 @@
   font-weight: 400;
 }
 
-.portal-thread-btn:hover {
+.portal-thread-btn:hover,
+.portal-thread-btn:focus-visible {
   background: var(--brand-tint);
   border-color: var(--brand);
   color: var(--ink);
@@ -272,12 +274,6 @@
 @media (max-width: 480px) {
   .portal-page {
     padding: 16px 12px 36px;
-    background-image: linear-gradient(
-      180deg,
-      var(--brand-darker) 0%,
-      var(--brand-darker) 120px,
-      var(--canvas) 120px
-    );
   }
   .portal-card {
     padding: 18px 16px;
