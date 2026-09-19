@@ -48,6 +48,9 @@ class DiagnosisCreate(BaseModel):
     diagnosis_name: str = Field(min_length=1, max_length=250)
     diagnosis_type: str = "PRIMARY"
     status: str = "ACTIVE"
+    # When True, this diagnosis is sensitive and requires explicit patient
+    # digital consent before it can be shared across facilities.
+    is_sensitive: bool = False
 
 
 class DiagnosisResponse(DiagnosisCreate):
