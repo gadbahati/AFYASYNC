@@ -154,25 +154,38 @@ def list_integration_transactions(db: Session, facility_id: UUID, *, integration
         if normalized not in {"PENDING", "PROCESSING", "SUCCEEDED", "FAILED", "RETRYING"}:
             raise IntegrationError("INVALID_TRANSACTION_STATUS")
         stmt = stmt.where(IntegrationTransaction.status == normalized)
-    return list(db.scalars(stmt.order_by(IntegrationTransaction.created_at.desc()).limit(max(1, min(limit, 500)))))
+    safe_limit = max(1, min(int(limit), 500))
+    return list(db.scalars(stmt.order_by(IntegrationTransaction.created_at.desc(), IntegrationTransaction.id.desc()).limit(safe_limit)))
 
 
 def mark_transaction_result(db: Session, transaction_id: UUID, status: str, response_code: str | None = None, response_data: dict | None = None, external_reference: str | None = None) -> IntegrationTransaction:
     if status not in {"PENDING", "PROCESSING", "SUCCEEDED", "FAILED", "RETRYING"}:
         raise IntegrationError("INVALID_TRANSACTION_STATUS")
-    transaction = db.get(IntegrationTransaction, transaction_id)
+    allowed = {
+        "PENDING": {"PROCESSING", "FAILED", "RETRYING"},
+        "PROCESSING": {"SUCCEEDED", "FAILED", "RETRYING"},
+        "RETRYING": {"PROCESSING", "FAILED", "SUCCEEDED"},
+        "SUCCEEDED": {"SUCCEEDED"},
+        "FAILED": {"RETRYING", "FAILED"},
+    }
+    transaction = db.scalar(select(IntegrationTransaction).where(IntegrationTransaction.id == transaction_id).with_for_update())
     if transaction is None:
         raise IntegrationError("TRANSACTION_NOT_FOUND")
+    if status not in allowed.get(transaction.status, set()):
+        raise IntegrationError("INVALID_TRANSACTION_STATE_TRANSITION")
+    if transaction.status == "SUCCEEDED":
+        if external_reference and transaction.external_reference and external_reference != transaction.external_reference:
+            raise IntegrationError("FINAL_TRANSACTION_REFERENCE_MISMATCH")
+        return transaction
     transaction.status = status
     transaction.attempt_count += 1
     transaction.last_attempt_at = datetime.now(timezone.utc)
     transaction.response_code = response_code
-    transaction.external_reference = external_reference
+    transaction.external_reference = external_reference or transaction.external_reference
     transaction.response_data = response_data or {}
     db.commit()
     db.refresh(transaction)
     return transaction
-
 
 def verify_callback_signature(integration: Integration, timestamp: str, signature: str, payload: dict, *, tolerance_seconds: int = 300) -> None:
     """Verify an HMAC-SHA256 payer callback using an environment-backed secret."""
