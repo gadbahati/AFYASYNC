@@ -35,7 +35,7 @@ export function EntryPage() {
           </div>
 
           <p className="muted small auth-note">
-            © {new Date().getFullYear()} AfyaSync. Developed by Bahati GAD Wangwe.
+            © {new Date().getFullYear()} AfyaSync. Developed by <strong>BAHATI GAD WANGWE</strong>.
           </p>
         </div>
       </div>
