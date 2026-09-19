@@ -1,4 +1,4 @@
-import { clearSession, getAccessToken, getRefreshToken, setSession } from "../auth/storage";
+import { clearSession, getAccessToken, getAccountType, getRefreshToken, setSession } from "../auth/storage";
 import type { ApiErrorBody, TokenResponse } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -37,7 +37,7 @@ async function tryRefresh(): Promise<boolean> {
     const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: refresh }) });
     if (!res.ok) { notifyAuthExpired(); return false; }
     const data = (await res.json()) as TokenResponse;
-    setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, account_type: getAccountType() });
     return true;
   } catch { notifyAuthExpired(); return false; }
 }
@@ -59,7 +59,7 @@ async function request<T = any>(path: string, init: RequestInit = {}, retry = tr
     let body: ApiErrorBody | null = null;
     try { body = (await res.json()) as ApiErrorBody; } catch {}
     const parsed = parseError(body, res.status);
-    if (res.status === 401 && !path.includes("/auth/login") && !path.includes("/auth/refresh") && !path.includes("/auth/logout")) notifyAuthExpired();
+    if (res.status === 401 && !path.includes("/auth/login") && !path.includes("/auth/patient") && !path.includes("/auth/refresh") && !path.includes("/auth/logout")) notifyAuthExpired();
     throw new ApiError(res.status, parsed.code, parsed.message);
   }
   if (res.status === 204) return undefined as T;
@@ -68,12 +68,25 @@ async function request<T = any>(path: string, init: RequestInit = {}, retry = tr
 
 export const api: any = {
   login: (username: string, password: string) => request("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
+  patientLogin: (identifier: string, password: string) =>
+    request("/api/v1/auth/patient/login", { method: "POST", body: JSON.stringify({ identifier, password }) }, false),
+  patientRegister: (payload: { afya_id: string; password: string; phone?: string; email?: string }) =>
+    request("/api/v1/auth/patient/register", { method: "POST", body: JSON.stringify(payload) }, false),
+  patientPasswordResetRequest: (identifier: string, channel: "PHONE" | "EMAIL") =>
+    request("/api/v1/auth/patient/password-reset/request", { method: "POST", body: JSON.stringify({ identifier, channel }) }, false),
+  patientPasswordResetConfirm: (identifier: string, code: string, new_password: string) =>
+    request("/api/v1/auth/patient/password-reset/confirm", { method: "POST", body: JSON.stringify({ identifier, code, new_password }) }, false),
   selectFacility: (facility_id: string) => request("/api/v1/auth/select-facility", { method: "POST", body: JSON.stringify({ facility_id }) }, false),
   facilities: () => request("/api/v1/auth/facilities"),
   facilityDirectory: (search = "", page = 1, pageSize = 30) => request(`/api/v1/facilities/directory?search=${encodeURIComponent(search.trim())}&page=${page}&page_size=${pageSize}`),
   addDirectoryFacility: (payload: any) => request("/api/v1/facilities/directory", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request("/api/v1/auth/me"),
   logout: (refresh_token: string) => request("/api/v1/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token }) }, false),
+
+  portalMe: () => request("/api/v1/portal/me"),
+  portalEncounters: (limit = 50, offset = 0) => request(`/api/v1/portal/encounters?limit=${limit}&offset=${offset}`),
+  portalConsents: () => request("/api/v1/portal/consents"),
+  portalCoverage: () => request("/api/v1/portal/coverage"),
 
   listPatients: (limit = 50, offset = 0) => request(`/api/v1/patients?limit=${limit}&offset=${offset}`),
   getPatient: (id: string) => request(`/api/v1/patients/${id}`),
