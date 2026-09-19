@@ -158,11 +158,13 @@ export const api: any = {
   recordPayment: (payload: any, idempotencyKey?: string) => request("/api/v1/billing/payments", { method: "POST", headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined, body: JSON.stringify(payload) }),
   listClaims: () => request("/api/v1/claims"),
   createClaim: (invoice_id: string) => request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id }) }),
+  claimPreflight: (invoice_id: string) => request(`/api/v1/claims/invoices/${invoice_id}/preflight`),
   validateClaim: (claim_id: string) => request(`/api/v1/claims/${claim_id}/validate`, { method: "POST" }),
   submitClaim: (claim_id: string) => request(`/api/v1/claims/${claim_id}/submit`, { method: "POST" }),
   listClaimRejections: () => request("/api/v1/claims/workbench/rejections"),
   recordClaimResponse: (claim_id: string, payload: any) => request(`/api/v1/claims/${claim_id}/response`, { method: "POST", body: JSON.stringify(payload) }),
   reconcileClaim: (claim_id: string, received_amount: number) => request(`/api/v1/claims/${claim_id}/reconcile`, { method: "POST", body: JSON.stringify({ received_amount }) }),
+  sandboxRejectClaim: (claim_id: string) => request(`/api/v1/claims/${claim_id}/sandbox-reject`, { method: "POST", body: JSON.stringify({}) }),
 
   listLabTests: () => request("/api/v1/laboratory/tests"),
   createLabOrder: (payload: any) => request("/api/v1/laboratory/orders", { method: "POST", body: JSON.stringify(payload) }),
