@@ -39,6 +39,9 @@ class FacilityReport(BaseModel):
     claims_approved: Decimal
     claims_paid: Decimal
     claims_receivable: Decimal
+    reconciled_claims: int
+    unreconciled_claims: int
+    reconciliation_variance: Decimal
     claim_statuses: list[ClaimStatusSummary]
     payer_claims: list[PayerClaimSummary]
 
