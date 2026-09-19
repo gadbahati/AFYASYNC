@@ -3,10 +3,12 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_facility_context
 from app.database import get_db
+from app.rbac.models import Staff
 from app.treat_abroad.schemas import (
     ApprovedProcedureOut,
     OverseasCaseCreate,
@@ -25,12 +27,26 @@ from app.treat_abroad.service import (
 router = APIRouter(prefix="/api/v1/treat-abroad", tags=["Treat Abroad"])
 
 
+def _staff_for_user(db: Session, user, facility_id: UUID) -> UUID:
+    if user.person_id is None:
+        raise HTTPException(status_code=403, detail="STAFF_PROFILE_REQUIRED")
+    staff = db.scalar(
+        select(Staff).where(
+            Staff.person_id == user.person_id,
+            Staff.facility_id == facility_id,
+            Staff.status == "ACTIVE",
+        )
+    )
+    if staff is None:
+        raise HTTPException(status_code=403, detail="STAFF_NOT_AT_FACILITY")
+    return staff.id
+
+
 @router.get("/procedures", response_model=list[ApprovedProcedureOut])
 def get_approved_procedures(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """List SHA-approved procedures eligible for overseas treatment."""
     rows = list_approved_procedures(db, active_only=True)
     if not rows:
         seed_approved_procedures(db)
@@ -51,8 +67,11 @@ def create_overseas_case(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="facility_id must match current facility context",
         )
+    # Always bind referring clinician to authenticated staff at this facility
+    clinician_id = _staff_for_user(db, current_user, facility_id)
+    data = payload.model_copy(update={"referring_clinician_id": clinician_id})
     try:
-        case = create_case(db, payload=payload, created_by=current_user.id)
+        case = create_case(db, payload=data, created_by=current_user.id)
         db.commit()
         db.refresh(case)
         return case
