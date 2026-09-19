@@ -59,8 +59,6 @@ a:hover { text-decoration: underline; }
   * { transition: none !important; animation: none !important; }
 }
 
-/* ---------- App shell ---------- */
-
 .app-shell {
   display: grid;
   grid-template-columns: 248px 1fr;
@@ -139,8 +137,6 @@ a:hover { text-decoration: underline; }
   margin: 0 auto;
 }
 
-/* ---------- Page headers ---------- */
-
 .page-header {
   display: flex;
   justify-content: space-between;
@@ -184,8 +180,6 @@ a:hover { text-decoration: underline; }
   gap: 16px;
 }
 
-/* ---------- Kenya flag ---------- */
-
 .kenya-flag {
   border-radius: 3px;
   overflow: hidden;
@@ -193,8 +187,6 @@ a:hover { text-decoration: underline; }
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
 }
 .kenya-flag.large { width: 48px; height: 32px; }
-
-/* ---------- Cards & grids ---------- */
 
 .card {
   background: var(--surface);
@@ -220,8 +212,6 @@ a:hover { text-decoration: underline; }
 .stack { display: grid; gap: 14px; }
 .plain-list { margin: 8px 0 4px; padding-left: 20px; }
 .plain-list li { margin-bottom: 4px; }
-
-/* ---------- Metrics / command centre ---------- */
 
 .metric-grid {
   display: grid;
@@ -273,6 +263,18 @@ a:hover { text-decoration: underline; }
   padding: 14px 16px;
   box-shadow: var(--shadow-sm);
 }
+.stat-card strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  margin-top: 4px;
+  color: var(--brand-dark);
+}
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
 .stat-value {
   font-family: var(--font-mono);
   font-size: 22px;
@@ -282,7 +284,45 @@ a:hover { text-decoration: underline; }
 }
 .monitor-panel { margin-top: 4px; }
 
-/* ---------- Tables ---------- */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--brand); color: var(--brand-dark); }
+.chip.active {
+  background: var(--brand-tint);
+  border-color: var(--brand);
+  color: var(--brand-dark);
+  font-weight: 600;
+}
+
+.mono { font-family: var(--font-mono); }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 30, 25, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 50;
+}
+.modal-card {
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+}
 
 .table-wrap {
   overflow: auto;
@@ -311,8 +351,6 @@ thead th {
 }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: rgba(14, 107, 84, 0.035); }
-
-/* ---------- Forms ---------- */
 
 label {
   display: grid;
@@ -400,7 +438,6 @@ button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 }
 .detail-grid > div { display: flex; flex-direction: column; gap: 2px; }
 
-/* Billing / lab lines */
 .billing-line {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -419,8 +456,6 @@ button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
   color: var(--brand-dark);
 }
 .lab-summary { display: flex; flex-direction: column; gap: 4px; }
-
-/* ---------- Auth pages ---------- */
 
 .auth-page, .page-center {
   min-height: 100vh;
@@ -483,8 +518,6 @@ button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
   text-align: left;
   justify-content: flex-start;
 }
-
-/* ---------- Status, messages ---------- */
 
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
@@ -589,9 +622,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
   color: var(--brand-darker);
 }
 
-.actions { display: flex; gap: 8px; }
-
-/* ---------- Responsive ---------- */
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 @media (max-width: 900px) {
   .app-shell { grid-template-columns: 1fr; }
