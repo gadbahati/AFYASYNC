@@ -6,6 +6,11 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.portal.schemas import (
+    PortalConsentItem,
+    PortalConsentListResponse,
+    PortalConsentUpdate,
+    PortalCoverageItem,
+    PortalCoverageSummary,
     PortalEncounterListResponse,
     PortalEncounterSummary,
     PortalProfileResponse,
@@ -14,12 +19,14 @@ from app.portal.schemas import (
 from app.portal.service import (
     PortalError,
     audit_portal_view,
-    get_my_encounter,
     get_my_encounter_summary,
     get_my_profile,
+    list_my_consents,
+    list_my_coverage,
     list_my_encounters,
     list_my_referrals,
     require_patient_person_id,
+    update_my_consent,
 )
 from app.rbac.models import User
 
@@ -39,6 +46,7 @@ def _error(err: PortalError) -> HTTPException:
         "PATIENT_IDENTITY_REQUIRED": 403,
         "PATIENT_NOT_FOUND": 404,
         "ENCOUNTER_NOT_FOUND": 404,
+        "CONSENT_NOT_FOUND": 404,
     }
     return HTTPException(status_code=mapping.get(code, 400), detail=code)
 
@@ -146,3 +154,88 @@ def portal_referrals(
         metadata={"count": len(items), "total": total},
     )
     return PortalReferralListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/consents", response_model=PortalConsentListResponse)
+def portal_list_consents(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PortalConsentListResponse:
+    """Patient views their own sensitive disease disclosure decisions."""
+    person_id = _person_id(user)
+    items = list_my_consents(db, person_id)
+    audit_portal_view(
+        db,
+        user_id=user.id,
+        person_id=person_id,
+        action="PORTAL_LIST_CONSENTS",
+        resource_type="PERSON",
+        resource_id=str(person_id),
+        metadata={"count": len(items)},
+    )
+    return PortalConsentListResponse(
+        items=[PortalConsentItem.model_validate(c) for c in items],
+        total=len(items),
+    )
+
+
+@router.patch("/consents/{consent_id}", response_model=PortalConsentItem)
+def portal_update_consent(
+    consent_id: UUID,
+    payload: PortalConsentUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PortalConsentItem:
+    """Patient changes a previous disclosure decision (requires new signature)."""
+    person_id = _person_id(user)
+    try:
+        consent = update_my_consent(
+            db,
+            person_id=person_id,
+            consent_id=consent_id,
+            payload=payload,
+            actor_user_id=user.id,
+        )
+        db.commit()
+        db.refresh(consent)
+    except PortalError as err:
+        raise _error(err) from err
+
+    return PortalConsentItem.model_validate(consent)
+
+
+@router.get("/coverage", response_model=PortalCoverageSummary)
+def portal_coverage(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PortalCoverageSummary:
+    """Patient views their own coverage / membership summary."""
+    person_id = _person_id(user)
+    rows = list_my_coverage(db, person_id)
+
+    items: list[PortalCoverageItem] = []
+    for row in rows:
+        items.append(
+            PortalCoverageItem(
+                id=getattr(row, "id", None),
+                payer_name=getattr(row, "payer_name", None)
+                or getattr(getattr(row, "payer", None), "name", None),
+                coverage_mode=getattr(row, "coverage_mode", None)
+                or getattr(row, "mode", None),
+                membership_number=getattr(row, "membership_number", None)
+                or getattr(row, "member_number", None),
+                status=getattr(row, "status", None),
+                verification_status=getattr(row, "verification_status", None),
+            )
+        )
+
+    audit_portal_view(
+        db,
+        user_id=user.id,
+        person_id=person_id,
+        action="PORTAL_VIEW_COVERAGE",
+        resource_type="PERSON",
+        resource_id=str(person_id),
+        metadata={"count": len(items)},
+    )
+    return PortalCoverageSummary(items=items, total=len(items))
