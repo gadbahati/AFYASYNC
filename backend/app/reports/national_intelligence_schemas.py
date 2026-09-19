@@ -59,5 +59,8 @@ class NationalIntelligenceResponse(BaseModel):
     generated_at: str
     alerts: list[NationalIntelligenceAlert] = Field(default_factory=list)
     facility_signals: list[NationalFacilitySignal] = Field(default_factory=list)
+    facility_signals_total: int = Field(default=0, ge=0)
+    facility_signals_page: int = Field(default=1, ge=1)
+    facility_signals_page_size: int = Field(default=100, ge=1, le=500)
     trends: list[NationalIntelligenceTrend] = Field(default_factory=list)
     counties: list[NationalCountyIntelligence] = Field(default_factory=list)
