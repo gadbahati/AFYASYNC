@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.admissions.models import Admission
 from app.audit.service import record_audit
 from app.billing.models import Charge, Invoice, Payment
-from app.claims.models import Claim
+from app.claims.models import Claim, Reconciliation
 from app.coverage.models import Payer
 from app.encounters.models import Encounter
 from app.patients.models import PatientFacility
@@ -45,12 +45,15 @@ def build_facility_report(db: Session, facility_id: UUID, start_date: date, end_
     claim_filter = (Claim.updated_at >= start, Claim.updated_at <= end, Invoice.facility_id == facility_id)
     claim_totals = db.execute(select(func.count(Claim.id), func.coalesce(func.sum(Claim.claim_amount), 0), func.coalesce(func.sum(Claim.approved_amount), 0), func.coalesce(func.sum(Claim.paid_amount), 0)).join(Invoice, Invoice.id == Claim.invoice_id).where(*claim_filter)).one()
     claims, claims_amount, claims_approved, claims_paid = int(claim_totals[0] or 0), _money(claim_totals[1]), _money(claim_totals[2]), _money(claim_totals[3])
+    reconciled_claims = int(db.scalar(select(func.count(Claim.id)).join(Invoice, Invoice.id == Claim.invoice_id).join(Reconciliation, Reconciliation.claim_id == Claim.id).where(*claim_filter)) or 0)
+    unreconciled_claims = max(claims - reconciled_claims, 0)
+    reconciliation_variance = _money(db.scalar(select(func.coalesce(func.sum(Reconciliation.difference), 0)).join(Claim, Claim.id == Reconciliation.claim_id).join(Invoice, Invoice.id == Claim.invoice_id).where(*claim_filter)))
     status_rows = db.execute(select(Claim.status, func.count(Claim.id), func.coalesce(func.sum(Claim.claim_amount), 0), func.coalesce(func.sum(Claim.approved_amount), 0), func.coalesce(func.sum(Claim.paid_amount), 0)).join(Invoice, Invoice.id == Claim.invoice_id).where(*claim_filter).group_by(Claim.status).order_by(Claim.status)).all()
     claim_statuses = [{"status": r[0] or "UNKNOWN", "count": int(r[1] or 0), "amount": _money(r[2]), "approved_amount": _money(r[3]), "paid_amount": _money(r[4])} for r in status_rows]
     payer_rows = db.execute(select(Payer.id, Payer.name, Payer.code, func.count(Claim.id), func.coalesce(func.sum(Claim.claim_amount), 0), func.coalesce(func.sum(Claim.approved_amount), 0), func.coalesce(func.sum(Claim.paid_amount), 0)).join(Invoice, Invoice.id == Claim.invoice_id).join(Payer, Payer.id == Claim.payer_id).where(*claim_filter).group_by(Payer.id, Payer.name, Payer.code).order_by(func.sum(Claim.claim_amount).desc(), Payer.name)).all()
     payer_claims = [{"payer_id": str(r[0]), "payer_name": r[1] or "Unknown payer", "payer_code": r[2] or "", "claims": int(r[3] or 0), "amount": _money(r[4]), "approved_amount": _money(r[5]), "paid_amount": _money(r[6]), "receivable": max(_money(r[5]) - _money(r[6]), Decimal("0.00"))} for r in payer_rows]
     _audit_report(db, action="VIEW_FACILITY_REPORT", facility_id=facility_id, start_date=start_date, end_date=end_date, actor_user_id=actor_user_id)
-    return {"facility_id": str(facility_id), "start_date": start_date, "end_date": end_date, "patients": patients, "encounters": encounters, "charges_total": charges_total, "invoices_total": invoices_total, "payer_billed": payer_billed, "patient_billed": patient_billed, "confirmed_payments": confirmed_payments, "claims": claims, "claims_amount": claims_amount, "claims_approved": claims_approved, "claims_paid": claims_paid, "claims_receivable": max(claims_approved - claims_paid, Decimal("0.00")), "claim_statuses": claim_statuses, "payer_claims": payer_claims}
+    return {"facility_id": str(facility_id), "start_date": start_date, "end_date": end_date, "patients": patients, "encounters": encounters, "charges_total": charges_total, "invoices_total": invoices_total, "payer_billed": payer_billed, "patient_billed": patient_billed, "confirmed_payments": confirmed_payments, "claims": claims, "claims_amount": claims_amount, "claims_approved": claims_approved, "claims_paid": claims_paid, "claims_receivable": max(claims_approved - claims_paid, Decimal("0.00")), "reconciled_claims": reconciled_claims, "unreconciled_claims": unreconciled_claims, "reconciliation_variance": reconciliation_variance, "claim_statuses": claim_statuses, "payer_claims": payer_claims}
 
 
 def build_facility_operations_report(db: Session, facility_id: UUID, start_date: date, end_date: date, *, actor_user_id: UUID | None = None) -> dict[str, object]:
