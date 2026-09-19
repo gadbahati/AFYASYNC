@@ -85,7 +85,9 @@ export const api: any = {
 
   portalMe: () => request("/api/v1/portal/me"),
   portalEncounters: (limit = 50, offset = 0) => request(`/api/v1/portal/encounters?limit=${limit}&offset=${offset}`),
+  portalEncounterSummary: (id: string) => request(`/api/v1/portal/encounters/${id}`),
   portalConsents: () => request("/api/v1/portal/consents"),
+  portalUpdateConsent: (id: string, payload: any) => request(`/api/v1/portal/consents/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   portalCoverage: () => request("/api/v1/portal/coverage"),
   portalFacilities: () => request("/api/v1/portal/facilities"),
   portalBookAppointment: (payload: any) => request("/api/v1/portal/appointment-requests", { method: "POST", body: JSON.stringify(payload) }),
