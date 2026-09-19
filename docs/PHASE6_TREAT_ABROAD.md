@@ -17,6 +17,21 @@
 - Procedure catalogue seeds a representative SHA overseas subset on first load
 - Cases scoped to facility context
 
+## Hardening
+
+| Control | Detail |
+|---------|--------|
+| Facility context | Procedures list + all case APIs require facility token |
+| Patient check | Patient must exist and be ACTIVE |
+| Procedure check | Must be active SHA-approved procedure |
+| Open case limit | Max 20 non-closed/non-rejected cases per patient |
+| Text limits | Summary 20–8000 chars; local reason 10–4000 |
+| Status machine | No self-loops; CLOSED is terminal |
+| CLOSED lock | No further updates once CLOSED |
+| Amount cap | Approved KES cannot exceed procedure max_cover |
+| Audit | Create + update with previous_status |
+| Clinician binding | Always facility staff of caller |
+
 ## How to use
 1. Sign in as **facility staff** and select a facility
 2. Open **Treat Abroad** in the sidebar
