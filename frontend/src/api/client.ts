@@ -152,4 +152,5 @@ export const api: any = {
   commandCentre: () => request("/api/v1/command-centre"),
   fraudRadar: () => request("/api/v1/fraud-radar"),
   allergySafety: (patientId: string, medicationId: string) => request(`/api/v1/patients/${patientId}/allergy-safety/medications/${medicationId}`),
+  getFhirAllergies: (patientId: string, accessReason: string, includeInactive = true) => request(`/api/v1/interoperability/AllergyIntolerance/${patientId}?access_reason=${encodeURIComponent(accessReason)}&include_inactive=${includeInactive}`),
 };
