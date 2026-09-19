@@ -38,12 +38,13 @@ def read_patient(
         telecom.append({"system": "phone", "value": patient.phone})
     if patient.email:
         telecom.append({"system": "email", "value": patient.email})
+    gender_map = {"M": "male", "MALE": "male", "F": "female", "FEMALE": "female", "O": "other", "OTHER": "other", "U": "unknown", "UNKNOWN": "unknown"}
     resource = FHIRPatientResource(
         id=patient.id,
         meta={"tag": [{"system": "urn:afyasync:interop", "code": f"fhir-r{FHIR_R4}"}]},
         active=patient.status == "ACTIVE",
         name=[FHIRPatientName(family=patient.last_name, given=given)],
-        gender=(patient.sex or "").lower() or None,
+        gender=gender_map.get((patient.sex or "").strip().upper(), "unknown") if patient.sex else None,
         birthDate=patient.date_of_birth,
         telecom=telecom,
         identifier=[{"system": "urn:afyasync:afya-id", "value": identity.afya_id}],
