@@ -26,6 +26,8 @@ from app.claims.preflight_router import router as claim_preflight_router
 from app.clinical import models as clinical_models
 from app.clinical.router import router as clinical_router
 from app.config import settings
+from app.consent import models as consent_models
+from app.consent.router import router as consent_router
 from app.coverage import models as coverage_models
 from app.coverage.router import router as coverage_router
 from app.coverage.sha_eligibility_router import router as sha_eligibility_router
@@ -204,6 +206,7 @@ app.include_router(national_capacity_router)
 app.include_router(observability_router)
 app.include_router(operations_router)
 app.include_router(ussd_router)
+app.include_router(consent_router)
 
 @app.get("/health", tags=["System"])
 def health_check():
