@@ -18,7 +18,7 @@ from app.referrals.models import Referral
 
 
 def _window(start_date: date, end_date: date) -> tuple[datetime, datetime]:
-    if end_date < start_date:
+    if end_date < start_date or (end_date - start_date).days > 365:
         raise ValueError("INVALID_REPORT_DATE_RANGE")
     return datetime.combine(start_date, time.min, tzinfo=timezone.utc), datetime.combine(end_date, time.max, tzinfo=timezone.utc)
 
