@@ -98,6 +98,8 @@ export const api: any = {
   portalSendMessage: (payload: any) => request("/api/v1/portal/messages", { method: "POST", body: JSON.stringify(payload) }),
   facilityAppointmentRequests: (status?: string) => request(`/api/v1/facility/appointment-requests${status ? `?status=${status}` : ""}`),
   facilityRespondAppointment: (id: string, payload: any) => request(`/api/v1/facility/appointment-requests/${id}/respond`, { method: "POST", body: JSON.stringify(payload) }),
+  facilityMessageInbox: () => request("/api/v1/facility/messages/inbox"),
+  facilityMessageThread: (patientId: string) => request(`/api/v1/facility/messages/${patientId}`),
   facilitySendMessage: (payload: any) => request("/api/v1/facility/messages", { method: "POST", body: JSON.stringify(payload) }),
 
   listPatients: (limit = 50, offset = 0) => request(`/api/v1/patients?limit=${limit}&offset=${offset}`),
