@@ -3,11 +3,14 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_facility_context
+from app.consent.models import SensitiveCategory
 from app.consent.schemas import (
     ConsentCheckResult,
+    SensitiveCategoryOut,
     SensitiveDiseaseConsentCreate,
     SensitiveDiseaseConsentOut,
 )
@@ -19,6 +22,23 @@ from app.consent.service import (
 from app.database import get_db
 
 router = APIRouter(prefix="/api/v1/consent", tags=["consent"])
+
+
+@router.get(
+    "/sensitive-categories",
+    response_model=list[SensitiveCategoryOut],
+)
+def list_sensitive_categories(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """List active sensitive disease categories that require patient consent."""
+    rows = db.scalars(
+        select(SensitiveCategory)
+        .where(SensitiveCategory.is_active.is_(True))
+        .order_by(SensitiveCategory.name.asc())
+    ).all()
+    return list(rows)
 
 
 @router.post(
