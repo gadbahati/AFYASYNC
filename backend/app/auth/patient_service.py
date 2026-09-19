@@ -1,16 +1,11 @@
-"""Patient portal authentication — real identity lookup, no dummy accounts.
-
-Registration requires an existing Afya identity (person already in the system).
-Login accepts Afya ID or SHA membership number + password.
-Password reset issues a one-time code for phone or email delivery.
-"""
+"""Patient portal authentication — real identity lookup, no dummy accounts."""
 
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from secrets import randbelow
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
@@ -45,16 +40,17 @@ def _mask_destination(value: str, channel: str) -> str:
 
 
 def _find_person_by_afya_id(db: Session, afya_id: str) -> tuple[Person, AfyaIdentity] | None:
+    raw = afya_id.strip()
     identity = db.scalar(
         select(AfyaIdentity).where(
-            AfyaIdentity.afya_id == afya_id.strip().upper(),
+            AfyaIdentity.afya_id == raw.upper(),
             AfyaIdentity.status == "ACTIVE",
         )
     )
     if identity is None:
         identity = db.scalar(
             select(AfyaIdentity).where(
-                AfyaIdentity.afya_id == afya_id.strip(),
+                AfyaIdentity.afya_id == raw,
                 AfyaIdentity.status == "ACTIVE",
             )
         )
@@ -75,14 +71,16 @@ def _find_person_by_membership(db: Session, membership_number: str) -> Person | 
     )
     if coverage is None:
         return None
-    person = db.get(Person, coverage.person_id)
+    person_id = getattr(coverage, "person_id", None) or getattr(coverage, "patient_id", None)
+    if person_id is None:
+        return None
+    person = db.get(Person, person_id)
     if person is None or person.status != "ACTIVE":
         return None
     return person
 
 
 def resolve_patient_by_identifier(db: Session, identifier: str) -> tuple[Person, AfyaIdentity | None]:
-    """Resolve Afya ID or SHA membership number to a person."""
     raw = identifier.strip()
     found = _find_person_by_afya_id(db, raw)
     if found is not None:
@@ -101,7 +99,6 @@ def get_or_create_patient_user(db: Session, person: Person, identity: AfyaIdenti
     if user is not None:
         return user
 
-    # Username is Afya ID when available, otherwise a stable person-based handle
     username = identity.afya_id if identity else f"patient-{str(person.id)[:8]}"
     existing = db.scalar(select(User).where(User.username == username))
     if existing is not None:
@@ -171,7 +168,6 @@ def login_patient(
     payload: PatientLoginRequest,
     ip_address: str | None = None,
 ) -> tuple[User, str, str, int]:
-    """Authenticate patient. Returns user, access_token, refresh_token, expires_in."""
     from app.config import settings
 
     try:
@@ -200,7 +196,6 @@ def login_patient(
     db.add(user)
     db.flush()
 
-    # Patient tokens have no facility context
     access = issue_access_token(user, facility_id=None)
     refresh = issue_refresh_token(db, user, facility_id=None)
 
@@ -224,15 +219,9 @@ def request_password_reset(
     payload: PatientPasswordResetRequest,
     ip_address: str | None = None,
 ) -> tuple[str, str, str]:
-    """Create a reset code. Returns (channel, destination_hint, plain_code_for_delivery).
-
-    In production the plain code must be sent via SMS/email provider and never logged.
-    For non-production environments the caller may surface it only through a secure ops path.
-    """
     try:
         person, _identity = resolve_patient_by_identifier(db, payload.identifier)
     except ValueError:
-        # Do not reveal whether the identifier exists
         return payload.channel, "***", ""
 
     user = db.scalar(select(User).where(User.person_id == person.id))
@@ -248,13 +237,24 @@ def request_password_reset(
         if not destination:
             raise ValueError("NO_PHONE_ON_FILE")
 
+    now = datetime.now(timezone.utc)
+    # Invalidate prior unused tokens for this user
+    db.execute(
+        update(PatientPasswordResetToken)
+        .where(
+            PatientPasswordResetToken.user_id == user.id,
+            PatientPasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
+
     code = f"{randbelow(1_000_000):06d}"
     token = PatientPasswordResetToken(
         user_id=user.id,
         code_hash=_hash_code(code),
         channel=payload.channel,
         destination=destination,
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=RESET_CODE_TTL_MINUTES),
+        expires_at=now + timedelta(minutes=RESET_CODE_TTL_MINUTES),
     )
     db.add(token)
     db.flush()
@@ -309,6 +309,16 @@ def confirm_password_reset(
     db.add(token)
     db.add(user)
     db.flush()
+
+    # Invalidate any other outstanding reset tokens
+    db.execute(
+        update(PatientPasswordResetToken)
+        .where(
+            PatientPasswordResetToken.user_id == user.id,
+            PatientPasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
 
     record_audit(
         db,
