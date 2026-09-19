@@ -13,6 +13,7 @@ from app.treat_abroad.schemas import (
     OverseasCaseOut,
     OverseasCaseUpdate,
 )
+from app.treat_abroad.seed import seed_approved_procedures
 from app.treat_abroad.service import (
     create_case,
     get_case,
@@ -30,7 +31,12 @@ def get_approved_procedures(
     current_user=Depends(get_current_user),
 ):
     """List SHA-approved procedures eligible for overseas treatment."""
-    return list_approved_procedures(db, active_only=True)
+    rows = list_approved_procedures(db, active_only=True)
+    if not rows:
+        seed_approved_procedures(db)
+        db.commit()
+        rows = list_approved_procedures(db, active_only=True)
+    return rows
 
 
 @router.post("/cases", response_model=OverseasCaseOut, status_code=status.HTTP_201_CREATED)
