@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import require_patient_identity
 from app.database import get_db
 from app.portal.schemas import (
     PortalConsentItem,
@@ -47,13 +47,14 @@ def _error(err: PortalError) -> HTTPException:
         "PATIENT_NOT_FOUND": 404,
         "ENCOUNTER_NOT_FOUND": 404,
         "CONSENT_NOT_FOUND": 404,
+        "SIGNATURE_REQUIRED": 400,
     }
     return HTTPException(status_code=mapping.get(code, 400), detail=code)
 
 
 @router.get("/me", response_model=PortalProfileResponse)
 def portal_profile(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_patient_identity),
     db: Session = Depends(get_db),
 ) -> PortalProfileResponse:
     person_id = _person_id(user)
@@ -88,7 +89,7 @@ def portal_profile(
 def portal_encounters(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_patient_identity),
     db: Session = Depends(get_db),
 ) -> PortalEncounterListResponse:
     person_id = _person_id(user)
@@ -108,7 +109,7 @@ def portal_encounters(
 @router.get("/encounters/{encounter_id}", response_model=PortalEncounterSummary)
 def portal_encounter_summary(
     encounter_id: UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_patient_identity),
     db: Session = Depends(get_db),
 ) -> PortalEncounterSummary:
     person_id = _person_id(user)
@@ -139,7 +140,7 @@ def portal_encounter_summary(
 def portal_referrals(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_patient_identity),
     db: Session = Depends(get_db),
 ) -> PortalReferralListResponse:
     person_id = _person_id(user)
@@ -158,10 +159,9 @@ def portal_referrals(
 
 @router.get("/consents", response_model=PortalConsentListResponse)
 def portal_list_consents(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_patient_identity),
     db: Session = Depends(get_db),
 ) -> PortalConsentListResponse:
-    """Patient views their own sensitive disease disclosure decisions."""
     person_id = _person_id(user)
     items = list_my_consents(db, person_id)
     audit_portal_view(
@@ -183,10 +183,9 @@ def portal_list_consents(
 def portal_update_consent(
     consent_id: UUID,
     payload: PortalConsentUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_patient_identity),
     db: Session = Depends(get_db),
 ) -> PortalConsentItem:
-    """Patient changes a previous disclosure decision (requires new signature)."""
     person_id = _person_id(user)
     try:
         consent = update_my_consent(
@@ -206,10 +205,9 @@ def portal_update_consent(
 
 @router.get("/coverage", response_model=PortalCoverageSummary)
 def portal_coverage(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_patient_identity),
     db: Session = Depends(get_db),
 ) -> PortalCoverageSummary:
-    """Patient views their own coverage / membership summary."""
     person_id = _person_id(user)
     rows = list_my_coverage(db, person_id)
 
