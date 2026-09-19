@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
 from app.clinical.models import Allergy
+from app.patients.models import PatientFacility
 from app.database import get_db
 from app.interoperability.allergy_schemas import (
     FHIRAllergyIntoleranceResource,
@@ -104,10 +105,11 @@ def read_allergies(
 ) -> list[FHIRAllergyIntoleranceResource]:
     reason = " ".join(access_reason.split())
     enrolled = db.scalar(
-        select(Allergy.patient_id)
+        select(PatientFacility.patient_id)
         .where(
-            Allergy.patient_id == patient_id,
-            Allergy.facility_id == facility_id,
+            PatientFacility.patient_id == patient_id,
+            PatientFacility.facility_id == facility_id,
+            PatientFacility.status == "ACTIVE",
         )
         .limit(1)
     )
