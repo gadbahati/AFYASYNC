@@ -268,6 +268,20 @@ def update_facility(db: Session, facility_id: UUID, data: dict, *, actor_user_id
     return facility
 
 
+def facility_activation_readiness(db: Session, facility_id: UUID) -> dict[str, object]:
+    facility = db.get(Facility, facility_id)
+    if facility is None:
+        raise ValueError("FACILITY_NOT_FOUND")
+    departments = list(db.scalars(select(Department).where(Department.facility_id == facility_id)))
+    checks = {
+        "identity": bool(facility.name.strip() and facility.facility_type.strip()),
+        "geography": bool((facility.county or "").strip() and (facility.sub_county or "").strip()),
+        "official_identifier": bool((facility.registration_number or "").strip() or (facility.license_number or "").strip()),
+        "departments": len(departments) > 0,
+        "active_department": any(d.status == "ACTIVE" for d in departments),
+    }
+    return {"facility_id": facility.id, "status": facility.status, "ready": all(checks.values()), "checks": checks, "department_count": len(departments)}
+
 def update_facility_status(db: Session, facility_id: UUID, status: str, *, reason: str, actor_user_id: UUID | None = None) -> Facility:
     if status not in _ALLOWED_FACILITY_STATUSES:
         raise ValueError("INVALID_FACILITY_STATUS")
@@ -281,6 +295,8 @@ def update_facility_status(db: Session, facility_id: UUID, status: str, *, reaso
         raise ValueError("FACILITY_STATUS_UNCHANGED")
     if status not in _FACILITY_STATUS_TRANSITIONS.get(facility.status, set()):
         raise ValueError("INVALID_FACILITY_STATUS_TRANSITION")
+    if status == "ACTIVE" and not facility_activation_readiness(db, facility_id)["ready"]:
+        raise ValueError("FACILITY_ACTIVATION_READINESS_FAILED")
     previous = facility.status
     facility.status = status
     db.flush()
