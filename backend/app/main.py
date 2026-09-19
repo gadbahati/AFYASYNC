@@ -68,6 +68,7 @@ from app.national_supply.planning_router import router as national_supply_planni
 from app.national_referrals.router import router as national_referrals_router
 from app.observability.router import router as observability_router
 from app.observability.service import runtime_metrics
+from app.security.privacy import privacy_safe_path
 from app.operations.router import router as operations_router
 from app.patients import models as patient_models
 from app.patients.national_identity_router import router as national_identity_router
@@ -123,7 +124,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception:
             runtime_metrics.request(error=True)
-            logger.exception("Unhandled request exception request_id=%s method=%s path=%s", request_id, request.method, request.url.path)
+            logger.exception("Unhandled request exception request_id=%s method=%s path=%s", request_id, request.method, privacy_safe_path(request.url.path))
             response = JSONResponse(status_code=500, content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"})
             self._apply_headers(response, request_id)
             return response
