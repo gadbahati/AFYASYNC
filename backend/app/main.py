@@ -80,6 +80,9 @@ from app.patients.router import router as patients_router
 from app.patients.timeline_router import router as patient_timeline_router
 from app.pharmacy import models as pharmacy_models
 from app.pharmacy.router import router as pharmacy_router
+from app.portal import messaging_models as portal_messaging_models
+from app.portal.booking_router import facility_router as facility_booking_router
+from app.portal.booking_router import patient_router as portal_booking_router
 from app.portal.router import router as portal_router
 from app.preauthorizations import models as preauthorization_models
 from app.preauthorizations.router import router as preauthorizations_router
@@ -199,6 +202,8 @@ app.include_router(integrations_router)
 app.include_router(referrals_router)
 app.include_router(notifications_router)
 app.include_router(portal_router)
+app.include_router(portal_booking_router)
+app.include_router(facility_booking_router)
 app.include_router(reports_router)
 app.include_router(insight_router)
 app.include_router(interoperability_router)
