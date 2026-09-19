@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.clinical.schemas import (
     ConsultationResponse,
@@ -50,3 +50,50 @@ class PortalReferralListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class PortalConsentItem(BaseModel):
+    """Patient-visible record of a sensitive disease disclosure decision."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    diagnosis_id: UUID
+    facility_id: UUID
+    consent_given: bool
+    share_scope: str
+    signature_method: str | None = None
+    consented_at: datetime
+    notes: str | None = None
+
+
+class PortalConsentListResponse(BaseModel):
+    items: list[PortalConsentItem]
+    total: int
+
+
+class PortalConsentUpdate(BaseModel):
+    """Patient request to change a previous disclosure decision."""
+
+    consent_given: bool = Field(..., description="True = allow cross-facility sharing")
+    signature_data: str | None = Field(
+        None, description="New on-screen signature proof"
+    )
+    signature_method: str | None = Field(
+        None, description="ON_SCREEN_DRAW | TYPED_NAME | BIOMETRIC"
+    )
+    notes: str | None = None
+
+
+class PortalCoverageItem(BaseModel):
+    id: UUID
+    payer_name: str | None = None
+    coverage_mode: str | None = None
+    membership_number: str | None = None
+    status: str | None = None
+    verification_status: str | None = None
+
+
+class PortalCoverageSummary(BaseModel):
+    items: list[PortalCoverageItem]
+    total: int
