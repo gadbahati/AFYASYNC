@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { getRememberedUsername, isRememberMeEnabled, setRememberMe } from "../auth/storage";
@@ -49,7 +49,7 @@ export function LoginPage() {
           </div>
         </div>
         <div>
-          <h2>Staff sign in</h2>
+          <h2>Facility / Staff sign in</h2>
           <p className="muted">Access your secure healthcare workspace.</p>
         </div>
 
@@ -69,6 +69,9 @@ export function LoginPage() {
         <button type="submit" disabled={submitting || !username.trim() || !password}>
           {submitting ? "Signing in…" : "Sign in"}
         </button>
+        <p className="muted small" style={{ marginTop: "1rem" }}>
+          <Link to="/login">Not staff? Choose Patient sign in</Link>
+        </p>
         <p className="muted small auth-note">Your password is sent only to the AfyaSync API. Session credentials are kept in temporary browser storage.</p>
       </form>
     </main>
