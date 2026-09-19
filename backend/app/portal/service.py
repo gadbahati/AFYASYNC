@@ -63,10 +63,7 @@ def get_my_encounter(db: Session, person_id: UUID, encounter_id: UUID) -> Encoun
 
 
 def get_my_encounter_summary(db: Session, person_id: UUID, encounter_id: UUID) -> dict:
-    """Patient-safe clinical summary: only the authenticated patient's own encounter.
-
-    Sensitive diagnoses are included because the patient is viewing their own record.
-    """
+    """Patient-safe clinical summary: only the authenticated patient's own encounter."""
     encounter = get_my_encounter(db, person_id, encounter_id)
 
     vitals = list(
@@ -132,7 +129,6 @@ def list_my_referrals(
 
 
 def list_my_consents(db: Session, person_id: UUID) -> list[SensitiveDiseaseConsent]:
-    """All sensitive disclosure decisions belonging to this patient."""
     return list(
         db.scalars(
             select(SensitiveDiseaseConsent)
@@ -150,19 +146,21 @@ def update_my_consent(
     payload: PortalConsentUpdate,
     actor_user_id: UUID,
 ) -> SensitiveDiseaseConsent:
-    """Allow the patient to change a previous disclosure decision (with new signature)."""
+    """Patient changes a disclosure decision — new signature required every time."""
     consent = db.get(SensitiveDiseaseConsent, consent_id)
     if consent is None or consent.patient_id != person_id:
         raise PortalError("CONSENT_NOT_FOUND")
 
+    sig = (payload.signature_data or "").strip()
+    if len(sig) < 2:
+        raise PortalError("SIGNATURE_REQUIRED")
+
     consent.consent_given = payload.consent_given
     consent.share_scope = "CROSS_FACILITY" if payload.consent_given else "FACILITY_ONLY"
-    if payload.signature_data is not None:
-        consent.signature_data = payload.signature_data
-    if payload.signature_method is not None:
-        consent.signature_method = payload.signature_method
+    consent.signature_data = sig[:8000]
+    consent.signature_method = (payload.signature_method or "TYPED_NAME")[:50]
     if payload.notes is not None:
-        consent.notes = payload.notes
+        consent.notes = payload.notes[:2000] if payload.notes else None
 
     db.add(consent)
     db.flush()
@@ -186,20 +184,17 @@ def update_my_consent(
 
 
 def list_my_coverage(db: Session, person_id: UUID) -> list:
-    """Return coverage rows linked to this patient (best-effort, non-breaking)."""
     try:
         from app.coverage.models import Coverage
 
-        rows = list(
+        return list(
             db.scalars(
                 select(Coverage)
                 .where(Coverage.patient_id == person_id)
                 .order_by(Coverage.created_at.desc())
             )
         )
-        return rows
     except Exception:
-        # Coverage model shape may vary; portal must not break if structure differs
         return []
 
 
