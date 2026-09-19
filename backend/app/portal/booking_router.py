@@ -14,6 +14,7 @@ from app.portal.messaging_service import (
     create_appointment_request,
     list_bookable_facilities,
     list_facility_departments,
+    list_facility_inbox,
     list_facility_requests,
     list_patient_requests,
     list_patient_threads,
@@ -67,7 +68,6 @@ def portal_list_facilities(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List active facilities the patient can book with."""
     _person(user)
     rows = list_bookable_facilities(db)
     return [
@@ -219,9 +219,6 @@ def portal_send_message(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-# --- Facility side ---
-
-
 @facility_router.get("/appointment-requests")
 def facility_list_requests(
     status_filter: str | None = Query(default=None, alias="status"),
@@ -275,6 +272,35 @@ def facility_respond(
         code = str(exc)
         status_code = 404 if code == "REQUEST_NOT_FOUND" else 400
         raise HTTPException(status_code=status_code, detail=code) from exc
+
+
+@facility_router.get("/messages/inbox")
+def facility_inbox(
+    user: User = Depends(get_current_user),
+    facility_id: UUID = Depends(require_facility_context),
+    db: Session = Depends(get_db),
+):
+    return list_facility_inbox(db, facility_id)
+
+
+@facility_router.get("/messages/{patient_id}")
+def facility_thread(
+    patient_id: UUID,
+    user: User = Depends(get_current_user),
+    facility_id: UUID = Depends(require_facility_context),
+    db: Session = Depends(get_db),
+):
+    rows = list_thread(db, patient_id=patient_id, facility_id=facility_id)
+    return [
+        {
+            "id": str(m.id),
+            "sender_type": m.sender_type,
+            "body": m.body,
+            "created_at": m.created_at,
+            "read_at": m.read_at,
+        }
+        for m in rows
+    ]
 
 
 @facility_router.post("/messages", status_code=status.HTTP_201_CREATED)
