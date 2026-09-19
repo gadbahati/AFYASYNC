@@ -4,16 +4,23 @@ from threading import Lock
 
 from fastapi import HTTPException, Request, status
 
+# Paths that must be rate-limited (staff + patient auth)
+_AUTH_LIMITED_PREFIXES = (
+    "/api/v1/auth/login",
+    "/api/v1/auth/refresh",
+    "/api/v1/auth/patient/",
+)
+
 
 class AuthRateLimiter:
     """Process-local authentication abuse guard.
 
     A trusted edge/load-balancer should also enforce distributed limits in a
     multi-instance deployment. Client-supplied forwarding headers are ignored
-    here so an attacker cannot rotate them to bypass the worker-local guard.
+    so an attacker cannot rotate them to bypass the worker-local guard.
     """
 
-    def __init__(self, limit: int = 30, window_seconds: int = 60, max_keys: int = 10_000):
+    def __init__(self, limit: int = 20, window_seconds: int = 60, max_keys: int = 10_000):
         if limit <= 0 or window_seconds <= 0 or max_keys <= 0:
             raise ValueError("rate limiter settings must be positive")
         self.limit = limit
@@ -37,7 +44,10 @@ class AuthRateLimiter:
             if len(self._events) >= self.max_keys and key not in self._events:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail={"code": "AUTH_RATE_LIMITED", "message": "Too many authentication attempts. Try again later."},
+                    detail={
+                        "code": "AUTH_RATE_LIMITED",
+                        "message": "Too many authentication attempts. Try again later.",
+                    },
                     headers={"Retry-After": str(self.window_seconds)},
                 )
             events = self._events[key]
@@ -47,7 +57,10 @@ class AuthRateLimiter:
                 retry_after = max(1, int(self.window_seconds - (now - events[0])))
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail={"code": "AUTH_RATE_LIMITED", "message": "Too many authentication attempts. Try again later."},
+                    detail={
+                        "code": "AUTH_RATE_LIMITED",
+                        "message": "Too many authentication attempts. Try again later.",
+                    },
                     headers={"Retry-After": str(retry_after)},
                 )
             events.append(now)
@@ -69,7 +82,13 @@ class AuthRateLimiter:
 
 _auth_rate_limiter = AuthRateLimiter()
 
+# Stricter limiter for password-reset request (SMS/email cost + abuse)
+_reset_rate_limiter = AuthRateLimiter(limit=5, window_seconds=300, max_keys=5_000)
+
 
 def enforce_auth_rate_limit(request: Request) -> None:
-    if request.url.path in {"/api/v1/auth/login", "/api/v1/auth/refresh"}:
+    path = request.url.path
+    if any(path == p or path.startswith(p) for p in _AUTH_LIMITED_PREFIXES):
         _auth_rate_limiter.check(request)
+        if path.endswith("/password-reset/request") or "/password-reset/request" in path:
+            _reset_rate_limiter.check(request)
