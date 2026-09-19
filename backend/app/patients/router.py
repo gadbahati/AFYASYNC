@@ -53,7 +53,7 @@ def _degraded_patient_record(db: Session, patient_id: UUID, facility_id: UUID) -
             "next_of_kin_phone": getattr(patient, "next_of_kin_phone", None), "status": patient.status,
             "enrollment_status": enrollment_status, "registered_at": patient.created_at,
         },
-        "coverage": [], "encounters": encounter_payload, "laboratory": [], "prescriptions": [],
+        "allergies": [], "coverage": [], "encounters": encounter_payload, "laboratory": [], "prescriptions": [],
         "medication_actions": [], "admissions": [], "preauthorizations": [],
         "billing": {"charges": [], "invoices": [], "payments": []}, "claims": [], "appointments": [],
         "queue_history": [], "referrals": [], "transfers": [],
