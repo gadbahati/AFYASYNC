@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.audit.service import write_audit
+from app.audit.service import record_audit
 from app.consent.models import SensitiveDiseaseConsent
 from app.consent.schemas import ConsentCheckResult, SensitiveDiseaseConsentCreate
 
@@ -51,7 +51,7 @@ def record_sensitive_consent(
     db.add(consent)
     db.flush()
 
-    write_audit(
+    record_audit(
         db,
         user_id=recorded_by,
         facility_id=payload.facility_id,
@@ -60,12 +60,15 @@ def record_sensitive_consent(
         resource_type="SensitiveDiseaseConsent",
         resource_id=str(consent.id),
         result="SUCCESS",
-        metadata_json={
+        ip_address=ip_address,
+        device_id=payload.device_id,
+        metadata={
             "diagnosis_id": str(payload.diagnosis_id),
             "consent_given": payload.consent_given,
             "share_scope": share_scope,
             "signature_method": payload.signature_method,
         },
+        commit=False,
     )
 
     return consent
