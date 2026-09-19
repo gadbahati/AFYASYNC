@@ -19,17 +19,19 @@ def record_sensitive_consent(
 ) -> SensitiveDiseaseConsent:
     """Record the patient's explicit consent decision for a sensitive diagnosis.
 
-    - consent_given=True  → share_scope becomes CROSS_FACILITY
-    - consent_given=False → share_scope remains FACILITY_ONLY
+    Signature proof is mandatory. Default share scope is FACILITY_ONLY when declined.
     """
-    # Prevent double consent records for the same diagnosis
     existing = db.scalar(
         select(SensitiveDiseaseConsent).where(
             SensitiveDiseaseConsent.diagnosis_id == payload.diagnosis_id
         )
     )
     if existing:
-        raise ValueError("Consent has already been recorded for this diagnosis")
+        raise ValueError("CONSENT_ALREADY_RECORDED")
+
+    sig = (payload.signature_data or "").strip()
+    if len(sig) < 2:
+        raise ValueError("SIGNATURE_REQUIRED")
 
     share_scope = "CROSS_FACILITY" if payload.consent_given else "FACILITY_ONLY"
 
@@ -41,12 +43,12 @@ def record_sensitive_consent(
         consent_given=payload.consent_given,
         share_scope=share_scope,
         sensitive_category_id=payload.sensitive_category_id,
-        signature_data=payload.signature_data,
-        signature_method=payload.signature_method,
+        signature_data=sig[:8000],
+        signature_method=(payload.signature_method or "ON_SCREEN")[:50],
         recorded_by=recorded_by,
         device_id=payload.device_id,
         ip_address=ip_address,
-        notes=payload.notes,
+        notes=(payload.notes[:2000] if payload.notes else None),
     )
     db.add(consent)
     db.flush()
@@ -66,7 +68,7 @@ def record_sensitive_consent(
             "diagnosis_id": str(payload.diagnosis_id),
             "consent_given": payload.consent_given,
             "share_scope": share_scope,
-            "signature_method": payload.signature_method,
+            "signature_method": consent.signature_method,
         },
         commit=False,
     )
@@ -80,10 +82,7 @@ def check_diagnosis_may_be_shared(
     diagnosis_id: UUID,
     patient_id: UUID,
 ) -> ConsentCheckResult:
-    """Determine whether a diagnosis is allowed to appear in cross-facility views.
-
-    If no consent record exists, default to NOT shareable (safe default).
-    """
+    """Safe default: no consent record → not shareable across facilities."""
     consent = db.scalar(
         select(SensitiveDiseaseConsent).where(
             SensitiveDiseaseConsent.diagnosis_id == diagnosis_id,
@@ -123,7 +122,6 @@ def list_patient_consents(
     patient_id: UUID,
     facility_id: UUID | None = None,
 ) -> list[SensitiveDiseaseConsent]:
-    """List consent decisions for a patient (optionally filtered by facility)."""
     stmt = select(SensitiveDiseaseConsent).where(
         SensitiveDiseaseConsent.patient_id == patient_id
     )
