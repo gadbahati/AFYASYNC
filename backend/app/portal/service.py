@@ -5,10 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.clinical.models import Consultation, Diagnosis, Vital
+from app.consent.models import SensitiveDiseaseConsent
 from app.encounters.models import Encounter
 from app.laboratory.models import LabOrder
 from app.patients.models import AfyaIdentity, Person
 from app.pharmacy.models import Prescription
+from app.portal.schemas import PortalConsentUpdate
 from app.referrals.models import Referral
 
 
@@ -61,7 +63,10 @@ def get_my_encounter(db: Session, person_id: UUID, encounter_id: UUID) -> Encoun
 
 
 def get_my_encounter_summary(db: Session, person_id: UUID, encounter_id: UUID) -> dict:
-    """Patient-safe clinical summary: only the authenticated patient's own encounter."""
+    """Patient-safe clinical summary: only the authenticated patient's own encounter.
+
+    Sensitive diagnoses are included because the patient is viewing their own record.
+    """
     encounter = get_my_encounter(db, person_id, encounter_id)
 
     vitals = list(
@@ -124,6 +129,78 @@ def list_my_referrals(
         )
     )
     return items, total
+
+
+def list_my_consents(db: Session, person_id: UUID) -> list[SensitiveDiseaseConsent]:
+    """All sensitive disclosure decisions belonging to this patient."""
+    return list(
+        db.scalars(
+            select(SensitiveDiseaseConsent)
+            .where(SensitiveDiseaseConsent.patient_id == person_id)
+            .order_by(SensitiveDiseaseConsent.consented_at.desc())
+        )
+    )
+
+
+def update_my_consent(
+    db: Session,
+    *,
+    person_id: UUID,
+    consent_id: UUID,
+    payload: PortalConsentUpdate,
+    actor_user_id: UUID,
+) -> SensitiveDiseaseConsent:
+    """Allow the patient to change a previous disclosure decision (with new signature)."""
+    consent = db.get(SensitiveDiseaseConsent, consent_id)
+    if consent is None or consent.patient_id != person_id:
+        raise PortalError("CONSENT_NOT_FOUND")
+
+    consent.consent_given = payload.consent_given
+    consent.share_scope = "CROSS_FACILITY" if payload.consent_given else "FACILITY_ONLY"
+    if payload.signature_data is not None:
+        consent.signature_data = payload.signature_data
+    if payload.signature_method is not None:
+        consent.signature_method = payload.signature_method
+    if payload.notes is not None:
+        consent.notes = payload.notes
+
+    db.add(consent)
+    db.flush()
+
+    record_audit(
+        db,
+        action="PORTAL_CONSENT_UPDATED",
+        resource_type="SensitiveDiseaseConsent",
+        resource_id=str(consent.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        patient_id=person_id,
+        facility_id=consent.facility_id,
+        metadata={
+            "consent_given": payload.consent_given,
+            "share_scope": consent.share_scope,
+        },
+        commit=False,
+    )
+    return consent
+
+
+def list_my_coverage(db: Session, person_id: UUID) -> list:
+    """Return coverage rows linked to this patient (best-effort, non-breaking)."""
+    try:
+        from app.coverage.models import Coverage
+
+        rows = list(
+            db.scalars(
+                select(Coverage)
+                .where(Coverage.patient_id == person_id)
+                .order_by(Coverage.created_at.desc())
+            )
+        )
+        return rows
+    except Exception:
+        # Coverage model shape may vary; portal must not break if structure differs
+        return []
 
 
 def audit_portal_view(
