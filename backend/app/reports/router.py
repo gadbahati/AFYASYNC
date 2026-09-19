@@ -64,9 +64,18 @@ def national_operations(db: Session = Depends(get_db), user: User = Depends(requ
 
 
 @router.get("/national/intelligence", response_model=NationalIntelligenceResponse)
-def national_intelligence(start_date: date | None = Query(default=None), end_date: date | None = Query(default=None), db: Session = Depends(get_db), user: User = Depends(require_national_permission(NATIONAL_REPORTS_READ))) -> NationalIntelligenceResponse:
+def national_intelligence(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    facility_signals_page: int = Query(default=1, ge=1),
+    facility_signals_page_size: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_national_permission(NATIONAL_REPORTS_READ)),
+) -> NationalIntelligenceResponse:
     start, end = _dates(start_date, end_date)
-    try: return build_national_intelligence(db, start, end, actor_user_id=user.id)
+    try:
+        return build_national_intelligence(db, start, end, actor_user_id=user.id, facility_signals_page=facility_signals_page, facility_signals_page_size=facility_signals_page_size)
     except ValueError as exc:
-        if str(exc) == "INVALID_REPORT_DATE_RANGE": raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if str(exc) in {"INVALID_REPORT_DATE_RANGE", "INVALID_FACILITY_SIGNALS_PAGINATION"}:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         raise
