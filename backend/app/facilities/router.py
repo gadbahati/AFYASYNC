@@ -11,7 +11,7 @@ from app.database import get_db
 from app.facilities.kmhfr_registry import start_sync, sync_state
 from app.facilities.models import FacilityRegistryHistory, FacilityRegistryRecord
 from app.facilities.schemas import DepartmentCreate, DepartmentResponse, DepartmentStatusUpdate, FacilityCreate, FacilityQuickCreate, FacilityResponse, FacilityStatusUpdate, FacilityUpdate, NetworkFacilityResponse
-from app.facilities.service import _sync_kmhfr_page, create_department, create_directory_facility, create_facility, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, update_department_status, update_facility, update_facility_status
+from app.facilities.service import _sync_kmhfr_page, create_department, create_directory_facility, create_facility, facility_activation_readiness, get_facility, list_departments, list_facilities, list_facility_directory, list_network_facilities, update_department_status, update_facility, update_facility_status
 from app.rbac.models import User
 
 router = APIRouter(prefix="/api/v1/facilities", tags=["Facilities"])
@@ -185,13 +185,20 @@ def update_network_facility(facility_id: UUID, payload: FacilityUpdate, user: Us
         code = str(exc)
         raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "NO_CHANGES": 400}.get(code, 400), detail=code) from exc
 
+@router.get("/network/{facility_id}/readiness")
+def get_network_facility_readiness(facility_id: UUID, _: User = Depends(require_national_permission("facilities.network.read")), db: Session = Depends(get_db)) -> dict:
+    try:
+        return facility_activation_readiness(db, facility_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
 @router.patch("/network/{facility_id}/status", response_model=NetworkFacilityResponse)
 def update_network_facility_status(facility_id: UUID, payload: FacilityStatusUpdate, user: User = Depends(require_national_permission("facilities.network.manage")), db: Session = Depends(get_db)) -> NetworkFacilityResponse:
     try:
         return update_facility_status(db, facility_id, payload.status, reason=payload.reason, actor_user_id=user.id)
     except ValueError as exc:
         code = str(exc)
-        raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "INVALID_FACILITY_STATUS": 400, "FACILITY_STATUS_UNCHANGED": 400, "FACILITY_STATUS_REASON_REQUIRED": 400}.get(code, 400), detail=code) from exc
+        raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "INVALID_FACILITY_STATUS": 400, "FACILITY_STATUS_UNCHANGED": 400, "FACILITY_STATUS_REASON_REQUIRED": 400, "FACILITY_ACTIVATION_READINESS_FAILED": 409}.get(code, 400), detail=code) from exc
 
 @router.get("/me", response_model=FacilityResponse)
 def get_current_facility(facility_id: UUID = Depends(get_facility_context), _: User = Depends(require_permission("facilities.read")), db: Session = Depends(get_db)) -> FacilityResponse:
