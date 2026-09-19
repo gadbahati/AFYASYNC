@@ -72,6 +72,18 @@ export function PatientPortalHomePage() {
         )}
 
         <div style={{ display: "grid", gap: "0.75rem", marginTop: "1.25rem" }}>
+          <Link to="/portal/book" className="entry-choice" style={linkStyle}>
+            <strong>Book appointment</strong>
+            <p className="muted small" style={{ margin: "0.25rem 0 0" }}>
+              Choose any hospital — they accept, propose a time, or decline
+            </p>
+          </Link>
+          <Link to="/portal/messages" className="entry-choice" style={linkStyle}>
+            <strong>Messages</strong>
+            <p className="muted small" style={{ margin: "0.25rem 0 0" }}>
+              Chat with a facility about your care
+            </p>
+          </Link>
           <Link to="/portal/encounters" className="entry-choice" style={linkStyle}>
             <strong>My visits</strong>
             <p className="muted small" style={{ margin: "0.25rem 0 0" }}>
