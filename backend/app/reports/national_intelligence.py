@@ -81,9 +81,11 @@ def _trend(metric: str, label: str, current: float, previous: float) -> National
     )
 
 
-def build_national_intelligence(db, start_date: date, end_date: date, *, actor_user_id) -> NationalIntelligenceResponse:
+def build_national_intelligence(db, start_date: date, end_date: date, *, actor_user_id, facility_signals_page: int = 1, facility_signals_page_size: int = 100) -> NationalIntelligenceResponse:
     if end_date < start_date or (end_date - start_date).days > 365:
         raise ValueError("INVALID_REPORT_DATE_RANGE")
+    if facility_signals_page < 1 or facility_signals_page_size < 1 or facility_signals_page_size > 500:
+        raise ValueError("INVALID_FACILITY_SIGNALS_PAGINATION")
 
     report = build_national_report(db, start_date, end_date, actor_user_id=actor_user_id)
     period_days = (end_date - start_date).days + 1
@@ -137,6 +139,10 @@ def build_national_intelligence(db, start_date: date, end_date: date, *, actor_u
                 )
             )
     facility_signals.sort(key=lambda item: (-item.score, item.facility_name))
+
+    facility_signals_total = len(facility_signals)
+    signal_start = (facility_signals_page - 1) * facility_signals_page_size
+    facility_signals = facility_signals[signal_start:signal_start + facility_signals_page_size]
 
     trends = [
         _trend("encounters", "Encounters", float(report.encounters), float(previous.encounters)),
@@ -196,6 +202,9 @@ def build_national_intelligence(db, start_date: date, end_date: date, *, actor_u
         generated_at=datetime.now(timezone.utc).isoformat(),
         alerts=alerts,
         facility_signals=facility_signals,
+        facility_signals_total=facility_signals_total,
+        facility_signals_page=facility_signals_page,
+        facility_signals_page_size=facility_signals_page_size,
         trends=trends,
         counties=counties,
     )
