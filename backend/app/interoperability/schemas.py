@@ -37,3 +37,10 @@ class FHIRCapabilityResponse(BaseModel):
     patient_read: bool = True
     clinical_read: bool = True
     clinical_write: bool = False
+    supported_resources: list[str] = Field(default_factory=lambda: ["Patient", "AllergyIntolerance", "Bundle"], max_length=20)
+    profiles: list[str] = Field(default_factory=lambda: [
+        "http://hl7.org/fhir/StructureDefinition/Patient",
+        "http://hl7.org/fhir/StructureDefinition/AllergyIntolerance",
+    ], max_length=20)
+    dhis2_api_version: str = "2.40"
+    identifier_systems: list[str] = Field(default_factory=lambda: ["https://afasync.health.go.ke/identifier/afya-id"], max_length=10)
