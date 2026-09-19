@@ -42,6 +42,7 @@ from app.insight.router import router as insight_router
 from app.integrations import models as integration_models
 from app.integrations.router import router as integrations_router
 from app.interoperability.router import router as interoperability_router
+from app.interoperability.allergy_router import router as interoperability_allergy_router
 from app.laboratory import models as laboratory_models
 from app.laboratory.router import router as laboratory_router
 from app.maternity import models as maternity_models
@@ -192,6 +193,7 @@ app.include_router(portal_router)
 app.include_router(reports_router)
 app.include_router(insight_router)
 app.include_router(interoperability_router)
+app.include_router(interoperability_allergy_router)
 app.include_router(national_supply_router)
 app.include_router(national_supply_planning_router)
 app.include_router(national_referrals_router)
