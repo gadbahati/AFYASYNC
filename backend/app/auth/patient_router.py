@@ -3,7 +3,6 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
 
 from app.auth.patient_schemas import (
     PatientAuthTokenResponse,
@@ -20,8 +19,8 @@ from app.auth.patient_service import (
     request_password_reset,
 )
 from app.auth.rate_limit import enforce_auth_rate_limit
-from app.config import settings
 from app.database import get_db
+from app.notifications.delivery import deliver_password_reset_code
 
 logger = logging.getLogger("afyasync.patient_auth")
 router = APIRouter(prefix="/api/v1/auth/patient", tags=["Patient Authentication"])
@@ -38,12 +37,8 @@ def patient_register(
     db=Depends(get_db),
     _: None = Depends(enforce_auth_rate_limit),
 ):
-    """Create a patient portal password for an existing Afya ID.
-
-    The person must already be registered in the health system.
-    """
     try:
-        user = register_patient(db, payload=payload, ip_address=_ip(request))
+        register_patient(db, payload=payload, ip_address=_ip(request))
         from app.auth.patient_schemas import PatientLoginRequest as _Login
 
         _user, access, refresh, expires = login_patient(
@@ -77,7 +72,6 @@ def patient_login(
     db=Depends(get_db),
     _: None = Depends(enforce_auth_rate_limit),
 ):
-    """Sign in with Afya ID or SHA membership number and password."""
     try:
         _user, access, refresh, expires = login_patient(
             db, payload=payload, ip_address=_ip(request)
@@ -103,26 +97,29 @@ def patient_password_reset_request(
     db=Depends(get_db),
     _: None = Depends(enforce_auth_rate_limit),
 ):
-    """Request a one-time reset code sent to phone or email on file."""
+    """Request a one-time reset code sent to phone or email on file.
+
+    The plain code is never returned in the API response.
+    """
     try:
-        channel, hint, code = request_password_reset(
+        channel, hint, code, destination = request_password_reset(
             db, payload=payload, ip_address=_ip(request)
         )
         db.commit()
 
-        # Deliver code: in production plug SMS/email provider here.
-        # Never return the code in the API response.
-        if code and settings.environment != "production":
-            logger.info(
-                "Patient password reset code generated channel=%s dest=%s (non-prod only)",
-                channel,
-                hint,
+        if code and destination:
+            delivered = deliver_password_reset_code(
+                channel=channel,
+                destination=destination,
+                code=code,
+                destination_hint=hint,
             )
-            # Ops may read from secure logs; code itself is not logged in full in production path
-
-        if code and settings.environment == "production":
-            # Placeholder for real SMS/email gateway integration
-            logger.info("Patient password reset code queued for delivery channel=%s", channel)
+            if not delivered:
+                logger.warning(
+                    "Password reset code generated but delivery failed channel=%s dest=%s",
+                    channel,
+                    hint,
+                )
 
         return PatientPasswordResetRequested(
             message=(
@@ -145,7 +142,6 @@ def patient_password_reset_confirm(
     db=Depends(get_db),
     _: None = Depends(enforce_auth_rate_limit),
 ):
-    """Confirm reset code and set a new password."""
     try:
         confirm_password_reset(db, payload=payload, ip_address=_ip(request))
         db.commit()
