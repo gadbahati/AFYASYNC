@@ -15,7 +15,9 @@ from app.appointments import models as appointment_models
 from app.appointments.router import router as appointments_router
 from app.audit import models as audit_models
 from app.auth import models as auth_models
+from app.auth import patient_models as patient_auth_models
 from app.auth import router as auth_router
+from app.auth.patient_router import router as patient_auth_router
 from app.benefits import models as benefit_models
 from app.benefits.router import router as benefits_router
 from app.billing import models as billing_models
@@ -162,6 +164,7 @@ def initialize_database():
         logger.exception("Unable to start KMHFR registry import")
 
 app.include_router(auth_router.router)
+app.include_router(patient_auth_router)
 app.include_router(patients_router)
 app.include_router(patient_timeline_router)
 app.include_router(national_identity_router)
