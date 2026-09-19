@@ -8,10 +8,8 @@ type Thread = {
   facility_id: string;
   facility_name: string;
   last_message: string;
-  last_at: string;
-  sender_type: string;
 };
-type Msg = { id: string; sender_type: string; body: string; created_at: string };
+type Msg = { id: string; sender_type: string; body: string };
 type Facility = { id: string; name: string };
 
 export function PatientMessagesPage() {
@@ -41,7 +39,17 @@ export function PatientMessagesPage() {
     loadThreads().catch(() => setError("Unable to load messages."));
   }, [auth.accountType]);
 
-  if (!auth.ready) return <div className="auth-page"><div className="card auth-card"><p className="muted">Loading…</p></div></div>;
+  if (!auth.ready) {
+    return (
+      <div className="portal-page">
+        <div className="portal-shell">
+          <div className="portal-card">
+            <p className="muted">Loading…</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (auth.accountType !== "patient") return <Navigate to="/login/patient" replace />;
 
   async function send(e: FormEvent) {
@@ -61,75 +69,75 @@ export function PatientMessagesPage() {
   }
 
   return (
-    <main className="auth-page" style={{ alignItems: "flex-start", paddingTop: "1.5rem" }}>
-      <div className="card auth-card" style={{ maxWidth: "40rem", width: "100%" }}>
-        <div className="auth-brand">
-          <KenyaFlag />
-          <div>
-            <div className="brand-kicker">Patient portal</div>
-            <h1>Messages</h1>
+    <div className="portal-page">
+      <div className="portal-shell wide">
+        <div className="portal-card">
+          <div className="portal-brand">
+            <KenyaFlag />
+            <div>
+              <div className="brand-kicker">Patient portal</div>
+              <h1>Messages</h1>
+            </div>
           </div>
-        </div>
-        <p className="muted">Message any facility. They can reply from their workspace.</p>
+          <p className="muted">Message any facility. They can reply from their workspace.</p>
 
-        <div style={{ display: "grid", gap: "0.5rem", marginBottom: "1rem" }}>
-          {threads.map((t) => (
-            <button
-              key={t.facility_id}
-              type="button"
-              onClick={() => void openThread(t.facility_id)}
-              style={{
-                textAlign: "left",
-                padding: "0.65rem 0.85rem",
-                border: activeFacility === t.facility_id ? "2px solid #2563eb" : "1px solid #e5e7eb",
-                borderRadius: 8,
-                background: "#fff",
-                cursor: "pointer",
-              }}
-            >
-              <strong>{t.facility_name}</strong>
-              <div className="muted small">{t.last_message}</div>
-            </button>
-          ))}
-        </div>
-
-        {activeFacility && (
-          <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: "1rem", border: "1px solid #e5e7eb", borderRadius: 8, padding: "0.75rem" }}>
-            {messages.map((m) => (
-              <div key={m.id} style={{ marginBottom: "0.65rem", textAlign: m.sender_type === "PATIENT" ? "right" : "left" }}>
-                <span className="muted small">{m.sender_type === "PATIENT" ? "You" : "Facility"}</span>
-                <div>{m.body}</div>
-              </div>
+          <div className="portal-actions">
+            {threads.map((t) => (
+              <button
+                key={t.facility_id}
+                type="button"
+                className={`portal-thread-btn${activeFacility === t.facility_id ? " active" : ""}`}
+                onClick={() => void openThread(t.facility_id)}
+              >
+                <strong>{t.facility_name}</strong>
+                <div className="muted small">{t.last_message}</div>
+              </button>
             ))}
           </div>
-        )}
 
-        <form onSubmit={send}>
-          {!activeFacility && (
-            <label>
-              Start conversation with hospital
-              <select value={newFacilityId} onChange={(e) => setNewFacilityId(e.target.value)}>
-                <option value="">Select…</option>
-                {facilities.map((f) => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
-              </select>
-            </label>
+          {activeFacility && (
+            <div className="portal-chat">
+              {messages.map((m) => (
+                <div
+                  key={m.id}
+                  className={`portal-bubble ${m.sender_type === "PATIENT" ? "patient" : "facility"}`}
+                >
+                  <div className="who">{m.sender_type === "PATIENT" ? "You" : "Facility"}</div>
+                  {m.body}
+                </div>
+              ))}
+            </div>
           )}
-          <label>
-            Message
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} required />
-          </label>
-          {error && <div className="error">{error}</div>}
-          <button type="submit" disabled={!body.trim() || (!activeFacility && !newFacilityId)}>
-            Send
-          </button>
-        </form>
 
-        <p className="muted small" style={{ marginTop: "1rem" }}>
-          <Link to="/portal">Back to portal</Link>
-        </p>
+          <form className="portal-form" onSubmit={send}>
+            {!activeFacility && (
+              <label>
+                Start conversation with hospital
+                <select value={newFacilityId} onChange={(e) => setNewFacilityId(e.target.value)}>
+                  <option value="">Select…</option>
+                  {facilities.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label>
+              Message
+              <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} required />
+            </label>
+            {error && <div className="error">{error}</div>}
+            <button type="submit" disabled={!body.trim() || (!activeFacility && !newFacilityId)}>
+              Send
+            </button>
+          </form>
+
+          <div className="portal-footer-links">
+            <Link to="/portal">Back to portal</Link>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
