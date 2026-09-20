@@ -39,11 +39,14 @@ def patient_register(
 ):
     try:
         register_patient(db, payload=payload, ip_address=_ip(request))
-        from app.auth.patient_schemas import PatientLoginRequest as _Login
+        db.flush()
 
         _user, access, refresh, expires = login_patient(
             db,
-            payload=_Login(identifier=payload.afya_id, password=payload.password),
+            payload=PatientLoginRequest(
+                identifier=payload.afya_id.strip().upper(),
+                password=payload.password,
+            ),
             ip_address=_ip(request),
         )
         db.commit()
@@ -53,11 +56,14 @@ def patient_register(
             expires_in=expires,
         )
     except ValueError as exc:
+        db.rollback()
         code = str(exc)
         mapping = {
-            "AFYA_ID_NOT_FOUND": status.HTTP_404_NOT_FOUND,
             "ACCOUNT_ALREADY_EXISTS": status.HTTP_409_CONFLICT,
             "USERNAME_CONFLICT": status.HTTP_409_CONFLICT,
+            "NAME_REQUIRED_FOR_NEW_ACCOUNT": status.HTTP_400_BAD_REQUEST,
+            "INVALID_AFYA_ID": status.HTTP_400_BAD_REQUEST,
+            "INVALID_CREDENTIALS": status.HTTP_401_UNAUTHORIZED,
         }
         raise HTTPException(
             status_code=mapping.get(code, status.HTTP_400_BAD_REQUEST),
