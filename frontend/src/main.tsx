@@ -5,6 +5,7 @@ import "./index.css";
 import "./app-shell.css";
 import "./national-brand.css";
 import "./institutional-brand.css";
+import "./dashboard.css";
 import "./portal.css";
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
