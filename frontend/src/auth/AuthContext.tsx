@@ -23,6 +23,8 @@ type AuthState = {
   patientRegister: (payload: {
     afya_id: string;
     password: string;
+    first_name?: string;
+    last_name?: string;
     phone?: string;
     email?: string;
   }) => Promise<void>;
@@ -139,7 +141,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const patientRegister = useCallback(
-    async (payload: { afya_id: string; password: string; phone?: string; email?: string }) => {
+    async (payload: {
+      afya_id: string;
+      password: string;
+      first_name?: string;
+      last_name?: string;
+      phone?: string;
+      email?: string;
+    }) => {
       const tokens = await api.patientRegister(payload);
       setSession({
         access_token: tokens.access_token,
