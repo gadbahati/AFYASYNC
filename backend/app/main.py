@@ -96,6 +96,10 @@ from app.radiology import models as radiology_models
 from app.radiology.router import router as radiology_router
 from app.treat_abroad import models as treat_abroad_models
 from app.treat_abroad.router import router as treat_abroad_router
+from app.continuity import models as continuity_models  # noqa: F401
+from app.continuity.router import facility_router as continuity_facility_router
+from app.continuity.router import portal_router as continuity_portal_router
+from app.continuity.router import public_router as continuity_public_router
 from app.wards import models as ward_models
 from app.wards.router import router as wards_router
 from app.wards.movement_router import router as ward_movement_router
@@ -104,7 +108,7 @@ from app.ussd.router import router as ussd_router
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
-# Tables required for Phase 9 beast-mode features (checked on /ready in production)
+# Tables required for Phase 9+ beast-mode features (checked on /ready in production)
 _REQUIRED_PROD_TABLES = (
     "patient_password_reset_tokens",
     "sensitive_categories",
@@ -113,6 +117,7 @@ _REQUIRED_PROD_TABLES = (
     "overseas_treatment_cases",
     "appointment_requests",
     "facility_messages",
+    "continuity_cards",
 )
 
 
@@ -264,6 +269,9 @@ app.include_router(operations_router)
 app.include_router(ussd_router)
 app.include_router(consent_router)
 app.include_router(treat_abroad_router)
+app.include_router(continuity_portal_router)
+app.include_router(continuity_public_router)
+app.include_router(continuity_facility_router)
 
 
 @app.get("/health", tags=["System"])
@@ -282,7 +290,7 @@ def health_check():
 
 @app.get("/ready", tags=["System"])
 def readiness_check(response: Response):
-    """Readiness: DB up; in production also verify Phase 9 tables exist."""
+    """Readiness: DB up; in production also verify Phase 9+ tables exist."""
     try:
         with SessionLocal() as db:
             db.execute(text("SELECT 1"))
