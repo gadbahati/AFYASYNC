@@ -54,19 +54,112 @@ def build_national_report(db: Session, start_date: date, end_date: date, *, acto
     payer_rows = db.execute(select(Payer.id, Payer.name, Payer.code, func.count(Claim.id), func.coalesce(func.sum(Claim.claim_amount), 0), func.coalesce(func.sum(Claim.approved_amount), 0), func.coalesce(func.sum(Claim.paid_amount), 0)).join(Claim, Claim.payer_id == Payer.id).join(Invoice, Invoice.id == Claim.invoice_id).join(Facility, Facility.id == Invoice.facility_id).where(Claim.updated_at >= start, Claim.updated_at < end, Facility.status == "ACTIVE").group_by(Payer.id, Payer.name, Payer.code).order_by(Payer.name)).all()
     payer_claims = [NationalPayerSummary(payer_id=row[0], payer_name=row[1], payer_code=row[2], claims=int(row[3]), amount=_money(row[4]), approved_amount=_money(row[5]), paid_amount=_money(row[6]), receivable=_money(max(_money(row[5]) - _money(row[6]), Decimal("0")))) for row in payer_rows]
 
+    # Enumerate active facilities once, then collect period aggregates in bounded grouped
+    # queries. This avoids one query per facility (N+1) while preserving the exact
+    # facility-level report contract.
     facility_rows = db.execute(
         select(Facility.id, Facility.facility_id, Facility.name, Facility.county)
         .where(Facility.status == "ACTIVE")
         .order_by(Facility.name)
     ).all()
+    facility_ids = [row[0] for row in facility_rows]
+
+    encounter_by_facility = {}
+    if facility_ids:
+        encounter_rows = db.execute(
+            select(Encounter.facility_id, func.count(Encounter.id))
+            .where(
+                Encounter.facility_id.in_(facility_ids),
+                Encounter.created_at >= start,
+                Encounter.created_at < end,
+            )
+            .group_by(Encounter.facility_id)
+        ).all()
+        encounter_by_facility = {row[0]: int(row[1]) for row in encounter_rows}
+
+    invoice_by_facility = {}
+    if facility_ids:
+        invoice_rows = db.execute(
+            select(
+                Invoice.facility_id,
+                func.count(Invoice.id),
+                func.coalesce(func.sum(Invoice.total_amount), 0),
+            )
+            .where(
+                Invoice.facility_id.in_(facility_ids),
+                Invoice.created_at >= start,
+                Invoice.created_at < end,
+                Invoice.status != "VOID",
+            )
+            .group_by(Invoice.facility_id)
+        ).all()
+        invoice_by_facility = {
+            row[0]: (int(row[1]), _money(row[2])) for row in invoice_rows
+        }
+
+    payment_by_facility = {}
+    if facility_ids:
+        payment_rows = db.execute(
+            select(Payment.facility_id, func.coalesce(func.sum(Payment.amount), 0))
+            .where(
+                Payment.facility_id.in_(facility_ids),
+                Payment.created_at >= start,
+                Payment.created_at < end,
+                Payment.status == "CONFIRMED",
+            )
+            .group_by(Payment.facility_id)
+        ).all()
+        payment_by_facility = {row[0]: _money(row[1]) for row in payment_rows}
+
+    claim_by_facility = {}
+    if facility_ids:
+        claim_rows_by_facility = db.execute(
+            select(
+                Invoice.facility_id,
+                func.count(Claim.id),
+                func.coalesce(func.sum(Claim.claim_amount), 0),
+                func.coalesce(func.sum(Claim.approved_amount), 0),
+                func.coalesce(func.sum(Claim.paid_amount), 0),
+            )
+            .join(Invoice, Invoice.id == Claim.invoice_id)
+            .where(
+                Invoice.facility_id.in_(facility_ids),
+                Claim.updated_at >= start,
+                Claim.updated_at < end,
+            )
+            .group_by(Invoice.facility_id)
+        ).all()
+        claim_by_facility = {
+            row[0]: (int(row[1]), _money(row[2]), _money(row[3]), _money(row[4]))
+            for row in claim_rows_by_facility
+        }
+
     facilities: list[NationalFacilitySummary] = []
     for facility_id, facility_code, facility_name, county in facility_rows:
-        facility_encounters = db.scalar(select(func.count(Encounter.id)).where(Encounter.facility_id == facility_id, Encounter.created_at >= start, Encounter.created_at < end)) or 0
-        facility_invoice_totals = db.execute(select(func.count(Invoice.id), func.coalesce(func.sum(Invoice.total_amount), 0)).where(Invoice.facility_id == facility_id, Invoice.created_at >= start, Invoice.created_at < end, Invoice.status != "VOID")).one()
-        facility_payments = db.scalar(select(func.sum(Payment.amount)).where(Payment.facility_id == facility_id, Payment.created_at >= start, Payment.created_at < end, Payment.status == "CONFIRMED"))
-        facility_claim_totals = db.execute(select(func.count(Claim.id), func.coalesce(func.sum(Claim.claim_amount), 0), func.coalesce(func.sum(Claim.approved_amount), 0), func.coalesce(func.sum(Claim.paid_amount), 0)).join(Invoice, Invoice.id == Claim.invoice_id).where(Invoice.facility_id == facility_id, Claim.updated_at >= start, Claim.updated_at < end)).one()
-        approved, paid = _money(facility_claim_totals[2]), _money(facility_claim_totals[3])
-        facilities.append(NationalFacilitySummary(facility_id=facility_id, facility_code=facility_code, facility_name=facility_name, county=county, encounters=int(facility_encounters), invoices=int(facility_invoice_totals[0]), billed=_money(facility_invoice_totals[1]), confirmed_payments=_money(facility_payments), claims=int(facility_claim_totals[0]), claims_amount=_money(facility_claim_totals[1]), claims_approved=approved, claims_paid=paid, claims_receivable=_money(max(approved - paid, Decimal("0")))))
+        invoice_count, billed = invoice_by_facility.get(
+            facility_id, (0, Decimal("0"))
+        )
+        claim_count, claim_amount, approved, paid = claim_by_facility.get(
+            facility_id, (0, Decimal("0"), Decimal("0"), Decimal("0"))
+        )
+        confirmed_payments = payment_by_facility.get(facility_id, Decimal("0"))
+        facilities.append(
+            NationalFacilitySummary(
+                facility_id=facility_id,
+                facility_code=facility_code,
+                facility_name=facility_name,
+                county=county,
+                encounters=encounter_by_facility.get(facility_id, 0),
+                invoices=invoice_count,
+                billed=billed,
+                confirmed_payments=confirmed_payments,
+                claims=claim_count,
+                claims_amount=claim_amount,
+                claims_approved=approved,
+                claims_paid=paid,
+                claims_receivable=_money(max(approved - paid, Decimal("0"))),
+            )
+        )
 
     day_ago = datetime.now(timezone.utc) - timedelta(days=1)
     open_encounters = db.scalar(select(func.count(Encounter.id)).join(Facility, Facility.id == Encounter.facility_id).where(Encounter.status == "OPEN", Facility.status == "ACTIVE")) or 0
