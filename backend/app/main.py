@@ -109,6 +109,7 @@ from app.wards.movement_router import router as ward_movement_router
 from app.ussd import models as ussd_models  # noqa: F401
 from app.ussd.router import lite_router as ussd_lite_router
 from app.ussd.router import router as ussd_router
+from app.trust.router import router as public_trust_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -282,6 +283,7 @@ app.include_router(treat_abroad_router)
 app.include_router(continuity_portal_router)
 app.include_router(continuity_public_router)
 app.include_router(continuity_facility_router)
+app.include_router(public_trust_router)
 
 
 @app.get("/health", tags=["System"])
