@@ -1,0 +1,185 @@
+/* Facility dashboard — solid colours only, clear stacking, no gradients */
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dashboard .section-title {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+
+/* Hero */
+.hero-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  padding: 20px 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.hero-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.hero-left > div {
+  min-width: 0;
+}
+
+.hero-left h1 {
+  margin: 4px 0 4px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.hero-left .muted {
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.hero-actions .button,
+.hero-actions a.button {
+  text-decoration: none;
+}
+
+/* Stat grid — fixed, no overlap */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+.stat-card,
+.stat-grid .stat-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.stat-card .muted.small,
+.stat-card .small.muted {
+  margin: 0;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 650;
+  color: var(--brand-dark);
+  line-height: 1.2;
+  margin: 0;
+}
+
+a.stat-card-link {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 100ms ease, background-color 100ms ease, box-shadow 100ms ease;
+}
+
+a.stat-card-link:hover,
+a.stat-card-link:focus-visible {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+}
+
+a.stat-card-link:active {
+  background: var(--brand-tint-strong);
+}
+
+a.stat-card-link .small.muted {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Monitor panel */
+.monitor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.monitor-panel h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.monitor-panel > .muted {
+  margin: 0;
+}
+
+.monitor-panel .stat-grid {
+  margin-top: 4px;
+}
+
+/* Report tables under dashboard */
+.dashboard .report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dashboard .report-card {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .hero-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .dashboard .report-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+}
