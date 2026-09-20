@@ -138,6 +138,15 @@ def preflight_claim(
 
     deduped_errors = list(dict.fromkeys(errors))
     deduped_warnings = list(dict.fromkeys(warnings))
+
+    from app.claims.risk_service import score_from_preflight
+
+    risk = score_from_preflight(
+        errors=deduped_errors,
+        warnings=deduped_warnings,
+        payer_amount=float(payer_total),
+    )
+
     record_audit(
         db,
         action="CLAIM_PREFLIGHT",
@@ -153,10 +162,13 @@ def preflight_claim(
             "item_count": len(items),
             "payer_amount": str(payer_total),
             "patient_amount": str(patient_total),
+            "risk_score": risk.score,
+            "risk_band": risk.band,
+            "block_submit": risk.block_submit,
         },
         commit=True,
     )
-    from app.claims.preflight_schemas import ClaimPreflightResponse
+    from app.claims.preflight_schemas import ClaimPreflightResponse, RiskFactorOut
 
     return ClaimPreflightResponse(
         invoice_id=invoice.id,
@@ -168,4 +180,17 @@ def preflight_claim(
         payer_amount=float(payer_total),
         patient_amount=float(patient_total),
         item_count=len(items),
+        risk_score=risk.score,
+        risk_band=risk.band,
+        block_submit=risk.block_submit,
+        risk_factors=[
+            RiskFactorOut(
+                code=f.code,
+                severity=f.severity,
+                points=f.points,
+                message=f.message,
+                owner=f.owner,
+            )
+            for f in risk.factors
+        ],
     )
