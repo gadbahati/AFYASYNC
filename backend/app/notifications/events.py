@@ -25,6 +25,10 @@ EVENT_TEMPLATES = {
     "REFERRAL_STATUS_CHANGED": ("Referral updated", "Your healthcare referral status has been updated."),
     "TRANSFER_REQUESTED": ("Transfer requested", "A healthcare transfer has been requested for you."),
     "TRANSFER_STATUS_CHANGED": ("Transfer updated", "Your interfacility transfer status has been updated."),
+    "TREAT_ABROAD_RETURNED": (
+        "Return from treatment abroad",
+        "Your Treat Abroad return-home package is ready in the portal. Please review follow-up instructions.",
+    ),
 }
 
 
