@@ -10,12 +10,28 @@ from app.billing.models import Invoice
 from app.claims.models import Claim, ClaimResponse
 from app.claims.permissions import CLAIMS_CREATE, CLAIMS_RECONCILE, CLAIMS_SUBMIT, CLAIMS_VALIDATE
 from app.claims.rejection_guide import guide_for
-from app.claims.schemas import ClaimCreate, ClaimResponseOut, ClaimSubmitOut, ClaimValidationOut, PayerResponseCreate, ReconcileCreate, ReconcileResponse
+from app.claims.schemas import (
+    ClaimCreate,
+    ClaimResponseOut,
+    ClaimSubmitOut,
+    ClaimValidationOut,
+    PayerResponseCreate,
+    ReconcileCreate,
+    ReconcileResponse,
+)
 from app.claims.service import ClaimsError, create_claim, record_payer_response, reconcile_claim, submit_claim, validate_claim
+from app.config import settings
 from app.database import get_db
 from app.rbac.models import Staff, User
 
 router = APIRouter(prefix="/api/v1/claims", tags=["Claims"])
+
+# UI-friendly aliases → canonical service statuses
+_STATUS_ALIASES = {
+    "APPROVED": "ACCEPTED",
+    "PARTIALLY_APPROVED": "PARTIALLY_PAID",
+    "PROCESSING": "UNDER_REVIEW",
+}
 
 
 class RejectionWorkbenchItem(BaseModel):
@@ -40,26 +56,61 @@ class SandboxRejectRequest(BaseModel):
 
 def _error(exc: ClaimsError) -> HTTPException:
     mapping = {
-        "INVOICE_NOT_FOUND": 404, "ENCOUNTER_NOT_FOUND": 404, "ENCOUNTER_MISMATCH": 409,
-        "CLAIM_NOT_FOUND": 404, "CHARGE_NOT_FOUND": 404, "SERVICE_NOT_FOUND": 404,
-        "FACILITY_ACCESS_DENIED": 403, "CLAIM_ALREADY_EXISTS": 409, "CLAIM_ALREADY_RECONCILED": 409,
-        "CLAIM_NOT_READY": 409, "CLAIM_NOT_VALIDATABLE": 409, "CLAIM_NOT_RECONCILABLE": 409,
-        "VERIFIED_COVERAGE_REQUIRED": 409, "PAYER_NOT_ACTIVE": 409, "PAYER_COVERAGE_REQUIRED": 409,
-        "CLAIM_ITEMS_REQUIRED": 409, "CLAIM_RESPONSE_NOT_ALLOWED": 409,
-        "INVALID_CLAIM_RESPONSE_STATUS": 400, "INVALID_APPROVED_AMOUNT": 400,
-        "APPROVED_AMOUNT_EXCEEDS_CLAIM": 400, "APPROVED_AMOUNT_REQUIRED": 400,
-        "INVALID_RECEIVED_AMOUNT": 400, "RECEIVED_AMOUNT_EXCEEDS_EXPECTED": 400,
-        "INVOICE_VOID": 409, "CLAIM_AMOUNT_INVALID": 400, "CLAIM_INVOICE_TOTAL_MISMATCH": 409,
-        "CLAIM_ITEM_TOTAL_MISMATCH": 409, "DUPLICATE_PAYER_RESPONSE": 409,
+        "INVOICE_NOT_FOUND": 404,
+        "ENCOUNTER_NOT_FOUND": 404,
+        "ENCOUNTER_MISMATCH": 409,
+        "CLAIM_NOT_FOUND": 404,
+        "CHARGE_NOT_FOUND": 404,
+        "SERVICE_NOT_FOUND": 404,
+        "FACILITY_ACCESS_DENIED": 403,
+        "CLAIM_ALREADY_EXISTS": 409,
+        "CLAIM_ALREADY_RECONCILED": 409,
+        "CLAIM_NOT_READY": 409,
+        "CLAIM_NOT_VALIDATABLE": 409,
+        "CLAIM_NOT_RECONCILABLE": 409,
+        "CLAIM_NOT_SETTLEABLE": 409,
+        "VERIFIED_COVERAGE_REQUIRED": 409,
+        "PAYER_NOT_ACTIVE": 409,
+        "PAYER_COVERAGE_REQUIRED": 409,
+        "CLAIM_ITEMS_REQUIRED": 409,
+        "CLAIM_RESPONSE_NOT_ALLOWED": 409,
+        "INVALID_CLAIM_RESPONSE_STATUS": 400,
+        "INVALID_APPROVED_AMOUNT": 400,
+        "APPROVED_AMOUNT_EXCEEDS_CLAIM": 400,
+        "APPROVED_AMOUNT_REQUIRED": 400,
+        "REJECTED_AMOUNT_MUST_BE_ZERO": 400,
+        "INVALID_RECEIVED_AMOUNT": 400,
+        "RECEIVED_AMOUNT_EXCEEDS_EXPECTED": 400,
+        "CLAIM_APPROVED_AMOUNT_REQUIRED": 400,
+        "INVOICE_VOID": 409,
+        "CLAIM_AMOUNT_INVALID": 400,
+        "CLAIM_INVOICE_TOTAL_MISMATCH": 409,
+        "CLAIM_ITEM_TOTAL_MISMATCH": 409,
+        "DUPLICATE_PAYER_RESPONSE": 409,
         "PAYER_INTEGRATION_NOT_CONFIGURED": 409,
-        "INTEGRATION_NOT_FOUND": 404, "INTEGRATION_NOT_ACTIVE": 409,
-        "CASH_ENCOUNTER_NO_CLAIM": 409, "SHA_MODE_REQUIRES_SHA_PAYER": 409, "AFYASYNC_MODE_REQUIRES_AFYASYNC_PAYER": 409,
+        "INTEGRATION_NOT_FOUND": 404,
+        "INTEGRATION_NOT_ACTIVE": 409,
+        "CASH_ENCOUNTER_NO_CLAIM": 409,
+        "SHA_MODE_REQUIRES_SHA_PAYER": 409,
+        "AFYASYNC_MODE_REQUIRES_AFYASYNC_PAYER": 409,
+        "PAYER_EXTERNAL_REFERENCE_REQUIRED": 400,
+        "SANDBOX_DISABLED_IN_PRODUCTION": 403,
     }
     return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
 
 
+def _canonical_response_status(raw: str) -> str:
+    status = raw.strip().upper()
+    return _STATUS_ALIASES.get(status, status)
+
+
 @router.get("", response_model=list[ClaimResponseOut])
-def list_claims(limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_CREATE))):
+def list_claims(
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(CLAIMS_CREATE)),
+):
     _ = user
     return list(
         db.scalars(
@@ -160,9 +211,10 @@ def sandbox_reject(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(CLAIMS_VALIDATE)),
 ):
-    """Simulate a payer rejection without live SHA — for workbench training & demos."""
+    """Simulate a payer rejection — training only; blocked in production."""
+    if settings.environment == "production":
+        raise HTTPException(status_code=403, detail="SANDBOX_DISABLED_IN_PRODUCTION")
     try:
-        # Move to SUBMITTED if still READY so response transition rules allow REJECTED
         claim = db.get(Claim, claim_id)
         if claim is None:
             raise ClaimsError("CLAIM_NOT_FOUND")
@@ -188,7 +240,12 @@ def sandbox_reject(
 
 
 @router.post("", response_model=ClaimResponseOut, status_code=201)
-def create(payload: ClaimCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_CREATE))):
+def create(
+    payload: ClaimCreate,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(CLAIMS_CREATE)),
+):
     try:
         return create_claim(db, facility_id, payload.invoice_id, actor_user_id=user.id)
     except ClaimsError as exc:
@@ -196,7 +253,12 @@ def create(payload: ClaimCreate, db: Session = Depends(get_db), facility_id: UUI
 
 
 @router.post("/{claim_id}/validate", response_model=ClaimValidationOut)
-def validate(claim_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_VALIDATE))):
+def validate(
+    claim_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(CLAIMS_VALIDATE)),
+):
     try:
         errors = validate_claim(db, claim_id, facility_id, actor_user_id=user.id)
         return ClaimValidationOut(claim_id=claim_id, valid=not errors, errors=errors)
@@ -205,29 +267,81 @@ def validate(claim_id: UUID, db: Session = Depends(get_db), facility_id: UUID = 
 
 
 @router.post("/{claim_id}/submit", response_model=ClaimSubmitOut)
-def submit(claim_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_SUBMIT))):
+def submit(
+    claim_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(CLAIMS_SUBMIT)),
+):
     try:
         claim = submit_claim(db, claim_id, facility_id, actor_user_id=user.id)
-        return ClaimSubmitOut(claim_id=claim.id, status=claim.status, message="Claim queued for authorised payer submission")
+        return ClaimSubmitOut(
+            claim_id=claim.id,
+            status=claim.status,
+            message="Claim queued for authorised payer submission",
+        )
     except ClaimsError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/{claim_id}/response", response_model=ClaimResponseOut)
-def payer_response(claim_id: UUID, payload: PayerResponseCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_VALIDATE))):
+def payer_response(
+    claim_id: UUID,
+    payload: PayerResponseCreate,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(CLAIMS_VALIDATE)),
+):
     try:
-        return record_payer_response(db, claim_id, facility_id, payload.status, payload.response_code, payload.response_message, payload.external_reference, payload.approved_amount, actor_user_id=user.id)
+        return record_payer_response(
+            db,
+            claim_id,
+            facility_id,
+            _canonical_response_status(payload.status),
+            payload.response_code,
+            payload.response_message,
+            payload.external_reference,
+            payload.approved_amount,
+            actor_user_id=user.id,
+        )
     except ClaimsError as exc:
         raise _error(exc) from exc
 
 
 @router.post("/{claim_id}/reconcile", response_model=ReconcileResponse)
-def reconcile(claim_id: UUID, payload: ReconcileCreate, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(CLAIMS_RECONCILE))):
-    staff = db.scalar(select(Staff).where(Staff.person_id == user.person_id, Staff.facility_id == facility_id, Staff.status == "ACTIVE").limit(1))
+def reconcile(
+    claim_id: UUID,
+    payload: ReconcileCreate,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(CLAIMS_RECONCILE)),
+):
+    staff = db.scalar(
+        select(Staff)
+        .where(
+            Staff.person_id == user.person_id,
+            Staff.facility_id == facility_id,
+            Staff.status == "ACTIVE",
+        )
+        .limit(1)
+    )
     if staff is None:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
     try:
-        reconciliation = reconcile_claim(db, claim_id, facility_id, staff.id, payload.received_amount, actor_user_id=user.id)
-        return ReconcileResponse(claim_id=reconciliation.claim_id, expected_amount=reconciliation.expected_amount, received_amount=reconciliation.received_amount, difference=reconciliation.difference, status=reconciliation.status)
+        reconciliation = reconcile_claim(
+            db,
+            claim_id,
+            facility_id,
+            staff.id,
+            payload.received_amount,
+            actor_user_id=user.id,
+        )
+        return ReconcileResponse(
+            claim_id=reconciliation.claim_id,
+            expected_amount=reconciliation.expected_amount,
+            received_amount=reconciliation.received_amount,
+            difference=reconciliation.difference,
+            status=reconciliation.status,
+        )
     except ClaimsError as exc:
         raise _error(exc) from exc
