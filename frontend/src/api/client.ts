@@ -154,8 +154,6 @@ export const api: any = {
   listMedications: () => request("/api/v1/pharmacy/medications"),
   createMedication: (payload: any) => request("/api/v1/pharmacy/medications", { method: "POST", body: JSON.stringify(payload) }),
   listPharmacyInventory: () => request("/api/v1/pharmacy/inventory"),
-  createMedication: (payload: any) => request("/api/v1/pharmacy/medications", { method: "POST", body: JSON.stringify(payload) }),
-  listPharmacyInventory: () => request("/api/v1/pharmacy/inventory"),
   listPrescriptions: (status?: string) => request(`/api/v1/pharmacy/prescriptions${status ? `?status=${encodeURIComponent(status)}` : ""}`),
   receiveInventory: (payload: any) => request("/api/v1/pharmacy/inventory/receive", { method: "POST", body: JSON.stringify(payload) }),
 
