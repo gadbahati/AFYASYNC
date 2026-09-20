@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_facility_context, require_patient_identity
 from app.database import get_db
+from app.portal.message_templates import list_templates_for
 from app.portal.messaging_service import (
     cancel_patient_request,
     create_appointment_request,
@@ -46,13 +47,16 @@ class FacilityRespondIn(BaseModel):
 
 class MessageIn(BaseModel):
     facility_id: UUID
-    body: str = Field(min_length=1, max_length=5000)
+    template_code: str = Field(min_length=3, max_length=60)
+    slots: dict[str, str] | None = None
     related_request_id: UUID | None = None
 
 
 class FacilityMessageIn(BaseModel):
     patient_id: UUID
-    body: str = Field(min_length=1, max_length=5000)
+    template_code: str | None = Field(default=None, max_length=60)
+    slots: dict[str, str] | None = None
+    body: str | None = Field(default=None, max_length=500)
     related_request_id: UUID | None = None
 
 
@@ -61,6 +65,23 @@ def _person(user: User) -> UUID:
         return require_patient_person_id(user.person_id)
     except PortalError as err:
         raise HTTPException(status_code=403, detail=str(err)) from err
+
+
+@patient_router.get("/messages/templates")
+def portal_message_templates(
+    user: User = Depends(require_patient_identity),
+) -> list[dict]:
+    _ = user
+    return list_templates_for("PATIENT")
+
+
+@facility_router.get("/messages/templates")
+def facility_message_templates(
+    facility_id: UUID = Depends(require_facility_context),
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    _ = facility_id, user
+    return list_templates_for("FACILITY")
 
 
 @patient_router.get("/facilities")
@@ -188,6 +209,7 @@ def portal_message_thread(
             "id": str(m.id),
             "sender_type": m.sender_type,
             "body": m.body,
+            "template_code": m.template_code,
             "created_at": m.created_at,
             "read_at": m.read_at,
         }
@@ -207,14 +229,20 @@ def portal_send_message(
             db,
             patient_id=person_id,
             facility_id=payload.facility_id,
-            body=payload.body,
             sender_type="PATIENT",
             sender_user_id=user.id,
+            template_code=payload.template_code,
+            slots=payload.slots,
             related_request_id=payload.related_request_id,
         )
         db.commit()
         db.refresh(msg)
-        return {"id": str(msg.id), "created_at": msg.created_at}
+        return {
+            "id": str(msg.id),
+            "template_code": msg.template_code,
+            "body": msg.body,
+            "created_at": msg.created_at,
+        }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -296,6 +324,7 @@ def facility_thread(
             "id": str(m.id),
             "sender_type": m.sender_type,
             "body": m.body,
+            "template_code": m.template_code,
             "created_at": m.created_at,
             "read_at": m.read_at,
         }
@@ -315,12 +344,19 @@ def facility_send_message(
             db,
             patient_id=payload.patient_id,
             facility_id=facility_id,
-            body=payload.body,
             sender_type="FACILITY",
             sender_user_id=user.id,
+            template_code=payload.template_code,
+            slots=payload.slots,
+            body=payload.body,
             related_request_id=payload.related_request_id,
         )
         db.commit()
-        return {"id": str(msg.id), "created_at": msg.created_at}
+        return {
+            "id": str(msg.id),
+            "template_code": msg.template_code,
+            "body": msg.body,
+            "created_at": msg.created_at,
+        }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
