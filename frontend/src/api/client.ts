@@ -101,11 +101,13 @@ export const api: any = {
   portalCancelAppointmentRequest: (id: string) => request(`/api/v1/portal/appointment-requests/${id}/cancel`, { method: "POST" }),
   portalMessageThreads: () => request("/api/v1/portal/messages/threads"),
   portalMessageThread: (facilityId: string) => request(`/api/v1/portal/messages/${facilityId}`),
+  portalMessageTemplates: () => request("/api/v1/portal/messages/templates"),
   portalSendMessage: (payload: any) => request("/api/v1/portal/messages", { method: "POST", body: JSON.stringify(payload) }),
   facilityAppointmentRequests: (status?: string) => request(`/api/v1/facility/appointment-requests${status ? `?status=${status}` : ""}`),
   facilityRespondAppointment: (id: string, payload: any) => request(`/api/v1/facility/appointment-requests/${id}/respond`, { method: "POST", body: JSON.stringify(payload) }),
   facilityMessageInbox: () => request("/api/v1/facility/messages/inbox"),
   facilityMessageThread: (patientId: string) => request(`/api/v1/facility/messages/${patientId}`),
+  facilityMessageTemplates: () => request("/api/v1/facility/messages/templates"),
   facilitySendMessage: (payload: any) => request("/api/v1/facility/messages", { method: "POST", body: JSON.stringify(payload) }),
 
   listTreatAbroadProcedures: () => request("/api/v1/treat-abroad/procedures"),
