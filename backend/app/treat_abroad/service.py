@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.patients.models import Person
 from app.treat_abroad.models import ApprovedOverseasProcedure, OverseasTreatmentCase
+from app.treat_abroad.return_service import assert_can_transition_to_returned
 from app.treat_abroad.schemas import OverseasCaseCreate, OverseasCaseUpdate
 
 ALLOWED_TRANSITIONS = {
@@ -18,9 +19,9 @@ ALLOWED_TRANSITIONS = {
     "APPROVED": {"TRAVEL_ARRANGED", "REJECTED"},
     "REJECTED": {"CLOSED"},
     "TRAVEL_ARRANGED": {"TREATMENT_IN_PROGRESS"},
-    "TREATMENT_IN_PROGRESS": {"RETURNED"},
+    "TREATMENT_IN_PROGRESS": {"RETURNED"},  # only via return package issue, or gated update
     "RETURNED": {"CLOSED"},
-    "CLOSED": set(),  # terminal — no further status changes
+    "CLOSED": set(),
 }
 
 MAX_OPEN_CASES_PER_PATIENT = 20
@@ -151,11 +152,13 @@ def update_case(
         allowed = ALLOWED_TRANSITIONS.get(case.status, set())
         if payload.status not in allowed:
             raise ValueError(f"INVALID_STATUS_TRANSITION:{case.status}->{payload.status}")
+        # Phase 15: cannot mark RETURNED without issued return-home package
+        if payload.status == "RETURNED":
+            assert_can_transition_to_returned(db, case)
         case.status = payload.status
         if payload.status in {"APPROVED", "REJECTED"}:
             case.sha_decided_at = datetime.now(timezone.utc)
 
-    # Cap approved amount to procedure max cover when approving
     if payload.approved_amount_kes is not None:
         procedure = db.get(ApprovedOverseasProcedure, case.procedure_id)
         max_cover = float(procedure.max_cover_kes) if procedure else 500_000.0
