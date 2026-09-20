@@ -6,12 +6,12 @@
 
 ---
 
-## Shipped (Phases 1–17)
+## Shipped (Phases 1–18)
 
 | Phase | Focus |
 |-------|--------|
-| 1–16 | Core through care-gap intelligence |
-| **17** | **Multi-payer truth + out-of-pocket estimate** |
+| 1–17 | Core through multi-payer OOP |
+| **18** | **Prescribe-time allergy & med safety** |
 
 ---
 
@@ -19,7 +19,6 @@
 
 | Phase | Title |
 |-------|--------|
-| 18 | Prescribe-time allergy & med safety |
 | 19 | Appointment fairness & capacity |
 | 20 | Public trust layer |
 
