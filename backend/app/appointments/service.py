@@ -38,13 +38,47 @@ def _require_provider(db: Session, provider_id: UUID | None, facility_id: UUID) 
 
 
 def create_appointment(db: Session, data: dict, actor_user_id: UUID | None = None) -> Appointment:
+    from app.appointments.capacity_service import (
+        assert_capacity_for_slot,
+        assert_patient_not_double_booked,
+    )
+
     _require_patient(db, data["patient_id"])
     _require_facility_department(db, data["facility_id"], data["department_id"])
     _require_provider(db, data.get("provider_id"), data["facility_id"])
+
+    appointment_at = data["appointment_at"]
+    if getattr(appointment_at, "tzinfo", None) is None:
+        appointment_at = appointment_at.replace(tzinfo=timezone.utc)
+        data = {**data, "appointment_at": appointment_at}
+
+    assert_capacity_for_slot(
+        db,
+        facility_id=data["facility_id"],
+        department_id=data["department_id"],
+        appointment_at=appointment_at,
+    )
+    assert_patient_not_double_booked(
+        db,
+        patient_id=data["patient_id"],
+        facility_id=data["facility_id"],
+        department_id=data["department_id"],
+        appointment_at=appointment_at,
+    )
+
     appointment = Appointment(**data)
     db.add(appointment)
     db.flush()
-    notify_patient_event(db, patient_id=appointment.patient_id, facility_id=appointment.facility_id, event_type="APPOINTMENT_CONFIRMED", action_url=f"/appointments/{appointment.id}", metadata={"appointment_id": str(appointment.id)}, actor_user_id=actor_user_id, commit=False)
+    notify_patient_event(
+        db,
+        patient_id=appointment.patient_id,
+        facility_id=appointment.facility_id,
+        event_type="APPOINTMENT_CONFIRMED",
+        action_url=f"/appointments/{appointment.id}",
+        metadata={"appointment_id": str(appointment.id)},
+        actor_user_id=actor_user_id,
+        commit=False,
+    )
     db.commit()
     db.refresh(appointment)
     return appointment
