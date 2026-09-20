@@ -67,6 +67,7 @@ from app.notifications.router import router as notifications_router
 from app.nursing import models as nursing_models
 from app.nursing.router import router as nursing_router
 from app.national_capacity.router import router as national_capacity_router
+from app.care_gap.router import router as care_gap_router
 from app.national_supply.router import router as national_supply_router
 from app.national_supply.planning_router import router as national_supply_planning_router
 from app.national_referrals.router import router as national_referrals_router
@@ -269,6 +270,7 @@ app.include_router(national_supply_router)
 app.include_router(national_supply_planning_router)
 app.include_router(national_referrals_router)
 app.include_router(national_capacity_router)
+app.include_router(care_gap_router)
 app.include_router(observability_router)
 app.include_router(operations_router)
 app.include_router(ussd_router)
