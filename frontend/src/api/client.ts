@@ -70,8 +70,14 @@ export const api: any = {
   login: (username: string, password: string) => request("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
   patientLogin: (identifier: string, password: string) =>
     request("/api/v1/auth/patient/login", { method: "POST", body: JSON.stringify({ identifier, password }) }, false),
-  patientRegister: (payload: { afya_id: string; password: string; phone?: string; email?: string }) =>
-    request("/api/v1/auth/patient/register", { method: "POST", body: JSON.stringify(payload) }, false),
+  patientRegister: (payload: {
+    afya_id: string;
+    password: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    email?: string;
+  }) => request("/api/v1/auth/patient/register", { method: "POST", body: JSON.stringify(payload) }, false),
   patientPasswordResetRequest: (identifier: string, channel: "PHONE" | "EMAIL") =>
     request("/api/v1/auth/patient/password-reset/request", { method: "POST", body: JSON.stringify({ identifier, channel }) }, false),
   patientPasswordResetConfirm: (identifier: string, code: string, new_password: string) =>
