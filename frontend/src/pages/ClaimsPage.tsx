@@ -37,19 +37,43 @@ type Preflight = {
 };
 
 const money = (n: number | string) =>
-  `KES ${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `KES ${Number(n || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const STATUS_FILTERS = [
   "ALL",
   "DRAFT",
   "READY",
   "SUBMITTED",
-  "PROCESSING",
-  "APPROVED",
-  "PARTIALLY_APPROVED",
+  "UNDER_REVIEW",
+  "ACCEPTED",
+  "PARTIALLY_PAID",
   "REJECTED",
   "PAID",
 ] as const;
+
+const isProd = import.meta.env.PROD;
+
+function canValidate(status: string) {
+  return ["DRAFT", "READY", "REJECTED"].includes(status);
+}
+function canSubmit(status: string) {
+  return status === "READY";
+}
+function canRespond(status: string) {
+  return ["SUBMITTED", "UNDER_REVIEW"].includes(status);
+}
+function canReconcile(status: string) {
+  return ["ACCEPTED", "PARTIALLY_PAID", "PAID"].includes(status);
+}
+function canSandboxReject(status: string) {
+  return !isProd && ["READY", "SUBMITTED", "UNDER_REVIEW"].includes(status);
+}
 
 export function ClaimsPage() {
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -63,7 +87,7 @@ export function ClaimsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [responseClaim, setResponseClaim] = useState<Claim | null>(null);
   const [response, setResponse] = useState({
-    status: "APPROVED" as "APPROVED" | "REJECTED" | "PARTIALLY_APPROVED",
+    status: "ACCEPTED" as "ACCEPTED" | "UNDER_REVIEW" | "REJECTED" | "PARTIALLY_PAID" | "PAID",
     code: "",
     message: "",
     reference: "",
@@ -98,33 +122,30 @@ export function ClaimsPage() {
   const stats = useMemo(() => {
     const by = (s: string) => claims.filter((c) => c.status === s).length;
     const totalClaimed = claims.reduce((sum, c) => sum + Number(c.claim_amount || 0), 0);
-    const totalApproved = claims.reduce((sum, c) => sum + Number(c.approved_amount || 0), 0);
     const totalPaid = claims.reduce((sum, c) => sum + Number(c.paid_amount || 0), 0);
     return {
       total: claims.length,
       rejected: by("REJECTED"),
-      submitted: by("SUBMITTED") + by("PROCESSING"),
-      approved: by("APPROVED") + by("PARTIALLY_APPROVED"),
+      submitted: by("SUBMITTED") + by("UNDER_REVIEW"),
+      accepted: by("ACCEPTED") + by("PARTIALLY_PAID"),
       totalClaimed,
-      totalApproved,
       totalPaid,
     };
   }, [claims]);
 
   async function runPreflight() {
     const id = invoiceId.trim();
-    if (!id) return;
+    if (!UUID_RE.test(id)) {
+      setError("Invoice ID must be a valid UUID.");
+      return;
+    }
     setBusy(true);
     setError(null);
     setPreflight(null);
     try {
       const result = await api.claimPreflight(id);
       setPreflight(result);
-      if (result.ready) {
-        setMessage("Preflight passed — invoice is ready for claim creation.");
-      } else {
-        setMessage(null);
-      }
+      setMessage(result.ready ? "Preflight passed — invoice is ready for claim creation." : null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message || e.code : "PREFLIGHT_FAILED");
     } finally {
@@ -134,10 +155,19 @@ export function ClaimsPage() {
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
+    const id = invoiceId.trim();
+    if (!UUID_RE.test(id)) {
+      setError("Invoice ID must be a valid UUID.");
+      return;
+    }
+    if (preflight && !preflight.ready) {
+      setError("Fix preflight errors before creating a claim.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await api.createClaim(invoiceId.trim());
+      await api.createClaim(id);
       setInvoiceId("");
       setPreflight(null);
       setMessage("Claim created from the invoice.");
@@ -153,8 +183,13 @@ export function ClaimsPage() {
     setBusy(true);
     setError(null);
     try {
-      const r = (await fn()) as { message?: string } | undefined;
-      setMessage(r?.message || ok);
+      const r = (await fn()) as { message?: string; errors?: string[]; valid?: boolean } | undefined;
+      if (r && Array.isArray(r.errors) && r.errors.length > 0) {
+        setError(r.errors.join("; "));
+        setMessage(null);
+      } else {
+        setMessage(r?.message || ok);
+      }
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message || e.code : "CLAIM_ACTION_FAILED");
@@ -166,18 +201,36 @@ export function ClaimsPage() {
   async function onResponse(e: FormEvent) {
     e.preventDefault();
     if (!responseClaim) return;
+    const code = response.code.trim();
+    const msg = response.message.trim();
+    const ref = response.reference.trim();
+    if (!code || !msg || !ref) {
+      setError("Response code, message, and external reference are required.");
+      return;
+    }
+    if (code.length > 80 || msg.length > 500 || ref.length > 150) {
+      setError("Response fields exceed allowed length.");
+      return;
+    }
+    const approved =
+      response.status === "REJECTED" ? 0 : Number(response.approved || 0);
+    if (response.status !== "REJECTED" && (Number.isNaN(approved) || approved < 0)) {
+      setError("Approved amount must be a non-negative number.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await api.recordClaimResponse(responseClaim.id, {
         status: response.status,
-        response_code: response.code.trim(),
-        response_message: response.message.trim(),
-        external_reference: response.reference.trim(),
-        approved_amount: response.status === "REJECTED" ? 0 : Number(response.approved || 0),
+        response_code: code,
+        response_message: msg,
+        external_reference: ref,
+        approved_amount: approved,
       });
       setMessage("Payer response recorded.");
       setResponseClaim(null);
+      setResponse({ status: "ACCEPTED", code: "", message: "", reference: "", approved: "" });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message || err.code : "PAYER_RESPONSE_FAILED");
@@ -189,10 +242,15 @@ export function ClaimsPage() {
   async function onReconcile(e: FormEvent) {
     e.preventDefault();
     if (!reconcileClaim) return;
+    const amount = Number(receivedAmount);
+    if (Number.isNaN(amount) || amount < 0) {
+      setError("Received amount must be a non-negative number.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const r = await api.reconcileClaim(reconcileClaim.id, Number(receivedAmount));
+      const r = await api.reconcileClaim(reconcileClaim.id, amount);
       setMessage(`Reconciliation ${r.status || "recorded"}.`);
       setReconcileClaim(null);
       await load();
@@ -219,7 +277,11 @@ export function ClaimsPage() {
         </button>
       </header>
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
       {message && <div className="success-box">{message}</div>}
 
       <div className="stats-row">
@@ -232,8 +294,8 @@ export function ClaimsPage() {
           <strong>{stats.submitted}</strong>
         </div>
         <div className="stat-card">
-          <span className="muted small">Approved</span>
-          <strong>{stats.approved}</strong>
+          <span className="muted small">Accepted</span>
+          <strong>{stats.accepted}</strong>
         </div>
         <div className="stat-card">
           <span className="muted small">Rejected</span>
@@ -252,8 +314,7 @@ export function ClaimsPage() {
       <article className="card">
         <h2>Create claim from invoice</h2>
         <p className="muted small">
-          Run <strong>preflight</strong> first to catch coverage and item issues before creating a
-          claim.
+          Run <strong>preflight</strong> first. Invoice ID must be a valid UUID from billing.
         </p>
         <form className="form-grid" onSubmit={onCreate}>
           <label className="span-2">
@@ -265,11 +326,18 @@ export function ClaimsPage() {
                 setInvoiceId(e.target.value);
                 setPreflight(null);
               }}
-              placeholder="Invoice UUID from billing"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              autoComplete="off"
+              spellCheck={false}
             />
           </label>
           <div className="form-actions span-2">
-            <button type="button" className="secondary" disabled={busy || !invoiceId.trim()} onClick={() => void runPreflight()}>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !invoiceId.trim()}
+              onClick={() => void runPreflight()}
+            >
               Run preflight
             </button>
             <button type="submit" disabled={busy || (preflight != null && !preflight.ready)}>
@@ -278,7 +346,10 @@ export function ClaimsPage() {
           </div>
         </form>
         {preflight && (
-          <div className={preflight.ready ? "success-box" : "error"} style={{ marginTop: "1rem" }}>
+          <div
+            className={preflight.ready ? "success-box" : "error"}
+            style={{ marginTop: "1rem" }}
+          >
             <strong>{preflight.ready ? "Ready for claim" : "Not ready"}</strong>
             <p className="small" style={{ margin: "0.35rem 0 0" }}>
               Items: {preflight.item_count} · Payer: {money(preflight.payer_amount)} · Patient:{" "}
@@ -341,7 +412,9 @@ export function ClaimsPage() {
                       <td>
                         <strong>{c.claim_id}</strong>
                       </td>
-                      <td className="mono small">{c.invoice_id.slice(0, 8)}…</td>
+                      <td className="mono small" title={c.invoice_id}>
+                        {c.invoice_id.slice(0, 8)}…
+                      </td>
                       <td>{money(c.claim_amount)}</td>
                       <td>{money(c.approved_amount)}</td>
                       <td>{money(c.paid_amount)}</td>
@@ -350,36 +423,49 @@ export function ClaimsPage() {
                       </td>
                       <td>
                         <div className="actions">
-                          <button
-                            type="button"
-                            className="secondary"
-                            disabled={busy}
-                            onClick={() =>
-                              void action(() => api.validateClaim(c.id), "Claim validated.")
-                            }
-                          >
-                            Validate
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() =>
-                              void action(() => api.submitClaim(c.id), "Claim submitted.")
-                            }
-                          >
-                            Submit
-                          </button>
-                          {["SUBMITTED", "PROCESSING"].includes(c.status) && (
+                          {canValidate(c.status) && (
                             <button
                               type="button"
                               className="secondary"
                               disabled={busy}
-                              onClick={() => setResponseClaim(c)}
+                              onClick={() =>
+                                void action(() => api.validateClaim(c.id), "Claim validated.")
+                              }
+                            >
+                              Validate
+                            </button>
+                          )}
+                          {canSubmit(c.status) && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                void action(() => api.submitClaim(c.id), "Claim submitted.")
+                              }
+                            >
+                              Submit
+                            </button>
+                          )}
+                          {canRespond(c.status) && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={busy}
+                              onClick={() => {
+                                setResponseClaim(c);
+                                setResponse({
+                                  status: "ACCEPTED",
+                                  code: "",
+                                  message: "",
+                                  reference: "",
+                                  approved: String(c.claim_amount),
+                                });
+                              }}
                             >
                               Payer response
                             </button>
                           )}
-                          {["APPROVED", "PARTIALLY_APPROVED", "PAID"].includes(c.status) && (
+                          {canReconcile(c.status) && (
                             <button
                               type="button"
                               className="secondary"
@@ -387,27 +473,26 @@ export function ClaimsPage() {
                               onClick={() => {
                                 setReconcileClaim(c);
                                 setReceivedAmount(
-                                  String(Number(c.approved_amount) - Number(c.paid_amount)),
+                                  String(
+                                    Math.max(
+                                      0,
+                                      Number(c.approved_amount) - Number(c.paid_amount),
+                                    ),
+                                  ),
                                 );
                               }}
                             >
                               Reconcile
                             </button>
                           )}
-                          {c.status === "SUBMITTED" && (
+                          {canSandboxReject(c.status) && (
                             <button
                               type="button"
                               className="secondary"
                               disabled={busy}
                               onClick={() =>
                                 void action(
-                                  () => api.sandboxRejectClaim?.(c.id) ?? api.recordClaimResponse(c.id, {
-                                    status: "REJECTED",
-                                    response_code: "COV001",
-                                    response_message: "Coverage not verified (sandbox)",
-                                    external_reference: `SANDBOX-${c.claim_id}`,
-                                    approved_amount: 0,
-                                  }),
+                                  () => api.sandboxRejectClaim(c.id),
                                   "Sandbox rejection recorded.",
                                 )
                               }
@@ -505,8 +590,10 @@ export function ClaimsPage() {
                     })
                   }
                 >
-                  <option value="APPROVED">APPROVED</option>
-                  <option value="PARTIALLY_APPROVED">PARTIALLY_APPROVED</option>
+                  <option value="ACCEPTED">ACCEPTED</option>
+                  <option value="UNDER_REVIEW">UNDER_REVIEW</option>
+                  <option value="PARTIALLY_PAID">PARTIALLY_PAID</option>
+                  <option value="PAID">PAID</option>
                   <option value="REJECTED">REJECTED</option>
                 </select>
               </label>
@@ -514,6 +601,7 @@ export function ClaimsPage() {
                 Response code
                 <input
                   required
+                  maxLength={80}
                   value={response.code}
                   onChange={(e) => setResponse({ ...response, code: e.target.value })}
                 />
@@ -522,6 +610,7 @@ export function ClaimsPage() {
                 Response message
                 <input
                   required
+                  maxLength={500}
                   value={response.message}
                   onChange={(e) => setResponse({ ...response, message: e.target.value })}
                 />
@@ -530,11 +619,12 @@ export function ClaimsPage() {
                 External reference
                 <input
                   required
+                  maxLength={150}
                   value={response.reference}
                   onChange={(e) => setResponse({ ...response, reference: e.target.value })}
                 />
               </label>
-              {response.status !== "REJECTED" && (
+              {response.status !== "REJECTED" && response.status !== "UNDER_REVIEW" && (
                 <label>
                   Approved amount (KES)
                   <input
