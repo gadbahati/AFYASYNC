@@ -468,6 +468,33 @@ def list_thread(
     )
 
 
+def list_patient_threads(db: Session, patient_id: UUID) -> list[dict]:
+    """Return one privacy-safe summary per facility in the patient's message history."""
+    rows = db.execute(
+        select(
+            Facility.id,
+            Facility.name,
+            Facility.county,
+            func.count(FacilityMessage.id),
+            func.max(FacilityMessage.created_at),
+        )
+        .join(FacilityMessage, FacilityMessage.facility_id == Facility.id)
+        .where(FacilityMessage.patient_id == patient_id)
+        .group_by(Facility.id, Facility.name, Facility.county)
+        .order_by(func.max(FacilityMessage.created_at).desc(), Facility.name.asc())
+    ).all()
+    return [
+        {
+            "facility_id": str(row[0]),
+            "facility_name": row[1],
+            "county": row[2],
+            "message_count": int(row[3]),
+            "last_message_at": row[4],
+        }
+        for row in rows
+    ]
+
+
 def list_facility_inbox(db: Session, facility_id: UUID) -> list[dict]:
     rows = list(
         db.scalars(
