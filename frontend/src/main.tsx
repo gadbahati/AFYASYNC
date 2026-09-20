@@ -7,6 +7,8 @@ import "./national-brand.css";
 import "./institutional-brand.css";
 import "./dashboard.css";
 import "./portal.css";
+/* Must load last — overrides conflicting shell/brand rules */
+import "./layout-fix.css";
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
