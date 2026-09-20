@@ -6,12 +6,12 @@
 
 ---
 
-## Shipped (Phases 1–18)
+## Shipped (Phases 1–19)
 
 | Phase | Focus |
 |-------|--------|
-| 1–17 | Core through multi-payer OOP |
-| **18** | **Prescribe-time allergy & med safety** |
+| 1–18 | Core through prescribe-time med safety |
+| **19** | **Appointment fairness & capacity** |
 
 ---
 
@@ -19,7 +19,6 @@
 
 | Phase | Title |
 |-------|--------|
-| 19 | Appointment fairness & capacity |
 | 20 | Public trust layer |
 
 © 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
