@@ -6,7 +6,7 @@
 
 ---
 
-## Shipped (Phases 1–9)
+## Shipped (Phases 1–11)
 
 | Phase | Focus |
 |-------|--------|
@@ -14,7 +14,9 @@
 | 6 | Treat Abroad case machine |
 | 7 | Notifications abstraction (SMS/email) |
 | 8 | Claims UX / rejection workbench |
-| 9 | Production migrations (`0071`/`0072`), `/ready` schema gate, deploy |
+| 9 | Production migrations (`0071`/`0072`), `/ready` schema gate |
+| 10 | Pilot / go-live gate (UAT, incident, sign-off) |
+| **11** | **Rejection prevention: risk score + KES at risk** |
 
 **Differentiating capabilities live:**
 
@@ -22,45 +24,23 @@
 - Sensitive disease disclosure with digital consent  
 - Bidirectional appointment requests + messaging  
 - Treat Abroad procedures seed + case workflow  
-- Claims preflight + production sandbox block  
+- Claims preflight + **risk score / band / block** + production sandbox block  
+- Facility **KES at risk** dashboard API + Claims UI  
 
 ---
 
-## Phase 10 — Pilot / go-live gate (CURRENT)
-
-**Docs:**
-
-- `docs/PHASE10_PILOT_GOLIVE_GATE.md`  
-- `docs/PHASE10_UAT_SCRIPT.md`  
-- `docs/PHASE10_INCIDENT_RUNBOOK.md`  
-
-**Exit:** UAT-01…10 pass, restore drill, sign-off → unlock Phase 11.
-
----
-
-## Next beast phases (after gate)
+## Next beast phases
 
 | Phase | Title |
 |-------|--------|
-| 11 | SHA rejection prevention engine (risk score + KES at risk) |
 | 12 | Consent-aware continuity card / QR wallet |
 | 13 | Template-only safe patient messaging |
 | 14 | USSD + low-bandwidth access |
 | 15 | Treat Abroad return-home package |
-| 16 | County/national care-gap intelligence (aggregates) |
+| 16 | County/national care-gap intelligence |
 | 17 | Multi-payer truth + out-of-pocket estimate |
 | 18 | Prescribe-time allergy & med safety |
 | 19 | Appointment fairness & capacity |
 | 20 | Public trust layer |
-
----
-
-## Non-negotiables every phase
-
-1. No dummy credentials or fake clinician UUIDs  
-2. Consent rules never bypassed  
-3. Standalone care if SHA is offline  
-4. Three-stakeholder benefit (individual, hospital, government)  
-5. Harden before moving on  
 
 © 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
