@@ -1,9 +1,9 @@
-"""Real appointment requests and two-way messaging between patient and facility."""
+"""Appointment requests and template-safe facility messaging."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.appointments.models import Appointment
@@ -11,12 +11,16 @@ from app.audit.service import record_audit
 from app.facilities.models import Department, Facility
 from app.notifications.events import notify_patient_event
 from app.notifications.models import Notification
+from app.portal.message_templates import list_templates_for, render_template
 from app.portal.messaging_models import AppointmentRequest, FacilityMessage
 from app.rbac.models import Staff, User
 
 MAX_REASON = 2000
 MAX_MESSAGE = 5000
 MAX_PENDING_PER_FACILITY = 10
+# Patient may not free-type; facility may use templates (preferred) or short free text
+FACILITY_FREE_TEXT_MAX = 500
+PATIENT_MSG_RATE_LIMIT = 20  # per rolling hour per patient+facility
 
 
 def list_bookable_facilities(db: Session) -> list[Facility]:
@@ -108,16 +112,6 @@ def create_appointment_request(
         if dept is None or dept.facility_id != facility_id or dept.status != "ACTIVE":
             raise ValueError("DEPARTMENT_NOT_FOUND")
 
-    pending_count = db.scalar(
-        select(AppointmentRequest.id)
-        .where(
-            AppointmentRequest.patient_id == patient_id,
-            AppointmentRequest.facility_id == facility_id,
-            AppointmentRequest.status == "PENDING",
-        )
-        .limit(MAX_PENDING_PER_FACILITY)
-    )
-    # Cap concurrent pending requests per patient+facility
     open_pending = list(
         db.scalars(
             select(AppointmentRequest).where(
@@ -216,7 +210,6 @@ def respond_to_request(
 
     if offered_appointment_at is not None:
         now = datetime.now(timezone.utc)
-        # Reject clearly past times (allow small clock skew)
         if offered_appointment_at.tzinfo is None:
             offered_appointment_at = offered_appointment_at.replace(tzinfo=timezone.utc)
         if offered_appointment_at < now:
@@ -325,27 +318,61 @@ def cancel_patient_request(
     return req
 
 
+def _patient_rate_ok(db: Session, *, patient_id: UUID, facility_id: UUID) -> bool:
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    count = db.scalar(
+        select(func.count())
+        .select_from(FacilityMessage)
+        .where(
+            FacilityMessage.patient_id == patient_id,
+            FacilityMessage.facility_id == facility_id,
+            FacilityMessage.sender_type == "PATIENT",
+            FacilityMessage.created_at >= since,
+        )
+    )
+    return int(count or 0) < PATIENT_MSG_RATE_LIMIT
+
+
 def send_message(
     db: Session,
     *,
     patient_id: UUID,
     facility_id: UUID,
-    body: str,
     sender_type: str,
     sender_user_id: UUID,
+    template_code: str | None = None,
+    slots: dict[str, str] | None = None,
+    body: str | None = None,
     related_request_id: UUID | None = None,
 ) -> FacilityMessage:
+    """Phase 13: patients MUST use templates; facility prefers templates, short free text allowed."""
     if sender_type not in {"PATIENT", "FACILITY"}:
         raise ValueError("INVALID_SENDER")
     facility = db.get(Facility, facility_id)
     if facility is None or facility.status != "ACTIVE":
         raise ValueError("FACILITY_NOT_FOUND")
 
-    text = (body or "").strip()
-    if not text:
-        raise ValueError("EMPTY_MESSAGE")
-    if len(text) > MAX_MESSAGE:
-        raise ValueError("MESSAGE_TOO_LONG")
+    if sender_type == "PATIENT":
+        if not template_code:
+            raise ValueError("TEMPLATE_REQUIRED")
+        if not _patient_rate_ok(db, patient_id=patient_id, facility_id=facility_id):
+            raise ValueError("RATE_LIMITED")
+        code, text = render_template(
+            sender_type="PATIENT", template_code=template_code, slots=slots
+        )
+    else:
+        # Facility: template preferred; free text only if short and no template
+        if template_code:
+            code, text = render_template(
+                sender_type="FACILITY", template_code=template_code, slots=slots
+            )
+        else:
+            text = (body or "").strip()
+            if not text:
+                raise ValueError("EMPTY_MESSAGE")
+            if len(text) > FACILITY_FREE_TEXT_MAX:
+                raise ValueError("MESSAGE_TOO_LONG")
+            code = None
 
     if related_request_id is not None:
         req = db.get(AppointmentRequest, related_request_id)
@@ -357,7 +384,8 @@ def send_message(
         facility_id=facility_id,
         sender_type=sender_type,
         sender_user_id=sender_user_id,
-        body=text,
+        body=text[:MAX_MESSAGE],
+        template_code=code,
         related_request_id=related_request_id,
     )
     db.add(msg)
@@ -371,7 +399,11 @@ def send_message(
             title="Message from patient",
             message=text[:200],
             action_url="/messages",
-            metadata={"message_id": str(msg.id), "patient_id": str(patient_id)},
+            metadata={
+                "message_id": str(msg.id),
+                "patient_id": str(patient_id),
+                "template_code": code,
+            },
         )
     else:
         notify_patient_event(
@@ -380,7 +412,7 @@ def send_message(
             facility_id=facility_id,
             event_type="FACILITY_MESSAGE",
             action_url="/portal/messages",
-            metadata={"message_id": str(msg.id)},
+            metadata={"message_id": str(msg.id), "template_code": code},
             actor_user_id=sender_user_id,
             commit=False,
         )
@@ -394,7 +426,7 @@ def send_message(
         user_id=sender_user_id,
         facility_id=facility_id,
         patient_id=patient_id,
-        metadata={"sender_type": sender_type},
+        metadata={"sender_type": sender_type, "template_code": code},
         commit=False,
     )
     return msg
@@ -443,7 +475,6 @@ def list_patient_threads(db: Session, patient_id: UUID) -> list[dict]:
 
 
 def list_facility_inbox(db: Session, facility_id: UUID) -> list[dict]:
-    """Distinct patients who have messaged this facility, newest first."""
     messages = list(
         db.scalars(
             select(FacilityMessage)
