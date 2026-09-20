@@ -6,19 +6,14 @@
 
 ---
 
-## Shipped (Phases 1–13)
+## Shipped (Phases 1–14)
 
 | Phase | Focus |
 |-------|--------|
-| 1–5 | Core HMIS, auth, clinical, billing, security hardening |
-| 6 | Treat Abroad case machine |
-| 7 | Notifications abstraction (SMS/email) |
-| 8 | Claims UX / rejection workbench |
-| 9 | Production migrations, `/ready` schema gate |
-| 10 | Pilot / go-live gate |
-| 11 | Rejection prevention: risk score + KES at risk |
+| 1–11 | Core HMIS through claims risk / pilot gate |
 | 12 | Consent-aware continuity card / QR wallet |
-| **13** | **Template-only safe patient messaging** |
+| 13 | Template-only safe patient messaging |
+| **14** | **USSD + low-bandwidth lite channel** |
 
 ---
 
@@ -26,7 +21,6 @@
 
 | Phase | Title |
 |-------|--------|
-| 14 | USSD + low-bandwidth access |
 | 15 | Treat Abroad return-home package |
 | 16 | County/national care-gap intelligence |
 | 17 | Multi-payer truth + out-of-pocket estimate |
