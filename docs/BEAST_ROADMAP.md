@@ -6,7 +6,7 @@
 
 ---
 
-## Shipped (Phases 1–12)
+## Shipped (Phases 1–13)
 
 | Phase | Focus |
 |-------|--------|
@@ -14,28 +14,18 @@
 | 6 | Treat Abroad case machine |
 | 7 | Notifications abstraction (SMS/email) |
 | 8 | Claims UX / rejection workbench |
-| 9 | Production migrations (`0071`/`0072`), `/ready` schema gate |
-| 10 | Pilot / go-live gate (UAT, incident, sign-off) |
+| 9 | Production migrations, `/ready` schema gate |
+| 10 | Pilot / go-live gate |
 | 11 | Rejection prevention: risk score + KES at risk |
-| **12** | **Consent-aware continuity card / QR wallet** |
-
-**Differentiating capabilities live:**
-
-- Patient self-registration (Afya ID) + portal  
-- Sensitive disease disclosure with digital consent  
-- Bidirectional appointment requests + messaging  
-- Treat Abroad procedures seed + case workflow  
-- Claims preflight + risk score / band / block  
-- Facility KES at risk dashboard  
-- **Continuity card: hashed tokens, consent-filtered snapshot, QR + facility scan**  
+| 12 | Consent-aware continuity card / QR wallet |
+| **13** | **Template-only safe patient messaging** |
 
 ---
 
-## Next beast phases
+## Next
 
 | Phase | Title |
 |-------|--------|
-| 13 | Template-only safe patient messaging |
 | 14 | USSD + low-bandwidth access |
 | 15 | Treat Abroad return-home package |
 | 16 | County/national care-gap intelligence |
