@@ -95,6 +95,7 @@ from app.theatre.router import router as theatre_router
 from app.radiology import models as radiology_models
 from app.radiology.router import router as radiology_router
 from app.treat_abroad import models as treat_abroad_models
+from app.treat_abroad import return_models as treat_abroad_return_models  # noqa: F401
 from app.treat_abroad.router import router as treat_abroad_router
 from app.continuity import models as continuity_models  # noqa: F401
 from app.continuity.router import facility_router as continuity_facility_router
@@ -121,6 +122,7 @@ _REQUIRED_PROD_TABLES = (
     "continuity_cards",
     "ussd_pins",
     "ussd_sessions",
+    "overseas_return_packages",
 )
 
 
