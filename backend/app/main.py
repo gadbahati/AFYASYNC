@@ -104,6 +104,18 @@ from app.ussd.router import router as ussd_router
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
+# Tables required for Phase 9 beast-mode features (checked on /ready in production)
+_REQUIRED_PROD_TABLES = (
+    "patient_password_reset_tokens",
+    "sensitive_categories",
+    "sensitive_disease_consents",
+    "approved_overseas_procedures",
+    "overseas_treatment_cases",
+    "appointment_requests",
+    "facility_messages",
+)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     @staticmethod
     def _request_id(request: Request) -> str:
@@ -133,30 +145,63 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception:
             runtime_metrics.request(error=True)
-            logger.exception("Unhandled request exception request_id=%s method=%s path=%s", request_id, request.method, privacy_safe_path(request.url.path))
-            response = JSONResponse(status_code=500, content={"success": False, "data": {"request_id": request_id}, "message": "Internal server error"})
+            logger.exception(
+                "Unhandled request exception request_id=%s method=%s path=%s",
+                request_id,
+                request.method,
+                privacy_safe_path(request.url.path),
+            )
+            response = JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "data": {"request_id": request_id},
+                    "message": "Internal server error",
+                },
+            )
             self._apply_headers(response, request_id)
             return response
         runtime_metrics.request(error=response.status_code >= 500)
         self._apply_headers(response, request_id)
         return response
 
+
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
-    app.add_middleware(CORSMiddleware, allow_origins=_cors_origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-AfyaSync-Timestamp", "X-AfyaSync-Signature", "X-Request-ID"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-AfyaSync-Timestamp",
+            "X-AfyaSync-Signature",
+            "X-Request-ID",
+        ],
+    )
 app.add_middleware(SecurityHeadersMiddleware)
+
 
 @app.on_event("startup")
 def initialize_database():
     if settings.environment != "production":
         Base.metadata.create_all(bind=engine)
     import os
+
     seed_requested = os.getenv("SEED_UNIVERSAL_ADMIN", "").strip().lower() in {"1", "true", "yes"}
-    bootstrap_requested = os.getenv("BOOTSTRAP_UNIVERSAL_ADMIN_ONCE", "").strip().lower() in {"1", "true", "yes"}
+    bootstrap_requested = os.getenv("BOOTSTRAP_UNIVERSAL_ADMIN_ONCE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     if seed_requested and settings.environment == "production" and not bootstrap_requested:
         raise RuntimeError("SEED_UNIVERSAL_ADMIN is forbidden in production")
     if seed_requested or bootstrap_requested:
         from app.scripts.seed_universal_admin import seed_universal_admin
+
         result = seed_universal_admin()
         print("UNIVERSAL_ADMIN_BOOTSTRAP:", result)
     try:
@@ -165,6 +210,7 @@ def initialize_database():
         logger.info("KMHFR startup registry import started=%s retry_loop=%s", started, retry_started)
     except Exception:
         logger.exception("Unable to start KMHFR registry import")
+
 
 app.include_router(auth_router.router)
 app.include_router(patient_auth_router)
@@ -219,20 +265,87 @@ app.include_router(ussd_router)
 app.include_router(consent_router)
 app.include_router(treat_abroad_router)
 
+
 @app.get("/health", tags=["System"])
 def health_check():
-    return {"success": True, "data": {"service": "afasync-api", "status": "healthy", "environment": settings.environment, "version": settings.app_version}, "message": "AfyaSync API is running"}
+    return {
+        "success": True,
+        "data": {
+            "service": "afasync-api",
+            "status": "healthy",
+            "environment": settings.environment,
+            "version": settings.app_version,
+        },
+        "message": "AfyaSync API is running",
+    }
+
 
 @app.get("/ready", tags=["System"])
 def readiness_check(response: Response):
+    """Readiness: DB up; in production also verify Phase 9 tables exist."""
     try:
         with SessionLocal() as db:
             db.execute(text("SELECT 1"))
-        return {"success": True, "data": {"service": "afasync-api", "status": "ready", "database": "ok"}, "message": "AfyaSync API is ready"}
+            alembic_rev = None
+            try:
+                alembic_rev = db.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            except Exception:
+                alembic_rev = None
+
+            missing: list[str] = []
+            if settings.environment == "production":
+                for table in _REQUIRED_PROD_TABLES:
+                    exists = db.execute(
+                        text(
+                            "SELECT 1 FROM information_schema.tables "
+                            "WHERE table_schema = 'public' AND table_name = :t"
+                        ),
+                        {"t": table},
+                    ).scalar()
+                    if not exists:
+                        missing.append(table)
+
+            if missing:
+                response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+                return {
+                    "success": False,
+                    "data": {
+                        "service": "afasync-api",
+                        "status": "not_ready",
+                        "database": "ok",
+                        "alembic_revision": alembic_rev,
+                        "missing_tables": missing,
+                    },
+                    "message": "Schema incomplete — run alembic upgrade head",
+                }
+
+        return {
+            "success": True,
+            "data": {
+                "service": "afasync-api",
+                "status": "ready",
+                "database": "ok",
+                "alembic_revision": alembic_rev,
+            },
+            "message": "AfyaSync API is ready",
+        }
     except Exception:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        return {"success": False, "data": {"service": "afasync-api", "status": "not_ready", "database": "unavailable"}, "message": "AfyaSync API is not ready"}
+        return {
+            "success": False,
+            "data": {
+                "service": "afasync-api",
+                "status": "not_ready",
+                "database": "unavailable",
+            },
+            "message": "AfyaSync API is not ready",
+        }
+
 
 @app.get("/api/v1", tags=["System"])
 def api_root():
-    return {"success": True, "data": {"name": settings.app_name, "version": settings.app_version}, "message": "AfyaSync API v1"}
+    return {
+        "success": True,
+        "data": {"name": settings.app_name, "version": settings.app_version},
+        "message": "AfyaSync API v1",
+    }
