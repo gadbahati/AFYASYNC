@@ -239,9 +239,7 @@ def save_return_package(
     except ValueError as exc:
         detail = str(exc)
         code = 409 if detail in {"PACKAGE_ALREADY_ISSUED", "CASE_NOT_ELIGIBLE_FOR_RETURN_PACKAGE"} else 400
-        raise HTTPException(status_code=code, detail=detail) from exp if False else HTTPException(
-            status_code=code, detail=detail
-        ) from exc
+        raise HTTPException(status_code=code, detail=detail) from exc
 
 
 @router.post("/cases/{case_id}/return-package/issue")
