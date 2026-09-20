@@ -18,9 +18,8 @@ from app.rbac.models import Staff, User
 MAX_REASON = 2000
 MAX_MESSAGE = 5000
 MAX_PENDING_PER_FACILITY = 10
-# Patient may not free-type; facility may use templates (preferred) or short free text
 FACILITY_FREE_TEXT_MAX = 500
-PATIENT_MSG_RATE_LIMIT = 20  # per rolling hour per patient+facility
+PATIENT_MSG_RATE_LIMIT = 20
 
 
 def list_bookable_facilities(db: Session) -> list[Facility]:
@@ -111,6 +110,10 @@ def create_appointment_request(
         dept = db.get(Department, department_id)
         if dept is None or dept.facility_id != facility_id or dept.status != "ACTIVE":
             raise ValueError("DEPARTMENT_NOT_FOUND")
+
+    from app.appointments.capacity_service import assert_pending_capacity
+
+    assert_pending_capacity(db, facility_id, department_id)
 
     open_pending = list(
         db.scalars(
@@ -241,6 +244,25 @@ def respond_to_request(
             if dept is None or dept.facility_id != facility_id:
                 raise ValueError("DEPARTMENT_NOT_FOUND")
 
+        from app.appointments.capacity_service import (
+            assert_capacity_for_slot,
+            assert_patient_not_double_booked,
+        )
+
+        assert_capacity_for_slot(
+            db,
+            facility_id=facility_id,
+            department_id=dept_id,
+            appointment_at=offered_appointment_at,
+        )
+        assert_patient_not_double_booked(
+            db,
+            patient_id=req.patient_id,
+            facility_id=facility_id,
+            department_id=dept_id,
+            appointment_at=offered_appointment_at,
+        )
+
         appt = Appointment(
             patient_id=req.patient_id,
             facility_id=facility_id,
@@ -361,7 +383,6 @@ def send_message(
             sender_type="PATIENT", template_code=template_code, slots=slots
         )
     else:
-        # Facility: template preferred; free text only if short and no template
         if template_code:
             code, text = render_template(
                 sender_type="FACILITY", template_code=template_code, slots=slots
@@ -447,62 +468,26 @@ def list_thread(
     )
 
 
-def list_patient_threads(db: Session, patient_id: UUID) -> list[dict]:
-    messages = list(
-        db.scalars(
-            select(FacilityMessage)
-            .where(FacilityMessage.patient_id == patient_id)
-            .order_by(FacilityMessage.created_at.desc())
-        )
-    )
-    seen: set[UUID] = set()
-    threads: list[dict] = []
-    for m in messages:
-        if m.facility_id in seen:
-            continue
-        seen.add(m.facility_id)
-        facility = db.get(Facility, m.facility_id)
-        threads.append(
-            {
-                "facility_id": m.facility_id,
-                "facility_name": facility.name if facility else "Facility",
-                "last_message": m.body[:120],
-                "last_at": m.created_at,
-                "sender_type": m.sender_type,
-            }
-        )
-    return threads
-
-
 def list_facility_inbox(db: Session, facility_id: UUID) -> list[dict]:
-    messages = list(
+    rows = list(
         db.scalars(
             select(FacilityMessage)
-            .where(FacilityMessage.facility_id == facility_id)
+            .where(
+                FacilityMessage.facility_id == facility_id,
+                FacilityMessage.sender_type == "PATIENT",
+            )
             .order_by(FacilityMessage.created_at.desc())
+            .limit(100)
         )
     )
-    seen: set[UUID] = set()
-    threads: list[dict] = []
-    for m in messages:
-        if m.patient_id in seen:
-            continue
-        seen.add(m.patient_id)
-        from app.patients.models import Person
-
-        person = db.get(Person, m.patient_id)
-        name = (
-            f"{person.first_name} {person.last_name}".strip()
-            if person
-            else str(m.patient_id)
-        )
-        threads.append(
-            {
-                "patient_id": str(m.patient_id),
-                "patient_name": name,
-                "last_message": m.body[:120],
-                "last_at": m.created_at,
-                "sender_type": m.sender_type,
-            }
-        )
-    return threads
+    return [
+        {
+            "id": str(m.id),
+            "patient_id": str(m.patient_id),
+            "body": m.body,
+            "template_code": m.template_code,
+            "created_at": m.created_at,
+            "read_at": m.read_at,
+        }
+        for m in rows
+    ]
