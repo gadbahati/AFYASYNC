@@ -5,7 +5,7 @@ services:
     rootDir: backend
     plan: starter
     preDeployCommand: alembic upgrade head
-    healthCheckPath: /health
+    healthCheckPath: /ready
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -17,6 +17,11 @@ services:
         fromDatabase:
           name: afyasync-db
           property: connectionString
+      - key: SMS_PROVIDER
+        value: console
+      - key: EMAIL_PROVIDER
+        value: console
+      # Never enable SEED_UNIVERSAL_ADMIN in production without BOOTSTRAP_UNIVERSAL_ADMIN_ONCE
 
   - type: worker
     name: afyasync-worker
