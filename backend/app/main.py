@@ -1,5 +1,6 @@
 from re import fullmatch
 from uuid import uuid4
+from time import perf_counter
 import logging
 
 from fastapi import FastAPI, Response, status
@@ -155,10 +156,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = self._request_id(request)
         request.state.request_id = request_id
+        started = perf_counter()
         try:
             response = await call_next(request)
         except Exception:
-            runtime_metrics.request(error=True)
+            runtime_metrics.request(error=True, status_code=500, duration_seconds=perf_counter() - started)
             logger.exception(
                 "Unhandled request exception request_id=%s method=%s path=%s",
                 request_id,
@@ -175,7 +177,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             )
             self._apply_headers(response, request_id)
             return response
-        runtime_metrics.request(error=response.status_code >= 500)
+        runtime_metrics.request(
+            error=response.status_code >= 500,
+            status_code=response.status_code,
+            duration_seconds=perf_counter() - started,
+        )
         self._apply_headers(response, request_id)
         return response
 
