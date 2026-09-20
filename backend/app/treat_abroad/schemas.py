@@ -25,7 +25,8 @@ class OverseasCaseCreate(BaseModel):
     procedure_id: UUID
     clinical_summary: str = Field(min_length=20, max_length=8000)
     local_unavailability_reason: str = Field(min_length=10, max_length=4000)
-    referring_clinician_id: UUID
+    # Optional from client — API always sets referring_clinician_id from authenticated staff
+    referring_clinician_id: UUID | None = None
     foreign_hospital_name: str | None = Field(default=None, max_length=300)
     foreign_hospital_country: str | None = Field(default=None, max_length=100)
     foreign_hospital_city: str | None = Field(default=None, max_length=100)
