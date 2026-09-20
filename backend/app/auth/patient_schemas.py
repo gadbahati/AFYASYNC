@@ -4,14 +4,16 @@ from pydantic import BaseModel, Field
 
 
 class PatientRegisterRequest(BaseModel):
-    """Create a patient portal account linked to an existing Afya identity.
+    """Create a patient portal account.
 
-    The person must already exist in the system (registered at a facility)
-    with an Afya ID. Registration only sets the portal password.
+    - If the Afya ID already exists (facility registration), only the portal password is set.
+    - If the Afya ID is new, a person + identity are created (self-service signup).
     """
 
     afya_id: str = Field(min_length=3, max_length=40, description="AfyaSync ID")
     password: str = Field(min_length=8, max_length=128)
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
     phone: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=320)
 
