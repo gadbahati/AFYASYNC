@@ -1,0 +1,330 @@
+/*
+ * AfyaSync global layout fix (loads last).
+ * Solid colours only. No gradients. Prevents overlapping from
+ * competing shell / brand stylesheets.
+ */
+
+:root {
+  --surface-muted: #eef1f3;
+}
+
+/* Kill any residual gradients anywhere */
+* {
+  background-image: none !important;
+}
+
+/* Allow intentional solid backgrounds on elements that set background-color */
+html,
+body,
+.app-shell,
+.sidebar,
+.content,
+.topbar,
+.card,
+.stat-card,
+.button,
+button,
+input,
+select,
+textarea,
+.auth-page,
+.portal-page,
+.facility-picker,
+.site-footer,
+.hero-banner,
+.table-wrap,
+theme-wrapper {
+  /* background-image already none; leave background-color alone */
+}
+
+/* ---- Shell: stable two-column, no negative margin tricks ---- */
+.app-shell {
+  display: grid !important;
+  grid-template-columns: 270px minmax(0, 1fr) !important;
+  min-height: 100vh;
+  width: 100%;
+  background: var(--canvas);
+}
+
+.sidebar {
+  position: sticky !important;
+  top: 0;
+  height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.content {
+  display: flex !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow-x: hidden;
+}
+
+.topbar {
+  position: sticky !important;
+  top: 0;
+  z-index: 15;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
+  margin: 0 !important;
+  padding: 12px 28px !important;
+  background: #ffffff !important;
+  border-bottom: 1px solid var(--border);
+  box-shadow: none !important;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topbar-context {
+  max-width: min(320px, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-inner {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 24px 28px 40px !important;
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Footer: no negative horizontal margins */
+.site-footer {
+  margin: 0 !important;
+  width: 100%;
+  padding: 28px 28px 20px !important;
+  box-sizing: border-box;
+}
+
+.footer-main,
+.footer-bottom {
+  max-width: 1240px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.footer-copyright {
+  display: grid;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.footer-copyright strong {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* ---- Generic page patterns used across modules ---- */
+.page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+}
+
+.page-heading,
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px 16px;
+  margin: 0 0 4px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: transparent !important;
+}
+
+.page-heading h1,
+.page-header h1 {
+  margin: 2px 0 0;
+  font-size: 21px;
+  line-height: 1.25;
+}
+
+.card {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-grid,
+.stats-row {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.stat-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 650;
+  color: var(--brand-dark);
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+.form-grid .full,
+.form-grid .span-2 {
+  grid-column: 1 / -1;
+}
+
+.table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.report-grid,
+.two-column-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Hover feedback without gradients */
+button:hover:not(:disabled),
+.button:hover:not(:disabled),
+.chip:hover,
+.facility-card:hover:not(:disabled),
+.stat-card-link:hover {
+  filter: none;
+}
+
+/* Facility picker: solid canvas */
+.facility-picker {
+  background: var(--canvas) !important;
+  min-height: 100vh;
+}
+
+.auth-page,
+.page-center {
+  background: var(--canvas) !important;
+}
+
+/* Auth entry choice cards (if present) */
+.auth-choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.auth-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 100ms ease, background-color 100ms ease;
+}
+
+.auth-choice:hover,
+.auth-choice:focus-visible {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.auth-choice:active {
+  background: var(--brand-tint-strong);
+}
+
+/* Responsive shell */
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr !important;
+  }
+
+  .sidebar {
+    position: relative !important;
+    height: auto !important;
+    max-height: none;
+  }
+
+  .topbar {
+    position: relative !important;
+    padding: 12px 16px !important;
+  }
+
+  .content-inner {
+    padding: 18px 16px 32px !important;
+  }
+
+  .site-footer {
+    padding: 22px 16px 16px !important;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-grid,
+  .two-column-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-choice-grid {
+    grid-template-columns: 1fr;
+  }
+}
