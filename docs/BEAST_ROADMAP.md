@@ -6,12 +6,12 @@
 
 ---
 
-## Shipped (Phases 1–16)
+## Shipped (Phases 1–17)
 
 | Phase | Focus |
 |-------|--------|
-| 1–15 | Core through Treat Abroad return-home |
-| **16** | **County/national care-gap intelligence** |
+| 1–16 | Core through care-gap intelligence |
+| **17** | **Multi-payer truth + out-of-pocket estimate** |
 
 ---
 
@@ -19,7 +19,6 @@
 
 | Phase | Title |
 |-------|--------|
-| 17 | Multi-payer truth + out-of-pocket estimate |
 | 18 | Prescribe-time allergy & med safety |
 | 19 | Appointment fairness & capacity |
 | 20 | Public trust layer |
