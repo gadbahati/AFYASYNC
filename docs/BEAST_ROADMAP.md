@@ -1,35 +1,66 @@
 # AfyaSync Beast Roadmap
 
-Positioning: **facility operating system + multi-payer pay + insight** — not a SHA clone.
-Standalone first. SHA accepted via lookup. Cash always works.
+**Positioning:** Facility operating system + multi-payer + patient portal — not a SHA clone.  
+**Standalone first.** Cash always works. SHA is integrated, not the only path.  
+**Developer:** BAHATI GAD WANGWE
 
-## Shipped in Insight layer (this phase)
+---
 
-| Capability | API | UI |
-|------------|-----|----|
-| Coverage simulator | `POST /api/v1/insight/coverage/simulate` | `/coverage-simulator` |
-| Command centre | `GET /api/v1/insight/command-centre` | `/command-centre` |
-| Fraud radar | `GET /api/v1/insight/fraud-radar` | `/command-centre` |
+## Shipped (Phases 1–9)
 
-Also live-wired: pharmacy, billing, claims list UIs; multi-coverage spine (`AFYASYNC|SHA|CASH|OTHER`).
+| Phase | Focus |
+|-------|--------|
+| 1–5 | Core HMIS, auth, clinical, billing, security hardening |
+| 6 | Treat Abroad case machine |
+| 7 | Notifications abstraction (SMS/email) |
+| 8 | Claims UX / rejection workbench |
+| 9 | Production migrations (`0071`/`0072`), `/ready` schema gate, deploy |
 
-## Next (priority)
+**Differentiating capabilities live:**
 
-1. Production API deploy + remove demo bypass for live
-2. Official SHA eligibility connector (sandbox → production)
-3. Claim rejection workbench (guided fix + resubmit)
-4. Tariff / package rules feeding the simulator
-5. County aggregate command centre
-6. Offline facility core
-7. Member USSD
-8. DHIS2 export
-9. Theatre / maternity / ICU UI depth to match backend modules
+- Patient self-registration (Afya ID) + portal  
+- Sensitive disease disclosure with digital consent  
+- Bidirectional appointment requests + messaging  
+- Treat Abroad procedures seed + case workflow  
+- Claims preflight + production sandbox block  
 
-## Demo script (15 min)
+---
 
-1. Command centre metrics
-2. Coverage simulator (SHA vs cash)
-3. Register / SHA lookup
-4. Encounter → clinical → lab → pharmacy → invoice
-5. Claim create / validate
-6. Fraud radar scan
+## Phase 10 — Pilot / go-live gate (CURRENT)
+
+**Docs:**
+
+- `docs/PHASE10_PILOT_GOLIVE_GATE.md`  
+- `docs/PHASE10_UAT_SCRIPT.md`  
+- `docs/PHASE10_INCIDENT_RUNBOOK.md`  
+
+**Exit:** UAT-01…10 pass, restore drill, sign-off → unlock Phase 11.
+
+---
+
+## Next beast phases (after gate)
+
+| Phase | Title |
+|-------|--------|
+| 11 | SHA rejection prevention engine (risk score + KES at risk) |
+| 12 | Consent-aware continuity card / QR wallet |
+| 13 | Template-only safe patient messaging |
+| 14 | USSD + low-bandwidth access |
+| 15 | Treat Abroad return-home package |
+| 16 | County/national care-gap intelligence (aggregates) |
+| 17 | Multi-payer truth + out-of-pocket estimate |
+| 18 | Prescribe-time allergy & med safety |
+| 19 | Appointment fairness & capacity |
+| 20 | Public trust layer |
+
+---
+
+## Non-negotiables every phase
+
+1. No dummy credentials or fake clinician UUIDs  
+2. Consent rules never bypassed  
+3. Standalone care if SHA is offline  
+4. Three-stakeholder benefit (individual, hospital, government)  
+5. Harden before moving on  
+
+© 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
