@@ -6,7 +6,7 @@
 
 ---
 
-## Shipped (Phases 1–11)
+## Shipped (Phases 1–12)
 
 | Phase | Focus |
 |-------|--------|
@@ -16,7 +16,8 @@
 | 8 | Claims UX / rejection workbench |
 | 9 | Production migrations (`0071`/`0072`), `/ready` schema gate |
 | 10 | Pilot / go-live gate (UAT, incident, sign-off) |
-| **11** | **Rejection prevention: risk score + KES at risk** |
+| 11 | Rejection prevention: risk score + KES at risk |
+| **12** | **Consent-aware continuity card / QR wallet** |
 
 **Differentiating capabilities live:**
 
@@ -24,8 +25,9 @@
 - Sensitive disease disclosure with digital consent  
 - Bidirectional appointment requests + messaging  
 - Treat Abroad procedures seed + case workflow  
-- Claims preflight + **risk score / band / block** + production sandbox block  
-- Facility **KES at risk** dashboard API + Claims UI  
+- Claims preflight + risk score / band / block  
+- Facility KES at risk dashboard  
+- **Continuity card: hashed tokens, consent-filtered snapshot, QR + facility scan**  
 
 ---
 
@@ -33,7 +35,6 @@
 
 | Phase | Title |
 |-------|--------|
-| 12 | Consent-aware continuity card / QR wallet |
 | 13 | Template-only safe patient messaging |
 | 14 | USSD + low-bandwidth access |
 | 15 | Treat Abroad return-home package |
