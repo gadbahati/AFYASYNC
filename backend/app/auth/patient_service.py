@@ -1,9 +1,9 @@
-"""Patient portal authentication — real identity lookup + temporary test account."""
+"""Patient portal authentication — identity lookup, self-service register, login."""
 
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from secrets import randbelow
-from uuid import UUID
+from uuid import uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -23,62 +23,7 @@ from app.patients.models import AfyaIdentity, Person
 from app.rbac.models import User
 
 RESET_CODE_TTL_MINUTES = 15
-
-TEST_AFYA_ID = "AFYA-TEST-001"
-TEST_PASSWORD = "TestPatient@2026"
-
-
-def ensure_test_patient(db: Session) -> None:
-    from app.config import settings
-
-    if settings.environment == "production":
-        return
-
-    existing = db.scalar(select(AfyaIdentity).where(AfyaIdentity.afya_id == TEST_AFYA_ID))
-    if existing is not None:
-        user = db.scalar(select(User).where(User.person_id == existing.person_id))
-        if user is not None and user.password_hash:
-            return
-        if user is None:
-            user = User(
-                person_id=existing.person_id,
-                username=TEST_AFYA_ID,
-                password_hash=hash_password(TEST_PASSWORD),
-                status="ACTIVE",
-            )
-            db.add(user)
-            db.flush()
-            return
-        user.password_hash = hash_password(TEST_PASSWORD)
-        user.status = "ACTIVE"
-        db.add(user)
-        db.flush()
-        return
-
-    person = Person(
-        first_name="Test",
-        last_name="Patient",
-        phone="0700000001",
-        email="test.patient@afyasync.local",
-        sex="UNKNOWN",
-        status="ACTIVE",
-    )
-    db.add(person)
-    db.flush()
-
-    identity = AfyaIdentity(person_id=person.id, afya_id=TEST_AFYA_ID, status="ACTIVE")
-    db.add(identity)
-    db.flush()
-
-    user = User(
-        person_id=person.id,
-        username=TEST_AFYA_ID,
-        phone=person.phone,
-        password_hash=hash_password(TEST_PASSWORD),
-        status="ACTIVE",
-    )
-    db.add(user)
-    db.flush()
+AFYA_ID_MAX_LEN = 20
 
 
 def _hash_code(code: str) -> str:
@@ -95,27 +40,28 @@ def _mask_destination(value: str, channel: str) -> str:
     return "***"
 
 
+def _normalize_afya_id(raw: str) -> str:
+    cleaned = raw.strip().upper()
+    if len(cleaned) > AFYA_ID_MAX_LEN:
+        cleaned = cleaned[:AFYA_ID_MAX_LEN]
+    return cleaned
+
+
 def _find_person_by_afya_id(db: Session, afya_id: str) -> tuple[Person, AfyaIdentity] | None:
     raw = afya_id.strip()
-    identity = db.scalar(
-        select(AfyaIdentity).where(
-            AfyaIdentity.afya_id == raw.upper(),
-            AfyaIdentity.status == "ACTIVE",
-        )
-    )
-    if identity is None:
+    candidates = [raw, raw.upper(), _normalize_afya_id(raw)]
+    for candidate in candidates:
         identity = db.scalar(
             select(AfyaIdentity).where(
-                AfyaIdentity.afya_id == raw,
+                AfyaIdentity.afya_id == candidate,
                 AfyaIdentity.status == "ACTIVE",
             )
         )
-    if identity is None:
-        return None
-    person = db.get(Person, identity.person_id)
-    if person is None or person.status != "ACTIVE":
-        return None
-    return person, identity
+        if identity is not None:
+            person = db.get(Person, identity.person_id)
+            if person is not None and person.status == "ACTIVE":
+                return person, identity
+    return None
 
 
 def _find_person_by_membership(db: Session, membership_number: str) -> Person | None:
@@ -172,16 +118,63 @@ def get_or_create_patient_user(db: Session, person: Person, identity: AfyaIdenti
     return user
 
 
+def _create_person_and_identity(
+    db: Session,
+    *,
+    afya_id: str,
+    first_name: str,
+    last_name: str,
+    phone: str | None,
+    email: str | None,
+) -> tuple[Person, AfyaIdentity]:
+    person = Person(
+        first_name=first_name.strip() or "Patient",
+        last_name=last_name.strip() or "User",
+        phone=(phone or "").strip() or None,
+        email=(email or "").strip() or None,
+        sex="UNKNOWN",
+        status="ACTIVE",
+    )
+    db.add(person)
+    db.flush()
+
+    identity = AfyaIdentity(
+        person_id=person.id,
+        afya_id=afya_id,
+        status="ACTIVE",
+    )
+    db.add(identity)
+    db.flush()
+    return person, identity
+
+
 def register_patient(
     db: Session,
     *,
     payload: PatientRegisterRequest,
     ip_address: str | None = None,
 ) -> User:
-    found = _find_person_by_afya_id(db, payload.afya_id)
+    afya_id = _normalize_afya_id(payload.afya_id)
+    if len(afya_id) < 3:
+        raise ValueError("INVALID_AFYA_ID")
+
+    found = _find_person_by_afya_id(db, afya_id)
     if found is None:
-        raise ValueError("AFYA_ID_NOT_FOUND")
-    person, identity = found
+        # Self-service: create person + Afya identity for a new portal account
+        first = (payload.first_name or "").strip()
+        last = (payload.last_name or "").strip()
+        if not first or not last:
+            raise ValueError("NAME_REQUIRED_FOR_NEW_ACCOUNT")
+        person, identity = _create_person_and_identity(
+            db,
+            afya_id=afya_id,
+            first_name=first,
+            last_name=last,
+            phone=payload.phone,
+            email=payload.email,
+        )
+    else:
+        person, identity = found
 
     user = db.scalar(select(User).where(User.person_id == person.id))
     if user is not None and user.password_hash:
@@ -192,15 +185,16 @@ def register_patient(
 
     user.password_hash = hash_password(payload.password)
     user.status = "ACTIVE"
+    user.username = identity.afya_id
     if payload.phone:
         user.phone = payload.phone.strip()
         if not person.phone:
             person.phone = payload.phone.strip()
-    if payload.email:
-        if not person.email:
-            person.email = payload.email.strip()
+    if payload.email and not person.email:
+        person.email = payload.email.strip()
 
     db.add(user)
+    db.add(person)
     db.flush()
 
     record_audit(
@@ -225,8 +219,6 @@ def login_patient(
     ip_address: str | None = None,
 ) -> tuple[User, str, str, int]:
     from app.config import settings
-
-    ensure_test_patient(db)
 
     try:
         person, identity = resolve_patient_by_identifier(db, payload.identifier)
