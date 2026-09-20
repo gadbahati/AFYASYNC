@@ -9,8 +9,21 @@ from app.coverage import models as coverage_models
 from app.facilities import models as facility_models
 from app.patients import models as patient_models
 from app.rbac import models as rbac_models
+from app.auth import patient_models as patient_auth_models
+from app.consent import models as consent_models
+from app.treat_abroad import models as treat_abroad_models
+from app.portal import messaging_models as portal_messaging_models
 
-_ = patient_models, coverage_models, facility_models, rbac_models
+_ = (
+    patient_models,
+    coverage_models,
+    facility_models,
+    rbac_models,
+    patient_auth_models,
+    consent_models,
+    treat_abroad_models,
+    portal_messaging_models,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
