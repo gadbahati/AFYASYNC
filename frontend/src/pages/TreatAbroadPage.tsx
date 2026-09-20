@@ -107,14 +107,12 @@ export function TreatAbroadPage() {
     setError(null);
     setNotice(null);
     try {
-      // referring_clinician_id is required by schema; server overwrites with facility staff of current user
       await api.createTreatAbroadCase({
         patient_id: patientId,
         facility_id: auth.facilityId,
         procedure_id: procedureId,
         clinical_summary: summary.trim(),
         local_unavailability_reason: localReason.trim(),
-        referring_clinician_id: "00000000-0000-0000-0000-000000000000",
         foreign_hospital_name: hospitalName || null,
         foreign_hospital_country: hospitalCountry || null,
         foreign_hospital_city: hospitalCity || null,
@@ -159,7 +157,11 @@ export function TreatAbroadPage() {
         </div>
       </header>
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
       {notice && <div className="success-box">{notice}</div>}
 
       <article className="card">
