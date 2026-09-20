@@ -5,10 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.appointments.models import Appointment  # noqa: F401 — capacity context
 from app.audit.service import record_audit
 from app.billing.models import Invoice
 from app.care_gap.schemas import CareGapOverview, CareGapSignal, CountyCareGap
@@ -76,7 +75,6 @@ def _score_county(
             )
         ]
 
-    # Encounter pressure (relative per facility)
     enc_per_fac = open_encounters / max(facility_count, 1)
     if enc_per_fac >= 40:
         part = 25
@@ -302,7 +300,6 @@ def build_care_gap_overview(
     fac_ids = [r[0] for r in facilities]
     county_of: dict[UUID, str] = {r[0]: _county_label(r[1]) for r in facilities}
 
-    # Initialise counties
     counties: dict[str, dict] = {}
     for fid, cname in county_of.items():
         bucket = counties.setdefault(
@@ -351,7 +348,6 @@ def build_care_gap_overview(
         )
         return overview
 
-    # Open encounters
     for fid, cnt in db.execute(
         select(Encounter.facility_id, func.count())
         .where(Encounter.facility_id.in_(fac_ids), Encounter.status == "OPEN")
@@ -359,23 +355,17 @@ def build_care_gap_overview(
     ).all():
         counties[county_of[fid]]["open_encounters"] += int(cnt or 0)
 
-    # Referrals out (from facility) in window
-    try:
-        for fid, cnt in db.execute(
-            select(Referral.from_facility_id, func.count())
-            .where(
-                Referral.from_facility_id.in_(fac_ids),
-                Referral.created_at >= since,
-            )
-            .group_by(Referral.from_facility_id)
-        ).all():
-            if fid in county_of:
-                counties[county_of[fid]]["referral_out"] += int(cnt or 0)
-    except Exception:
-        # Schema variants: ignore if column name differs
-        pass
+    for fid, cnt in db.execute(
+        select(Referral.source_facility_id, func.count())
+        .where(
+            Referral.source_facility_id.in_(fac_ids),
+            Referral.created_at >= since,
+        )
+        .group_by(Referral.source_facility_id)
+    ).all():
+        if fid in county_of:
+            counties[county_of[fid]]["referral_out"] += int(cnt or 0)
 
-    # Treat abroad open
     for fid, cnt in db.execute(
         select(OverseasTreatmentCase.facility_id, func.count())
         .where(
@@ -386,7 +376,6 @@ def build_care_gap_overview(
     ).all():
         counties[county_of[fid]]["treat_abroad_open"] += int(cnt or 0)
 
-    # Pending appointment requests
     for fid, cnt in db.execute(
         select(AppointmentRequest.facility_id, func.count())
         .where(
@@ -397,12 +386,17 @@ def build_care_gap_overview(
     ).all():
         counties[county_of[fid]]["pending_appts"] += int(cnt or 0)
 
-    # Claims via invoices in window
+    # Claims: use submitted_at when present, else updated_at
+    claim_time = func.coalesce(Claim.submitted_at, Claim.updated_at)
     for fid, status, cnt in db.execute(
         select(Invoice.facility_id, Claim.status, func.count())
         .select_from(Claim)
         .join(Invoice, Invoice.id == Claim.invoice_id)
-        .where(Invoice.facility_id.in_(fac_ids), Claim.created_at >= since)
+        .where(
+            Invoice.facility_id.in_(fac_ids),
+            or_(claim_time >= since, Claim.submitted_at.is_(None)),
+            Claim.updated_at >= since,
+        )
         .group_by(Invoice.facility_id, Claim.status)
     ).all():
         cname = county_of.get(fid)
@@ -412,7 +406,6 @@ def build_care_gap_overview(
         if str(status).upper() in _REJECTED_CLAIM:
             counties[cname]["claims_rejected"] += int(cnt or 0)
 
-    # Low stock
     for fid, cnt in db.execute(
         select(InventoryItem.facility_id, func.count())
         .where(
@@ -423,7 +416,6 @@ def build_care_gap_overview(
     ).all():
         counties[county_of[fid]]["low_stock"] += int(cnt or 0)
 
-    # Emergency
     for fid, cnt in db.execute(
         select(EmergencyVisit.facility_id, func.count())
         .where(
@@ -434,7 +426,6 @@ def build_care_gap_overview(
     ).all():
         counties[county_of[fid]]["emergency_waiting"] += int(cnt or 0)
 
-    # Beds
     for fid, total, occupied in db.execute(
         select(
             Ward.facility_id,
