@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ClaimCreate(BaseModel):
@@ -24,7 +24,7 @@ class ClaimResponseOut(BaseModel):
 class ClaimValidationOut(BaseModel):
     claim_id: UUID
     valid: bool
-    errors: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list, max_length=50)
 
 
 class ClaimSubmitOut(BaseModel):
@@ -34,15 +34,28 @@ class ClaimSubmitOut(BaseModel):
 
 
 class PayerResponseCreate(BaseModel):
-    status: str
-    response_code: str | None = None
-    response_message: str | None = None
-    external_reference: str | None = None
-    approved_amount: Decimal | None = Field(default=None, ge=0)
+    status: str = Field(min_length=3, max_length=40)
+    response_code: str | None = Field(default=None, max_length=80)
+    response_message: str | None = Field(default=None, max_length=500)
+    external_reference: str | None = Field(default=None, max_length=150)
+    approved_amount: Decimal | None = Field(default=None, ge=0, le=Decimal("100000000"))
+
+    @field_validator("status")
+    @classmethod
+    def normalize_status(cls, value: str) -> str:
+        return value.strip().upper()
+
+    @field_validator("response_code", "response_message", "external_reference")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class ReconcileCreate(BaseModel):
-    received_amount: Decimal = Field(ge=0)
+    received_amount: Decimal = Field(ge=0, le=Decimal("100000000"))
 
 
 class ReconcileResponse(BaseModel):
