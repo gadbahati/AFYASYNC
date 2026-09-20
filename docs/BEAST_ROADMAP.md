@@ -6,19 +6,15 @@
 
 ---
 
-## Shipped (Phases 1–19)
+## Shipped (Phases 1–20) — COMPLETE
 
 | Phase | Focus |
 |-------|--------|
-| 1–18 | Core through prescribe-time med safety |
-| **19** | **Appointment fairness & capacity** |
+| 1–19 | Core through appointment fairness |
+| **20** | **Public trust layer** |
 
 ---
 
-## Next
-
-| Phase | Title |
-|-------|--------|
-| 20 | Public trust layer |
+All planned beast phases are implemented. Operate, pilot, and extend from production feedback.
 
 © 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
