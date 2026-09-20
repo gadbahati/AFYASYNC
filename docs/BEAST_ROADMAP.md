@@ -6,13 +6,12 @@
 
 ---
 
-## Shipped (Phases 1–15)
+## Shipped (Phases 1–16)
 
 | Phase | Focus |
 |-------|--------|
-| 1–13 | Core HMIS through template messaging |
-| 14 | USSD + low-bandwidth lite channel |
-| **15** | **Treat Abroad return-home package** |
+| 1–15 | Core through Treat Abroad return-home |
+| **16** | **County/national care-gap intelligence** |
 
 ---
 
@@ -20,7 +19,6 @@
 
 | Phase | Title |
 |-------|--------|
-| 16 | County/national care-gap intelligence |
 | 17 | Multi-payer truth + out-of-pocket estimate |
 | 18 | Prescribe-time allergy & med safety |
 | 19 | Appointment fairness & capacity |
