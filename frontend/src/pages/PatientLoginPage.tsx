@@ -4,15 +4,11 @@ import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { KenyaFlag } from "../components/KenyaFlag";
 
-/** Universal test patient — replace when production API is live */
-export const TEST_PATIENT_ID = "AFYA-TEST-001";
-export const TEST_PATIENT_PASSWORD = "TestPatient@2026";
-
 export function PatientLoginPage() {
   const auth = useAuth();
   const navigate = useNavigate();
-  const [identifier, setIdentifier] = useState(TEST_PATIENT_ID);
-  const [password, setPassword] = useState(TEST_PATIENT_PASSWORD);
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -45,8 +41,8 @@ export function PatientLoginPage() {
     } catch (err) {
       setError(
         err instanceof ApiError
-          ? err.message || err.code || "Unable to sign in"
-          : "Unable to sign in. Please try again."
+          ? err.message || err.code || "Invalid credentials"
+          : "Unable to sign in. Please try again.",
       );
     } finally {
       setSubmitting(false);
@@ -65,19 +61,7 @@ export function PatientLoginPage() {
         </div>
         <div>
           <h2>Patient sign in</h2>
-          <p className="muted">Use your Afya ID or SHA membership number.</p>
-        </div>
-
-        <div className="info-box">
-          <strong>Test login (temporary)</strong>
-          <p className="small" style={{ margin: "0.35rem 0 0" }}>
-            ID: <strong>{TEST_PATIENT_ID}</strong>
-            <br />
-            Password: <strong>{TEST_PATIENT_PASSWORD}</strong>
-          </p>
-          <p className="muted small" style={{ margin: "0.35rem 0 0" }}>
-            Pre-filled for pilot testing. Change when production API is connected.
-          </p>
+          <p className="muted">Use your Afya ID or SHA membership number and password.</p>
         </div>
 
         <label htmlFor="identifier">
