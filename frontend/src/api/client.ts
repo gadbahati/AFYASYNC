@@ -154,6 +154,8 @@ export const api: any = {
   listMedications: () => request("/api/v1/pharmacy/medications"),
   createMedication: (payload: any) => request("/api/v1/pharmacy/medications", { method: "POST", body: JSON.stringify(payload) }),
   listPharmacyInventory: () => request("/api/v1/pharmacy/inventory"),
+  createMedication: (payload: any) => request("/api/v1/pharmacy/medications", { method: "POST", body: JSON.stringify(payload) }),
+  listPharmacyInventory: () => request("/api/v1/pharmacy/inventory"),
   listPrescriptions: (status?: string) => request(`/api/v1/pharmacy/prescriptions${status ? `?status=${encodeURIComponent(status)}` : ""}`),
   receiveInventory: (payload: any) => request("/api/v1/pharmacy/inventory/receive", { method: "POST", body: JSON.stringify(payload) }),
 
@@ -165,6 +167,7 @@ export const api: any = {
   listClaims: () => request("/api/v1/claims"),
   createClaim: (invoice_id: string) => request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id }) }),
   claimPreflight: (invoice_id: string) => request(`/api/v1/claims/invoices/${invoice_id}/preflight`),
+  claimsKesAtRisk: (days = 7) => request(`/api/v1/claims/risk/kes-at-risk?days=${days}`),
   validateClaim: (claim_id: string) => request(`/api/v1/claims/${claim_id}/validate`, { method: "POST" }),
   submitClaim: (claim_id: string) => request(`/api/v1/claims/${claim_id}/submit`, { method: "POST" }),
   listClaimRejections: () => request("/api/v1/claims/workbench/rejections"),
