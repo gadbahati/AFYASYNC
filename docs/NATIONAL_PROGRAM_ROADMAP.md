@@ -4,9 +4,9 @@
 
 | Phase | Title | Gate |
 |------:|-------|------|
-| **0–10** | Baseline → HIE | **PASSED** |
-| **11** | Security, privacy & certification readiness | **PASSED (core)** |
-| **12** | Offline resilience & edge operations | **NEXT** |
-| 13–40 | Remaining | Pending |
+| **0–11** | Baseline → Certification readiness | **PASSED** |
+| **12** | Offline resilience & edge operations | **PASSED (core)** |
+| **13** | Analytics, fraud signals & public-health reporting | **NEXT** |
+| 14–40 | Remaining | Pending |
 
 © 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
