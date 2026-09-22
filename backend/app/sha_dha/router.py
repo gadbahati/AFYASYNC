@@ -51,7 +51,7 @@ def submit_claim(
     claim_id: UUID,
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
-    user: User = Depends(require_permission("claims.write")),
+    user: User = Depends(require_permission("reports.read")),
 ):
     try:
         result = submit_local_claim(
@@ -62,7 +62,6 @@ def submit_claim(
     except ValueError as exc:
         code = str(exc)
         status = 404 if "NOT_FOUND" in code else 403 if "ACCESS" in code else 400
-        # claims.write may not exist on all installs — try softer permission path
         raise HTTPException(status_code=status, detail=code) from exc
 
 
