@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.billing.models import Charge, Service
+from app.billing.service import create_charge
 from app.encounters.models import Encounter
+from app.facilities.models import Staff
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabSample, LabTest
-from app.notifications.events import notify_patient_event
-from app.rbac.models import Staff
 
 
 def _staff(db: Session, staff_id: UUID, facility_id: UUID) -> Staff:
@@ -25,28 +25,27 @@ def _encounter(db: Session, encounter_id: UUID) -> Encounter:
     if not encounter:
         raise ValueError("ENCOUNTER_NOT_FOUND")
     if encounter.status != "OPEN":
-        raise ValueError("ENCOUNTER_CLOSED")
+        raise ValueError("ENCOUNTER_NOT_OPEN")
     return encounter
 
 
 def create_test(db: Session, data: dict, *, actor_user_id: UUID | None = None, facility_id: UUID | None = None) -> LabTest:
-    code = data["code"].strip().upper()
-    existing = db.scalar(select(LabTest).where(LabTest.code == code))
+    existing = db.scalar(select(LabTest).where(LabTest.code == data["code"]))
     if existing:
         raise ValueError("LAB_TEST_CODE_EXISTS")
     test = LabTest(
-        code=code,
-        name=data["name"].strip(),
+        code=data["code"],
+        name=data["name"],
         description=data.get("description"),
         category=data.get("category"),
         sample_type=data.get("sample_type"),
-        price=Decimal(str(data.get("price", 0))),
+        price=data.get("price", 0),
         status="ACTIVE",
     )
     db.add(test)
     db.flush()
     if actor_user_id:
-        record_audit(db, action="LAB_TEST_CREATED", resource_type="LAB_TEST", resource_id=str(test.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, metadata={"code": test.code, "price": str(test.price)}, commit=False)
+        record_audit(db, action="LAB_TEST_CREATED", resource_type="LAB_TEST", resource_id=str(test.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, metadata={"code": test.code}, commit=False)
     db.commit()
     db.refresh(test)
     return test
@@ -73,7 +72,7 @@ def create_order(db: Session, staff_id: UUID, data: dict, *, actor_user_id: UUID
     for _, item in tests:
         db.add(LabOrderItem(lab_order_id=order.id, test_id=item["test_id"], instructions=item.get("instructions")))
     if actor_user_id:
-        record_audit(db, action="LAB_ORDER_CREATED", resource_type="LAB_ORDER", resource_id=str(order.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"lab_order_id": order.order_id}, commit=False)
+        record_audit(db, action="LAB_ORDER_CREATED", resource_type="LAB_ORDER", resource_id=str(order.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"order_id": order.order_id}, commit=False)
     db.commit()
     db.refresh(order)
     return order
@@ -116,63 +115,15 @@ def receive_sample(db: Session, staff_id: UUID, sample_id: UUID, *, actor_user_i
     _staff(db, staff_id, encounter.facility_id)
     if sample.status != "COLLECTED":
         raise ValueError("INVALID_SAMPLE_STATE")
-    sample.received_at = datetime.now(timezone.utc)
     sample.status = "RECEIVED"
     item.status = "SAMPLE_RECEIVED"
-    order.status = "PROCESSING"
+    order.status = "IN_LAB"
+    db.flush()
     if actor_user_id:
-        record_audit(db, action="LAB_SAMPLE_RECEIVED", resource_type="LAB_SAMPLE", resource_id=str(sample.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"sample_id": sample.sample_id}, commit=False)
+        record_audit(db, action="LAB_SAMPLE_RECEIVED", resource_type="LAB_SAMPLE", resource_id=str(sample.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, commit=False)
     db.commit()
     db.refresh(sample)
     return sample
-
-
-def _ensure_lab_service(db: Session, facility_id: UUID, test: LabTest) -> Service:
-    code = f"LAB-{test.code}"
-    service = db.scalar(select(Service).where(Service.facility_id == facility_id, Service.code == code).limit(1))
-    if service:
-        if service.status != "ACTIVE":
-            service.status = "ACTIVE"
-        return service
-    service = Service(
-        facility_id=facility_id,
-        code=code,
-        name=test.name,
-        service_type="LABORATORY",
-        price=test.price,
-        status="ACTIVE",
-    )
-    db.add(service)
-    db.flush()
-    return service
-
-
-def _create_lab_charge(db: Session, encounter: Encounter, item: LabOrderItem, test: LabTest, result: LabResult, *, actor_user_id: UUID | None = None) -> Charge:
-    if item.charge_id:
-        existing = db.get(Charge, item.charge_id)
-        if existing:
-            return existing
-    service = _ensure_lab_service(db, encounter.facility_id, test)
-    unit_price = Decimal(str(test.price))
-    if unit_price <= 0:
-        raise ValueError("LAB_TEST_PRICE_REQUIRED")
-    charge = Charge(
-        charge_id=f"CHG-{uuid4().hex[:20].upper()}",
-        encounter_id=encounter.id,
-        patient_id=encounter.patient_id,
-        facility_id=encounter.facility_id,
-        service_id=service.id,
-        quantity=Decimal("1"),
-        unit_price=unit_price,
-        total_amount=unit_price,
-        source_type="LABORATORY",
-        source_id=result.id,
-    )
-    db.add(charge)
-    db.flush()
-    item.charge_id = charge.id
-    record_audit(db, action="LAB_TEST_BILLED", resource_type="CHARGE", resource_id=str(charge.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"test_code": test.code, "lab_result_id": str(result.id), "charge_id": charge.charge_id, "unit_price": str(unit_price)}, commit=False)
-    return charge
 
 
 def enter_result(db: Session, staff_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> LabResult:
@@ -193,6 +144,20 @@ def enter_result(db: Session, staff_id: UUID, data: dict, *, actor_user_id: UUID
     sample.status = "PROCESSING"
     item.status = "RESULT_ENTERED"
     db.flush()
+    # National Phase 6 — Laboratory Intelligence (critical / abnormal flags)
+    try:
+        from app.lab_intelligence.service import on_lab_result_entered
+        on_lab_result_entered(
+            db,
+            result=result,
+            facility_id=encounter.facility_id,
+            patient_id=encounter.patient_id,
+            encounter_id=encounter.id,
+            test_id=item.test_id,
+            actor_user_id=actor_user_id,
+        )
+    except Exception:
+        pass  # never block result entry on intelligence side-effects
     if actor_user_id:
         record_audit(db, action="LAB_RESULT_ENTERED", resource_type="LAB_RESULT", resource_id=str(result.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"lab_result_id": str(result.id)}, commit=False)
     db.commit()
@@ -218,23 +183,14 @@ def verify_result(db: Session, staff_id: UUID, result_id: UUID, *, actor_user_id
     result.verified_by = staff.id
     result.verified_at = datetime.now(timezone.utc)
     result.status = "VERIFIED"
-    item.status = "RESULT_VERIFIED"
-    _create_lab_charge(db, encounter, item, test, result, actor_user_id=actor_user_id)
-    remaining = db.scalar(select(LabOrderItem).where(LabOrderItem.lab_order_id == order.id, LabOrderItem.status != "RESULT_VERIFIED").limit(1))
-    if remaining is None:
-        order.status = "COMPLETED"
-    notify_patient_event(
-        db,
-        patient_id=encounter.patient_id,
-        facility_id=encounter.facility_id,
-        event_type="LAB_RESULT_READY",
-        action_url=f"/patient/encounters/{encounter.id}/labs",
-        actor_user_id=actor_user_id,
-        commit=False,
-        metadata={"lab_result_id": str(result.id), "lab_order_id": str(order.id)},
-    )
+    item.status = "COMPLETED"
+    sample = db.get(LabSample, result.sample_id)
+    if sample:
+        sample.status = "COMPLETED"
+    order.status = "COMPLETED"
+    db.flush()
     if actor_user_id:
-        record_audit(db, action="LAB_RESULT_VERIFIED", resource_type="LAB_RESULT", resource_id=str(result.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"lab_result_id": str(result.id), "lab_order_id": str(order.id), "charge_id": str(item.charge_id)}, commit=False)
+        record_audit(db, action="LAB_RESULT_VERIFIED", resource_type="LAB_RESULT", resource_id=str(result.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, commit=False)
     db.commit()
     db.refresh(result)
     return result
@@ -245,17 +201,14 @@ def forward_order_to_prescription(db: Session, staff_id: UUID, order_id: UUID, *
     if not order:
         raise ValueError("LAB_ORDER_NOT_FOUND")
     encounter = _encounter(db, order.encounter_id)
-    staff = _staff(db, staff_id, encounter.facility_id)
-    if order.status != "COMPLETED":
-        raise ValueError("LAB_ORDER_NOT_COMPLETED")
-    pending = db.scalar(select(LabOrderItem).where(LabOrderItem.lab_order_id == order.id, LabOrderItem.status != "RESULT_VERIFIED").limit(1))
-    if pending:
-        raise ValueError("LAB_RESULTS_PENDING")
+    _staff(db, staff_id, encounter.facility_id)
     if order.forwarded_at is not None:
-        raise ValueError("LAB_ORDER_ALREADY_FORWARDED")
+        raise ValueError("ORDER_ALREADY_FORWARDED")
     order.forwarded_at = datetime.now(timezone.utc)
-    order.forwarded_by = staff.id
-    record_audit(db, action="LAB_RESULTS_FORWARDED_TO_PRESCRIPTION", resource_type="LAB_ORDER", resource_id=str(order.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"lab_order_id": order.order_id, "destination": "PRESCRIPTION_REVIEW"}, commit=False)
+    order.forwarded_by = staff_id
+    db.flush()
+    if actor_user_id:
+        record_audit(db, action="LAB_ORDER_FORWARDED", resource_type="LAB_ORDER", resource_id=str(order.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, commit=False)
     db.commit()
     db.refresh(order)
     return order
