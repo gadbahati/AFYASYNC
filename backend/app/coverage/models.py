@@ -1,8 +1,8 @@
 from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, func
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -70,6 +70,10 @@ class PayerBenefitRule(Base):
     payer_percent: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=100)
     fixed_patient_copay: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     max_covered_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    is_excluded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    requires_preauth: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    annual_limit_amount: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    required_documents: Mapped[dict | list | None] = mapped_column(JSONB, nullable=True)
     effective_from: Mapped[date | None] = mapped_column(Date)
     effective_to: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="ACTIVE", index=True)
