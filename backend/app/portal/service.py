@@ -190,7 +190,7 @@ def list_my_coverage(db: Session, person_id: UUID) -> list:
         return list(
             db.scalars(
                 select(Coverage)
-                .where(Coverage.patient_id == person_id)
+                .where(Coverage.person_id == person_id)
                 .order_by(Coverage.created_at.desc())
             )
         )
