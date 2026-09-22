@@ -32,7 +32,9 @@ from app.config import settings
 from app.consent import models as consent_models
 from app.consent.router import router as consent_router
 from app.coverage import models as coverage_models
+from app.coverage import utilisation_models as coverage_utilisation_models  # noqa: F401
 from app.coverage.router import router as coverage_router
+from app.coverage.can_i_get_this_router import router as can_i_get_this_router
 from app.coverage.sha_eligibility_router import router as sha_eligibility_router
 from app.coverage.payer_admin_router import router as payer_network_router
 from app.database import Base, SessionLocal, engine
@@ -127,6 +129,7 @@ _REQUIRED_PROD_TABLES = (
     "households",
     "membership_records",
     "identity_match_logs",
+    "benefit_utilisation",
     "facility_messages",
     "continuity_cards",
     "ussd_pins",
@@ -237,6 +240,7 @@ app.include_router(patients_router)
 app.include_router(patient_timeline_router)
 app.include_router(national_identity_router)
 app.include_router(coverage_router)
+app.include_router(can_i_get_this_router)
 app.include_router(sha_eligibility_router)
 app.include_router(payer_network_router)
 app.include_router(benefits_router)
