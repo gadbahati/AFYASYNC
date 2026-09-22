@@ -4,10 +4,9 @@
 
 | Phase | Title | Gate |
 |------:|-------|------|
-| **0–5** | Baseline → Clinical Safety | **PASSED** |
-| **6** | Laboratory Intelligence | **HARDENED** |
-| **7** | Imaging Intelligence | **PASSED (core)** |
-| **8** | Pharmacy & Supply (next) | **NEXT** |
-| 9–40 | Remaining | Pending |
+| **0–7** | Baseline → Imaging | **PASSED** |
+| **8** | Pharmacy & Supply OS | **PASSED (core)** |
+| **9** | Claims / Financing depth | **NEXT** |
+| 10–40 | Remaining | Pending |
 
 © 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
