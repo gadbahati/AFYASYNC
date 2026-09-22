@@ -4,12 +4,9 @@
 
 | Phase | Title | Gate |
 |------:|-------|------|
-| **0** | Baseline | **PASSED** |
-| **1** | Identity & Membership | **PASSED** |
-| **2** | Coverage & Can I Get This | **PASSED** |
-| **3** | Afya Citizen | **PASSED** |
-| **4** | Afya Hospital OS | **PASSED (core)** |
-| **5** | Clinical Safety Engine | **NEXT** |
-| 6–40 | Lab → Transition | Pending |
+| **0–4** | Baseline → Hospital OS | **PASSED** |
+| **5** | Clinical Safety Engine | **PASSED (core)** |
+| **6** | Laboratory Intelligence | **NEXT** |
+| 7–40 | Imaging → Transition | Pending |
 
 © 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
