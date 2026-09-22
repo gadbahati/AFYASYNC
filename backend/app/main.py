@@ -136,6 +136,7 @@ from app.offline import models as offline_models  # noqa: F401
 from app.analytics.router import router as analytics_router
 from app.pilot.router import router as pilot_router
 from app.logistics.router import router as logistics_router
+from app.emergency_network.router import router as emergency_network_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -343,6 +344,7 @@ app.include_router(offline_router)
 app.include_router(analytics_router)
 app.include_router(pilot_router)
 app.include_router(logistics_router)
+app.include_router(emergency_network_router)
 
 
 @app.get("/health", tags=["System"])
