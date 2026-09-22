@@ -137,6 +137,8 @@ from app.analytics.router import router as analytics_router
 from app.pilot.router import router as pilot_router
 from app.logistics.router import router as logistics_router
 from app.emergency_network.router import router as emergency_network_router
+from app.workforce.router import router as workforce_router
+from app.workforce import models as workforce_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -170,6 +172,7 @@ _REQUIRED_PROD_TABLES = (
     "overseas_return_packages",
     "offline_outbox_events",
     "offline_connectivity_probes",
+    "professional_credentials",
 )
 
 
@@ -345,6 +348,7 @@ app.include_router(analytics_router)
 app.include_router(pilot_router)
 app.include_router(logistics_router)
 app.include_router(emergency_network_router)
+app.include_router(workforce_router)
 
 
 @app.get("/health", tags=["System"])
