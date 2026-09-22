@@ -88,6 +88,8 @@ from app.portal import messaging_models as portal_messaging_models
 from app.portal.booking_router import facility_router as facility_booking_router
 from app.portal.booking_router import patient_router as portal_booking_router
 from app.portal.router import router as portal_router
+from app.portal.citizen_router import router as citizen_router
+from app.portal import complaint_models as portal_complaint_models  # noqa: F401
 from app.preauthorizations import models as preauthorization_models
 from app.preauthorizations.router import router as preauthorizations_router
 from app.rbac import models as rbac_models
@@ -130,6 +132,7 @@ _REQUIRED_PROD_TABLES = (
     "membership_records",
     "identity_match_logs",
     "benefit_utilisation",
+    "patient_complaints",
     "facility_messages",
     "continuity_cards",
     "ussd_pins",
@@ -271,6 +274,7 @@ app.include_router(integrations_router)
 app.include_router(referrals_router)
 app.include_router(notifications_router)
 app.include_router(portal_router)
+app.include_router(citizen_router)
 app.include_router(portal_booking_router)
 app.include_router(facility_booking_router)
 app.include_router(reports_router)
