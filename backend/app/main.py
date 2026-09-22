@@ -116,6 +116,7 @@ from app.ussd.router import router as ussd_router
 from app.trust.router import router as public_trust_router
 from app.identity.router import router as identity_router
 from app.identity import models as identity_models  # noqa: F401
+from app.hospital_os.router import router as hospital_os_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -298,6 +299,7 @@ app.include_router(continuity_public_router)
 app.include_router(continuity_facility_router)
 app.include_router(public_trust_router)
 app.include_router(identity_router)
+app.include_router(hospital_os_router)
 
 
 @app.get("/health", tags=["System"])
