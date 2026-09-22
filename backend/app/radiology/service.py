@@ -22,7 +22,18 @@ def create_order(db: Session, facility_id: UUID, actor: UUID, payload):
     if not test: raise ValueError("IMAGING_TEST_NOT_FOUND")
     encounter = db.scalar(select(Encounter).where(Encounter.id == payload.encounter_id, Encounter.patient_id == payload.patient_id, Encounter.facility_id == facility_id, Encounter.status == "OPEN"))
     if not encounter: raise ValueError("ENCOUNTER_NOT_OPEN")
-    order = ImagingOrder(order_number=f"IMG-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}", facility_id=facility_id, ordered_by=actor, **payload.model_dump()); db.add(order)
+    # National Phase 7 — contrast / pregnancy safety intercept
+    from app.imaging_intelligence.service import assert_can_order_imaging
+    override = getattr(payload, "safety_override_reason", None)
+    assert_can_order_imaging(
+        db,
+        patient_id=payload.patient_id,
+        test_id=payload.test_id,
+        override_reason=override,
+    )
+    data = payload.model_dump()
+    data.pop("safety_override_reason", None)
+    order = ImagingOrder(order_number=f"IMG-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}", facility_id=facility_id, ordered_by=actor, **data); db.add(order)
     record_audit(db, action="IMAGING_ORDER_CREATED", resource_type="ImagingOrder", result="SUCCESS", user_id=actor, resource_id=str(order.id), facility_id=facility_id, patient_id=payload.patient_id, commit=False)
     db.commit(); db.refresh(order); return order
 
@@ -39,6 +50,21 @@ def report_order(db: Session, facility_id: UUID, actor: UUID, order_id: UUID, pa
         db.add(service); db.flush()
     db.add(Charge(charge_id=f"CHG-{uuid4().hex[:20].upper()}", encounter_id=order.encounter_id, patient_id=order.patient_id, facility_id=facility_id, service_id=service.id, quantity=1, unit_price=test.price, total_amount=test.price, source_type="RADIOLOGY", source_id=report.id))
     order.status = "COMPLETED"; order.completed_at = datetime.now(timezone.utc)
+    # Optional critical finding from report payload
+    critical_summary = getattr(payload, "critical_finding_summary", None) or (payload.model_dump().get("critical_finding_summary") if hasattr(payload, "model_dump") else None)
+    if critical_summary:
+        try:
+            from app.imaging_intelligence.service import register_critical_finding
+            register_critical_finding(
+                db,
+                report=report,
+                order=order,
+                test=test,
+                summary=str(critical_summary),
+                actor_user_id=actor,
+            )
+        except Exception:
+            pass
     record_audit(db, action="IMAGING_REPORT_COMPLETED", resource_type="ImagingReport", result="SUCCESS", user_id=actor, resource_id=str(report.id), facility_id=facility_id, patient_id=order.patient_id, commit=False)
     db.commit(); db.refresh(report); return report
 
