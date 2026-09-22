@@ -5,9 +5,10 @@
 | Phase | Title | Gate |
 |------:|-------|------|
 | **0** | Baseline | **PASSED** |
-| **1** | Identity & Membership + Confidence Engine | **PASSED** |
-| **2** | Coverage & Benefits + “Can I Get This?” | **PASSED (core)** |
-| **3** | Afya Citizen super-portal | **NEXT** |
-| 4–40 | Hospital OS → Transition | Pending |
+| **1** | Identity & Membership | **PASSED** |
+| **2** | Coverage & “Can I Get This?” | **PASSED** |
+| **3** | Afya Citizen super-portal | **PASSED (core)** |
+| **4** | Afya Hospital OS E2E | **NEXT** |
+| 5–40 | Safety → Transition | Pending |
 
 © 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
