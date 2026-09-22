@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
@@ -18,12 +19,13 @@ from app.lab_intelligence.service import (
     upsert_test_reference,
 )
 from app.rbac.models import User
-from sqlalchemy import select
 
 router = APIRouter(prefix="/api/v1/lab-intelligence", tags=["Lab Intelligence"])
 
-LAB_READ = "lab.order.create"  # reuse existing lab permission
-LAB_WRITE = "lab.result.enter"
+LAB_ORDER = "lab.order.create"
+LAB_RESULT_WRITE = "lab.result.write"
+LAB_RESULT_VERIFY = "lab.result.verify"
+LAB_CATALOGUE = "lab.catalogue.write"
 
 
 def _staff(db: Session, user: User, facility_id: UUID) -> Staff:
@@ -60,7 +62,7 @@ def put_reference(
     payload: ReferenceUpsert,
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
-    user: User = Depends(require_permission(LAB_READ)),
+    user: User = Depends(require_permission(LAB_CATALOGUE)),
 ):
     _ = facility_id
     try:
@@ -78,13 +80,41 @@ def put_reference(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/references/{test_id}")
+def get_reference(
+    test_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(LAB_ORDER)),
+):
+    _ = facility_id, user
+    row = db.scalar(
+        select(LabTestReference).where(
+            LabTestReference.test_id == test_id,
+            LabTestReference.status == "ACTIVE",
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="REFERENCE_NOT_FOUND")
+    return {
+        "test_id": str(row.test_id),
+        "unit": row.unit,
+        "ref_low": str(row.ref_low) if row.ref_low is not None else None,
+        "ref_high": str(row.ref_high) if row.ref_high is not None else None,
+        "critical_low": str(row.critical_low) if row.critical_low is not None else None,
+        "critical_high": str(row.critical_high) if row.critical_high is not None else None,
+        "tat_target_minutes": row.tat_target_minutes,
+    }
+
+
 @router.get("/critical")
 def open_criticals(
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
-    user: User = Depends(require_permission(LAB_READ)),
+    user: User = Depends(require_permission(LAB_ORDER)),
 ):
+    _ = user
     rows = list_open_criticals(db, facility_id, limit=limit)
     return [
         {
@@ -110,7 +140,7 @@ def ack_critical(
     body: AckBody,
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
-    user: User = Depends(require_permission(LAB_WRITE)),
+    user: User = Depends(require_permission(LAB_RESULT_VERIFY)),
 ):
     staff = _staff(db, user, facility_id)
     try:
@@ -137,6 +167,7 @@ def get_tat(
     days: int = Query(default=7, ge=1, le=90),
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
-    user: User = Depends(require_permission(LAB_READ)),
+    user: User = Depends(require_permission(LAB_ORDER)),
 ):
+    _ = user
     return tat_summary(db, facility_id, days=days)
