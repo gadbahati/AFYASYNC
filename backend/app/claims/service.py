@@ -32,6 +32,13 @@ def _verified_current_coverage(db: Session, patient_id: UUID, payer_id: UUID | N
 
 
 def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user_id: UUID | None = None) -> Claim:
+    # National Phase 4 — Hospital OS integrity gate
+    from app.hospital_os.journey_service import assert_can_create_claim_for_invoice
+    try:
+        assert_can_create_claim_for_invoice(db, invoice_id=invoice_id, facility_id=facility_id)
+    except ValueError as exc:
+        raise ClaimsError(str(exc)) from exc
+
     invoice = db.scalar(select(Invoice).where(Invoice.id == invoice_id).with_for_update())
     if invoice is None: raise ClaimsError("INVOICE_NOT_FOUND")
     if invoice.facility_id != facility_id: raise ClaimsError("FACILITY_ACCESS_DENIED")
