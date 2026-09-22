@@ -128,6 +128,7 @@ from app.pharmacy_supply import models as pharmacy_supply_models  # noqa: F401
 from app.claims_financing.router import router as claims_financing_router
 from app.hie.router import router as hie_router
 from app.hie import models as hie_models  # noqa: F401
+from app.national_ops.router import router as national_ops_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -152,6 +153,8 @@ _REQUIRED_PROD_TABLES = (
     "imaging_critical_findings",
     "controlled_dispense_logs",
     "hie_export_logs",
+    "hie_nodes",
+    "hie_inbound_documents",
     "facility_messages",
     "continuity_cards",
     "ussd_pins",
@@ -324,6 +327,7 @@ app.include_router(imaging_intelligence_router)
 app.include_router(pharmacy_supply_router)
 app.include_router(claims_financing_router)
 app.include_router(hie_router)
+app.include_router(national_ops_router)
 
 
 @app.get("/health", tags=["System"])
