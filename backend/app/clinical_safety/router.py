@@ -2,8 +2,9 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
@@ -63,14 +64,7 @@ def upsert_safety_flag(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(PHARMACY_WRITE)),
 ):
-    _ = facility_id
-    row = db.scalar(
-        __import__("sqlalchemy").select(MedicationSafetyFlag).where(
-            MedicationSafetyFlag.medication_id == payload.medication_id
-        )
-    )
-    from sqlalchemy import select
-
+    _ = facility_id, user
     row = db.scalar(
         select(MedicationSafetyFlag).where(
             MedicationSafetyFlag.medication_id == payload.medication_id
