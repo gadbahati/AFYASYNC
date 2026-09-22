@@ -4,9 +4,9 @@
 
 | Phase | Title | Gate |
 |------:|-------|------|
-| **0–13** | Baseline → Analytics | **PASSED** |
-| **14** | Pilot ops, migration readiness & evidence pack | **PASSED (core)** |
-| **15** | Supply chain, national logistics depth | **NEXT** |
-| 16–40 | Remaining | Pending |
+| **0–14** | Baseline → Pilot evidence | **PASSED** |
+| **15** | Supply chain, national logistics depth | **PASSED (core)** |
+| **16** | Emergency & referral network depth | **NEXT** |
+| 17–40 | Remaining | Pending |
 
 © 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
