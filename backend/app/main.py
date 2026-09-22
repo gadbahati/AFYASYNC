@@ -140,6 +140,8 @@ from app.emergency_network.router import router as emergency_network_router
 from app.workforce.router import router as workforce_router
 from app.workforce import models as workforce_models  # noqa: F401
 from app.citizen_wallet.router import router as citizen_wallet_router
+from app.telemedicine.router import router as telemedicine_router
+from app.telemedicine import models as telemedicine_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -174,6 +176,7 @@ _REQUIRED_PROD_TABLES = (
     "offline_outbox_events",
     "offline_connectivity_probes",
     "professional_credentials",
+    "tele_consult_requests",
 )
 
 
@@ -351,6 +354,7 @@ app.include_router(logistics_router)
 app.include_router(emergency_network_router)
 app.include_router(workforce_router)
 app.include_router(citizen_wallet_router)
+app.include_router(telemedicine_router)
 
 
 @app.get("/health", tags=["System"])
