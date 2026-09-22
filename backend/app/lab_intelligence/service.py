@@ -2,25 +2,26 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
-from app.encounters.models import Encounter
 from app.lab_intelligence.models import LabCriticalAlert, LabTestReference
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabTest
 from app.notifications.events import notify_patient_event
+
+logger = logging.getLogger("afyasync.lab_intelligence")
 
 
 def _parse_numeric(raw: str) -> Decimal | None:
     if raw is None:
         return None
     s = str(raw).strip().replace(",", "")
-    # strip common prefixes
     for prefix in (">", "<", "=", "~"):
         if s.startswith(prefix):
             s = s[1:].strip()
@@ -40,7 +41,7 @@ def evaluate_result_against_reference(
     encounter_id: UUID,
     actor_user_id: UUID | None = None,
 ) -> LabCriticalAlert | None:
-    """Compare numeric result to reference; open critical alert if panic range."""
+    """Compare numeric result to reference; OPEN alert only for critical/panic values."""
     ref = db.scalar(
         select(LabTestReference).where(
             LabTestReference.test_id == test.id,
@@ -54,8 +55,14 @@ def evaluate_result_against_reference(
     if value is None:
         return None
 
+    # Always fill reference text when available
+    if not result.reference_range and ref.ref_low is not None and ref.ref_high is not None:
+        result.reference_range = f"{ref.ref_low} – {ref.ref_high}"
+        if ref.unit:
+            result.unit = result.unit or ref.unit
+
     flag = None
-    severity = "ABNORMAL"
+    severity = None
     if ref.critical_low is not None and value <= Decimal(str(ref.critical_low)):
         flag, severity = "CRITICAL_LOW", "CRITICAL"
     elif ref.critical_high is not None and value >= Decimal(str(ref.critical_high)):
@@ -68,17 +75,27 @@ def evaluate_result_against_reference(
     if flag is None:
         return None
 
+    # Informational abnormal: audit only, no mandatory inbox item
+    if severity == "ABNORMAL":
+        record_audit(
+            db,
+            action="LAB_ABNORMAL_RESULT",
+            resource_type="LAB_RESULT",
+            resource_id=str(result.id),
+            result="ABNORMAL",
+            user_id=actor_user_id,
+            facility_id=facility_id,
+            patient_id=patient_id,
+            metadata={"flag": flag, "value": str(value), "test": test.code},
+            commit=False,
+        )
+        return None
+
     existing = db.scalar(
         select(LabCriticalAlert).where(LabCriticalAlert.lab_result_id == result.id)
     )
     if existing:
         return existing
-
-    # Auto-fill reference_range text on result if empty
-    if not result.reference_range and ref.ref_low is not None and ref.ref_high is not None:
-        result.reference_range = f"{ref.ref_low} – {ref.ref_high}"
-        if ref.unit:
-            result.unit = result.unit or ref.unit
 
     alert = LabCriticalAlert(
         lab_result_id=result.id,
@@ -90,7 +107,7 @@ def evaluate_result_against_reference(
         result_value=str(result.result),
         unit=result.unit or ref.unit,
         flag=flag,
-        severity=severity,
+        severity="CRITICAL",
         status="OPEN",
     )
     db.add(alert)
@@ -101,7 +118,7 @@ def evaluate_result_against_reference(
         action="LAB_CRITICAL_ALERT",
         resource_type="LAB_RESULT",
         resource_id=str(result.id),
-        result=severity,
+        result="CRITICAL",
         user_id=actor_user_id,
         facility_id=facility_id,
         patient_id=patient_id,
@@ -109,21 +126,20 @@ def evaluate_result_against_reference(
         commit=False,
     )
 
-    if severity == "CRITICAL":
-        try:
-            notify_patient_event(
-                db,
-                patient_id=patient_id,
-                facility_id=facility_id,
-                event_type="LAB_CRITICAL_VALUE",
-                action_url=f"/facility/lab/critical/{alert.id}",
-                priority="HIGH",
-                metadata={"test": test.code, "flag": flag, "value": str(result.result)},
-                actor_user_id=actor_user_id,
-                commit=False,
-            )
-        except Exception:
-            pass
+    try:
+        notify_patient_event(
+            db,
+            patient_id=patient_id,
+            facility_id=facility_id,
+            event_type="LAB_CRITICAL_VALUE",
+            action_url=f"/facility/lab/critical/{alert.id}",
+            priority="HIGH",
+            metadata={"test": test.code, "flag": flag, "value": str(result.result)},
+            actor_user_id=actor_user_id,
+            commit=False,
+        )
+    except Exception:
+        logger.exception("Failed to notify on lab critical alert")
 
     return alert
 
@@ -141,15 +157,19 @@ def on_lab_result_entered(
     test = db.get(LabTest, test_id)
     if test is None:
         return None
-    return evaluate_result_against_reference(
-        db,
-        result=result,
-        test=test,
-        facility_id=facility_id,
-        patient_id=patient_id,
-        encounter_id=encounter_id,
-        actor_user_id=actor_user_id,
-    )
+    try:
+        return evaluate_result_against_reference(
+            db,
+            result=result,
+            test=test,
+            facility_id=facility_id,
+            patient_id=patient_id,
+            encounter_id=encounter_id,
+            actor_user_id=actor_user_id,
+        )
+    except Exception:
+        logger.exception("Lab intelligence evaluation failed for result %s", result.id)
+        return None
 
 
 def acknowledge_critical(
@@ -194,6 +214,7 @@ def list_open_criticals(db: Session, facility_id: UUID, *, limit: int = 50) -> l
             .where(
                 LabCriticalAlert.facility_id == facility_id,
                 LabCriticalAlert.status == "OPEN",
+                LabCriticalAlert.severity == "CRITICAL",
             )
             .order_by(LabCriticalAlert.created_at.desc())
             .limit(limit)
@@ -202,11 +223,11 @@ def list_open_criticals(db: Session, facility_id: UUID, *, limit: int = 50) -> l
 
 
 def tat_summary(db: Session, facility_id: UUID, *, days: int = 7) -> dict:
-    """Simple turnaround: order created_at → result created_at for facility encounters."""
-    days = min(max(days, 1), 90)
-    # Sample recent verified/entered results via order facility
     from datetime import timedelta
 
+    from app.encounters.models import Encounter
+
+    days = min(max(days, 1), 90)
     since = datetime.now(timezone.utc) - timedelta(days=days)
     rows = db.execute(
         select(LabOrder.created_at, LabResult.created_at, LabOrder.priority)
@@ -239,7 +260,13 @@ def tat_summary(db: Session, facility_id: UUID, *, days: int = 7) -> dict:
     deltas.sort()
     n = len(deltas)
     if n == 0:
-        return {"facility_id": str(facility_id), "days": days, "sample_size": 0, "median_minutes": None, "p90_minutes": None}
+        return {
+            "facility_id": str(facility_id),
+            "days": days,
+            "sample_size": 0,
+            "median_minutes": None,
+            "p90_minutes": None,
+        }
 
     median = deltas[n // 2]
     p90 = deltas[min(n - 1, int(n * 0.9))]
@@ -249,7 +276,7 @@ def tat_summary(db: Session, facility_id: UUID, *, days: int = 7) -> dict:
         "sample_size": n,
         "median_minutes": round(median, 1),
         "p90_minutes": round(p90, 1),
-        "notes": ["Order-to-result TAT; expand with sample-received timestamps for lab-only TAT"],
+        "notes": ["Order-to-result TAT"],
     }
 
 
@@ -257,6 +284,18 @@ def upsert_test_reference(db: Session, *, test_id: UUID, data: dict) -> LabTestR
     test = db.get(LabTest, test_id)
     if test is None or test.status != "ACTIVE":
         raise ValueError("LAB_TEST_NOT_FOUND")
+    # Sanity: critical bounds must be outside or equal to reference if both set
+    ref_low = data.get("ref_low")
+    ref_high = data.get("ref_high")
+    crit_low = data.get("critical_low")
+    crit_high = data.get("critical_high")
+    if ref_low is not None and ref_high is not None and Decimal(str(ref_low)) > Decimal(str(ref_high)):
+        raise ValueError("INVALID_REFERENCE_RANGE")
+    if crit_low is not None and ref_low is not None and Decimal(str(crit_low)) > Decimal(str(ref_low)):
+        raise ValueError("CRITICAL_LOW_MUST_BE_LE_REF_LOW")
+    if crit_high is not None and ref_high is not None and Decimal(str(crit_high)) < Decimal(str(ref_high)):
+        raise ValueError("CRITICAL_HIGH_MUST_BE_GE_REF_HIGH")
+
     row = db.scalar(select(LabTestReference).where(LabTestReference.test_id == test_id))
     if row is None:
         row = LabTestReference(test_id=test_id)
