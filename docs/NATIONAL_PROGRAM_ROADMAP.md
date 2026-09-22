@@ -4,9 +4,9 @@
 
 | Phase | Title | Gate |
 |------:|-------|------|
-| **0–18** | Baseline → Citizen wallet | **PASSED** |
-| **19** | Telemedicine & remote care coordination | **PASSED (core)** |
-| **20** | Ambulance & emergency transport depth | **NEXT** |
-| 21–40 | Remaining | Pending |
+| **0–19** | Baseline → Telemedicine | **PASSED** |
+| **20** | Ambulance & emergency transport depth | **PASSED (core)** |
+| **21** | Public health surveillance & notifiable events | **NEXT** |
+| 22–40 | Remaining | Pending |
 
 © 2026 AfyaSync. Developed by **BAHATI GAD WANGWE**.
