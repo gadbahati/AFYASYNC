@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +13,8 @@ from app.encounters.models import Encounter
 from app.facilities.models import Staff
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabSample, LabTest
 from app.notifications.events import notify_patient_event
+
+_log = logging.getLogger("afyasync.lab")
 
 
 def _staff(db: Session, staff_id: UUID, facility_id: UUID) -> Staff:
@@ -206,8 +209,12 @@ def enter_result(db: Session, staff_id: UUID, data: dict, *, actor_user_id: UUID
             test_id=item.test_id,
             actor_user_id=actor_user_id,
         )
-    except Exception:
-        pass  # never block result entry on intelligence side-effects
+    except Exception as exc:
+        _log.exception(
+            "lab_intelligence_side_effect_failed result_id=%s: %s",
+            getattr(result, "id", None),
+            exc,
+        )
     if actor_user_id:
         record_audit(db, action="LAB_RESULT_ENTERED", resource_type="LAB_RESULT", resource_id=str(result.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"lab_result_id": str(result.id)}, commit=False)
     db.commit()
