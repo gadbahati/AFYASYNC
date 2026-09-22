@@ -117,6 +117,8 @@ from app.trust.router import router as public_trust_router
 from app.identity.router import router as identity_router
 from app.identity import models as identity_models  # noqa: F401
 from app.hospital_os.router import router as hospital_os_router
+from app.clinical_safety.router import router as clinical_safety_router
+from app.clinical_safety import models as clinical_safety_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -134,6 +136,7 @@ _REQUIRED_PROD_TABLES = (
     "identity_match_logs",
     "benefit_utilisation",
     "patient_complaints",
+    "medication_safety_flags",
     "facility_messages",
     "continuity_cards",
     "ussd_pins",
@@ -300,6 +303,7 @@ app.include_router(continuity_facility_router)
 app.include_router(public_trust_router)
 app.include_router(identity_router)
 app.include_router(hospital_os_router)
+app.include_router(clinical_safety_router)
 
 
 @app.get("/health", tags=["System"])
