@@ -119,6 +119,8 @@ from app.identity import models as identity_models  # noqa: F401
 from app.hospital_os.router import router as hospital_os_router
 from app.clinical_safety.router import router as clinical_safety_router
 from app.clinical_safety import models as clinical_safety_models  # noqa: F401
+from app.lab_intelligence.router import router as lab_intelligence_router
+from app.lab_intelligence import models as lab_intelligence_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -137,6 +139,8 @@ _REQUIRED_PROD_TABLES = (
     "benefit_utilisation",
     "patient_complaints",
     "medication_safety_flags",
+    "lab_test_references",
+    "lab_critical_alerts",
     "facility_messages",
     "continuity_cards",
     "ussd_pins",
@@ -304,6 +308,7 @@ app.include_router(public_trust_router)
 app.include_router(identity_router)
 app.include_router(hospital_os_router)
 app.include_router(clinical_safety_router)
+app.include_router(lab_intelligence_router)
 
 
 @app.get("/health", tags=["System"])
