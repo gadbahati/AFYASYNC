@@ -125,6 +125,7 @@ from app.imaging_intelligence.router import router as imaging_intelligence_route
 from app.imaging_intelligence import models as imaging_intelligence_models  # noqa: F401
 from app.pharmacy_supply.router import router as pharmacy_supply_router
 from app.pharmacy_supply import models as pharmacy_supply_models  # noqa: F401
+from app.claims_financing.router import router as claims_financing_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -318,6 +319,7 @@ app.include_router(clinical_safety_router)
 app.include_router(lab_intelligence_router)
 app.include_router(imaging_intelligence_router)
 app.include_router(pharmacy_supply_router)
+app.include_router(claims_financing_router)
 
 
 @app.get("/health", tags=["System"])
