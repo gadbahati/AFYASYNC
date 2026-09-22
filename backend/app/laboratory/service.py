@@ -11,6 +11,7 @@ from app.billing.service import create_charge
 from app.encounters.models import Encounter
 from app.facilities.models import Staff
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabSample, LabTest
+from app.notifications.events import notify_patient_event
 
 
 def _staff(db: Session, staff_id: UUID, facility_id: UUID) -> Staff:
@@ -126,6 +127,55 @@ def receive_sample(db: Session, staff_id: UUID, sample_id: UUID, *, actor_user_i
     return sample
 
 
+def _ensure_lab_service(db: Session, facility_id: UUID, test: LabTest) -> Service:
+    code = f"LAB-{test.code}"
+    service = db.scalar(select(Service).where(Service.facility_id == facility_id, Service.code == code).limit(1))
+    if service:
+        if service.status != "ACTIVE":
+            service.status = "ACTIVE"
+        return service
+    service = Service(
+        facility_id=facility_id,
+        code=code,
+        name=test.name,
+        service_type="LABORATORY",
+        price=test.price,
+        status="ACTIVE",
+    )
+    db.add(service)
+    db.flush()
+    return service
+
+
+def _create_lab_charge(db: Session, encounter: Encounter, item: LabOrderItem, test: LabTest, result: LabResult, *, actor_user_id: UUID | None = None) -> Charge:
+    if item.charge_id:
+        existing = db.get(Charge, item.charge_id)
+        if existing:
+            return existing
+    service = _ensure_lab_service(db, encounter.facility_id, test)
+    unit_price = Decimal(str(test.price))
+    if unit_price <= 0:
+        raise ValueError("LAB_TEST_PRICE_REQUIRED")
+    charge = Charge(
+        charge_id=f"CHG-{uuid4().hex[:20].upper()}",
+        encounter_id=encounter.id,
+        patient_id=encounter.patient_id,
+        facility_id=encounter.facility_id,
+        service_id=service.id,
+        quantity=Decimal("1"),
+        unit_price=unit_price,
+        total_amount=unit_price,
+        source_type="LABORATORY",
+        source_id=result.id,
+    )
+    db.add(charge)
+    db.flush()
+    item.charge_id = charge.id
+    if actor_user_id:
+        record_audit(db, action="LAB_CHARGE_CREATED", resource_type="CHARGE", resource_id=str(charge.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"test_code": test.code}, commit=False)
+    return charge
+
+
 def enter_result(db: Session, staff_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> LabResult:
     item = db.get(LabOrderItem, data["lab_order_item_id"])
     sample = db.get(LabSample, data["sample_id"])
@@ -183,12 +233,21 @@ def verify_result(db: Session, staff_id: UUID, result_id: UUID, *, actor_user_id
     result.verified_by = staff.id
     result.verified_at = datetime.now(timezone.utc)
     result.status = "VERIFIED"
-    item.status = "COMPLETED"
-    sample = db.get(LabSample, result.sample_id)
-    if sample:
-        sample.status = "COMPLETED"
-    order.status = "COMPLETED"
-    db.flush()
+    item.status = "RESULT_VERIFIED"
+    _create_lab_charge(db, encounter, item, test, result, actor_user_id=actor_user_id)
+    remaining = db.scalar(select(LabOrderItem).where(LabOrderItem.lab_order_id == order.id, LabOrderItem.status != "RESULT_VERIFIED").limit(1))
+    if remaining is None:
+        order.status = "COMPLETED"
+    notify_patient_event(
+        db,
+        patient_id=encounter.patient_id,
+        facility_id=encounter.facility_id,
+        event_type="LAB_RESULT_READY",
+        action_url=f"/patient/encounters/{encounter.id}/labs",
+        actor_user_id=actor_user_id,
+        commit=False,
+        metadata={"lab_result_id": str(result.id), "test_code": test.code},
+    )
     if actor_user_id:
         record_audit(db, action="LAB_RESULT_VERIFIED", resource_type="LAB_RESULT", resource_id=str(result.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, commit=False)
     db.commit()
