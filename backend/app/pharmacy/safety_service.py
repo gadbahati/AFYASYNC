@@ -226,27 +226,19 @@ def assert_can_create_prescription(
     medication_ids: list[UUID],
     encounter_id: UUID,
     allergy_override_reason: str | None,
+    patient_is_pregnant: bool | None = None,
+    actor_user_id: UUID | None = None,
 ) -> SafetyCheckResponse:
-    """Enforce hard blocks; moderate warnings need override text."""
-    result = check_prescription_safety(
+    """National Phase 5 — prescribe-time intercept via Clinical Safety Engine."""
+    from app.clinical_safety.engine import assert_clinical_safety_for_prescribe
+
+    return assert_clinical_safety_for_prescribe(
         db,
         patient_id=patient_id,
         facility_id=facility_id,
         medication_ids=medication_ids,
         encounter_id=encounter_id,
+        override_reason=allergy_override_reason,
+        patient_is_pregnant=patient_is_pregnant,
+        actor_user_id=actor_user_id,
     )
-    critical = [c for c in result.conflicts if c.severity == "CRITICAL" and c.blocking]
-    if critical:
-        raise ValueError("CRITICAL_ALLERGY_BLOCK")
-    high_blocks = [c for c in result.conflicts if c.blocking and c.severity == "HIGH"]
-    if high_blocks:
-        # HIGH blocks (severe allergy or interaction) require explicit override
-        reason = (allergy_override_reason or "").strip()
-        if len(reason) < 15:
-            raise ValueError("SAFETY_OVERRIDE_REQUIRED")
-    # Non-blocking warnings: optional override
-    warnings = [c for c in result.conflicts if not c.blocking]
-    if warnings and not (allergy_override_reason or "").strip():
-        # Still allow prescribe for LOW/MEDIUM warnings without override — clinician informed via pre-check
-        pass
-    return result
