@@ -1,4 +1,4 @@
-"""Emergency load board + referral destination suggestions."""
+"""Emergency load board + referral destination suggestions — hardened."""
 
 from __future__ import annotations
 
@@ -13,8 +13,16 @@ from app.emergency.models import EmergencyVisit
 from app.facilities.models import Facility, FacilityRegistryRecord
 from app.referrals.models import Referral, Transfer
 
-OPEN_ER_STATUSES = {"WAITING", "TRIAGED", "IN_CARE", "ACTIVE", "OPEN"}
+OPEN_ER_STATUSES = {"WAITING", "TRIAGED", "IN_CARE", "ACTIVE", "OPEN", "BEING_SEEN"}
 OPEN_REF_STATUSES = {"CREATED", "SENT", "ACCEPTED", "IN_TRANSIT", "PENDING"}
+
+
+def _iso(dt) -> str | None:
+    if dt is None:
+        return None
+    if hasattr(dt, "isoformat"):
+        return dt.isoformat()
+    return str(dt)
 
 
 def emergency_board(
@@ -31,7 +39,7 @@ def emergency_board(
     if county:
         q = q.where(Facility.county == county.strip())
     q = q.where(EmergencyVisit.status.in_(list(OPEN_ER_STATUSES))).order_by(
-        EmergencyVisit.created_at.asc()
+        EmergencyVisit.arrived_at.asc()
     )
 
     visits = []
@@ -41,12 +49,13 @@ def emergency_board(
         visits.append(
             {
                 "visit_id": str(visit.id),
+                "visit_number": getattr(visit, "visit_number", None),
                 "facility_id": str(fac.id),
-                "facility_name": fac.name,
-                "county": fac.county,
+                "facility_name": getattr(fac, "name", None),
+                "county": getattr(fac, "county", None),
                 "triage_level": visit.triage_level,
                 "status": visit.status,
-                "created_at": visit.created_at.isoformat() if visit.created_at else None,
+                "arrived_at": _iso(getattr(visit, "arrived_at", None)),
             }
         )
 
@@ -70,7 +79,7 @@ def facility_emergency_load(db: Session, *, facility_id: UUID) -> dict:
     last_24h = db.scalar(
         select(func.count()).select_from(EmergencyVisit).where(
             EmergencyVisit.facility_id == facility_id,
-            EmergencyVisit.created_at >= day_ago,
+            EmergencyVisit.arrived_at >= day_ago,
         )
     ) or 0
     by_triage = {
@@ -84,7 +93,6 @@ def facility_emergency_load(db: Session, *, facility_id: UUID) -> dict:
             .group_by(EmergencyVisit.triage_level)
         ).all()
     }
-    # Simple load band for network visibility
     if open_count >= 30:
         band = "HIGH"
     elif open_count >= 10:
@@ -109,13 +117,12 @@ def referral_destinations(
     preferred_county: str | None = None,
     limit: int = 20,
 ) -> dict:
-    """Suggest receiving facilities: same county first, higher KEPH when available."""
     limit = max(1, min(limit, 50))
     source = db.get(Facility, source_facility_id)
     if source is None:
         raise ValueError("FACILITY_NOT_FOUND")
 
-    county = preferred_county or source.county
+    county = preferred_county or getattr(source, "county", None)
     q = (
         select(Facility, FacilityRegistryRecord)
         .outerjoin(FacilityRegistryRecord, FacilityRegistryRecord.facility_id == Facility.id)
@@ -132,18 +139,17 @@ def referral_destinations(
                 EmergencyVisit.status.in_(list(OPEN_ER_STATUSES)),
             )
         ) or 0
-        keph = (reg.keph_level if reg else None) or fac.facility_type or "UNKNOWN"
+        keph = (reg.keph_level if reg else None) or getattr(fac, "facility_type", None) or "UNKNOWN"
         candidates.append(
             {
                 "facility_id": str(fac.id),
-                "facility_name": fac.name,
-                "county": fac.county,
+                "facility_name": getattr(fac, "name", None),
+                "county": getattr(fac, "county", None),
                 "keph_or_type": keph,
                 "open_emergency_load": int(open_er),
             }
         )
 
-    # Prefer lower ER load, then name for stability
     candidates.sort(key=lambda x: (x["open_emergency_load"], x["facility_name"] or ""))
 
     open_refs = db.scalar(
@@ -155,7 +161,7 @@ def referral_destinations(
 
     return {
         "source_facility_id": str(source_facility_id),
-        "source_name": source.name,
+        "source_name": getattr(source, "name", None),
         "county_filter": county,
         "open_outbound_referrals": int(open_refs),
         "suggestions": candidates[:limit],
@@ -174,7 +180,7 @@ def network_overview(db: Session, *, days: int = 7) -> dict:
         )
     ) or 0
     er_window = db.scalar(
-        select(func.count()).select_from(EmergencyVisit).where(EmergencyVisit.created_at >= since)
+        select(func.count()).select_from(EmergencyVisit).where(EmergencyVisit.arrived_at >= since)
     ) or 0
     open_ref = db.scalar(
         select(func.count()).select_from(Referral).where(
