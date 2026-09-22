@@ -121,6 +121,8 @@ from app.clinical_safety.router import router as clinical_safety_router
 from app.clinical_safety import models as clinical_safety_models  # noqa: F401
 from app.lab_intelligence.router import router as lab_intelligence_router
 from app.lab_intelligence import models as lab_intelligence_models  # noqa: F401
+from app.imaging_intelligence.router import router as imaging_intelligence_router
+from app.imaging_intelligence import models as imaging_intelligence_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -141,6 +143,8 @@ _REQUIRED_PROD_TABLES = (
     "medication_safety_flags",
     "lab_test_references",
     "lab_critical_alerts",
+    "imaging_test_safety",
+    "imaging_critical_findings",
     "facility_messages",
     "continuity_cards",
     "ussd_pins",
@@ -309,6 +313,7 @@ app.include_router(identity_router)
 app.include_router(hospital_os_router)
 app.include_router(clinical_safety_router)
 app.include_router(lab_intelligence_router)
+app.include_router(imaging_intelligence_router)
 
 
 @app.get("/health", tags=["System"])
