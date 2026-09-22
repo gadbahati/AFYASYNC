@@ -131,6 +131,8 @@ from app.hie import models as hie_models  # noqa: F401
 from app.national_ops.router import router as national_ops_router
 from app.sha_dha.router import router as sha_dha_router
 from app.certification.router import router as certification_router
+from app.offline.router import router as offline_router
+from app.offline import models as offline_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -162,6 +164,8 @@ _REQUIRED_PROD_TABLES = (
     "ussd_pins",
     "ussd_sessions",
     "overseas_return_packages",
+    "offline_outbox_events",
+    "offline_connectivity_probes",
 )
 
 
@@ -332,6 +336,7 @@ app.include_router(hie_router)
 app.include_router(national_ops_router)
 app.include_router(sha_dha_router)
 app.include_router(certification_router)
+app.include_router(offline_router)
 
 
 @app.get("/health", tags=["System"])
