@@ -147,6 +147,7 @@ from app.ambulance import models as ambulance_models  # noqa: F401
 from app.surveillance.router import router as surveillance_router
 from app.surveillance import models as surveillance_models  # noqa: F401
 from app.quality_scorecard.router import router as quality_scorecard_router
+from app.fraud_integrity.router import router as fraud_integrity_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -365,6 +366,7 @@ app.include_router(telemedicine_router)
 app.include_router(ambulance_router)
 app.include_router(surveillance_router)
 app.include_router(quality_scorecard_router)
+app.include_router(fraud_integrity_router)
 
 
 @app.get("/health", tags=["System"])
