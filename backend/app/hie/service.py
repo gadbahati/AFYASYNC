@@ -77,9 +77,8 @@ def _sensitive_disclosure_allowed(db: Session, patient_id: UUID) -> bool:
 
         row = db.scalar(
             select(SensitiveDiseaseConsent.id).where(
-                SensitiveDiseaseConsent.person_id == patient_id,
-                SensitiveDiseaseConsent.status == "ACTIVE",
-                SensitiveDiseaseConsent.disclose.is_(True),
+                SensitiveDiseaseConsent.patient_id == patient_id,
+                SensitiveDiseaseConsent.consent_given.is_(True),
             ).limit(1)
         )
         return row is not None
