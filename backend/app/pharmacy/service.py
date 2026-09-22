@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +12,8 @@ from app.billing.service import BillingError, create_charge
 from app.encounters.models import Encounter
 from app.notifications.events import notify_patient_event
 from app.pharmacy.models import InventoryBatch, InventoryItem, MedicationAction, Prescription, PrescriptionItem, StockMovement
+
+_log = logging.getLogger("afyasync.pharmacy")
 
 
 class PharmacyError(ValueError):
@@ -145,8 +148,12 @@ def dispense_prescription(
                 staff_id=staff_id,
                 actor_user_id=actor_user_id,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.exception(
+                "controlled_dispense_log_failed prescription_id=%s: %s",
+                prescription_id,
+                exc,
+            )
         _audit(db, action="PHARMACY_PRESCRIPTION_DISPENSED", resource_type="PRESCRIPTION", resource_id=prescription.id, actor_user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"movement_count": len(movements), "charge_count": charges_created})
         notify_patient_event(
             db,
