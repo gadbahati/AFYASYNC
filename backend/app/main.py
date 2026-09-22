@@ -133,6 +133,7 @@ from app.sha_dha.router import router as sha_dha_router
 from app.certification.router import router as certification_router
 from app.offline.router import router as offline_router
 from app.offline import models as offline_models  # noqa: F401
+from app.analytics.router import router as analytics_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -337,6 +338,7 @@ app.include_router(national_ops_router)
 app.include_router(sha_dha_router)
 app.include_router(certification_router)
 app.include_router(offline_router)
+app.include_router(analytics_router)
 
 
 @app.get("/health", tags=["System"])
