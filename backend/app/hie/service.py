@@ -42,13 +42,6 @@ def _patient_resource(db: Session, person: Person) -> dict:
                 "value": identity.afya_id,
             }
         )
-    if person.national_id:
-        identifiers.append(
-            {
-                "system": "https://afyasync.health.ke/identifier/national-id",
-                "value": person.national_id,
-            }
-        )
     sex = (person.sex or "unknown").strip().lower()
     gender = {"female": "female", "male": "male", "other": "other"}.get(sex, "unknown")
     return {
@@ -169,9 +162,8 @@ def build_patient_summary_bundle(
                     "status": (rx.status or "unknown").lower(),
                     "intent": "order",
                     "subject": {"reference": f"Patient/{person.id}"},
-                    "medication": med_texts[0]["medicationCodeableConcept"] if med_texts else {"text": "unknown"},
+                    "medicationCodeableConcept": med_texts[0]["medicationCodeableConcept"] if med_texts else {"text": "unknown"},
                     "dosageInstruction": med_texts[0]["dosageInstruction"] if med_texts else [],
-                    "contained": med_texts[1:] if len(med_texts) > 1 else [],
                 },
             }
         )
@@ -239,7 +231,6 @@ def build_referral_package(
         purpose="referral",
         destination=destination,
     )
-    # Override log type for last export
     last = db.scalar(
         select(HieExportLog)
         .where(
