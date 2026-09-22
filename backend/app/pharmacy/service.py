@@ -134,6 +134,19 @@ def dispense_prescription(
 
         prescription.status = "DISPENSED"
         db.flush()
+        # National Phase 8 — controlled / high-risk dispense register
+        try:
+            from app.pharmacy_supply.service import on_prescription_dispensed
+            on_prescription_dispensed(
+                db,
+                facility_id=encounter.facility_id,
+                patient_id=encounter.patient_id,
+                prescription=prescription,
+                staff_id=staff_id,
+                actor_user_id=actor_user_id,
+            )
+        except Exception:
+            pass
         _audit(db, action="PHARMACY_PRESCRIPTION_DISPENSED", resource_type="PRESCRIPTION", resource_id=prescription.id, actor_user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, metadata={"movement_count": len(movements), "charge_count": charges_created})
         notify_patient_event(
             db,
