@@ -1,8 +1,7 @@
-"""Citizen-facing coverage, utilisation and charge transparency."""
+"""Citizen-facing coverage, utilisation and charge transparency — hardened."""
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -19,7 +18,18 @@ from app.patients.models import AfyaIdentity, Person
 def _dec(v) -> float:
     if v is None:
         return 0.0
-    return float(Decimal(str(v)))
+    try:
+        return float(Decimal(str(v)))
+    except Exception:
+        return 0.0
+
+
+def _iso(dt) -> str | None:
+    if dt is None:
+        return None
+    if hasattr(dt, "isoformat"):
+        return dt.isoformat()
+    return str(dt)
 
 
 def wallet_overview(db: Session, *, person_id: UUID) -> dict:
@@ -28,7 +38,10 @@ def wallet_overview(db: Session, *, person_id: UUID) -> dict:
         raise ValueError("PERSON_NOT_FOUND")
 
     identity = db.scalar(
-        select(AfyaIdentity).where(AfyaIdentity.person_id == person_id, AfyaIdentity.status == "ACTIVE")
+        select(AfyaIdentity).where(
+            AfyaIdentity.person_id == person_id,
+            AfyaIdentity.status == "ACTIVE",
+        )
     )
 
     coverages = list(
@@ -58,7 +71,6 @@ def wallet_overview(db: Session, *, person_id: UUID) -> dict:
         ).all()
     )
 
-    # Recent patient-facing invoices (last 10)
     invoices = list(
         db.scalars(
             select(Invoice)
@@ -71,20 +83,22 @@ def wallet_overview(db: Session, *, person_id: UUID) -> dict:
     open_balance = 0.0
     inv_out = []
     for inv in invoices:
-        total = _dec(inv.total_amount)
-        paid = _dec(getattr(inv, "amount_paid", None) or 0)
-        # fall back: unpaid if not PAID/SETTLED
-        status = (inv.status or "").upper()
-        remaining = 0.0 if status in {"PAID", "SETTLED", "CLOSED", "CANCELLED"} else max(0.0, total - paid)
+        total = _dec(getattr(inv, "total_amount", None))
+        patient_amt = _dec(getattr(inv, "patient_amount", None))
+        status = str(getattr(inv, "status", "") or "").upper()
+        remaining = 0.0 if status in {"PAID", "SETTLED", "CLOSED", "CANCELLED"} else max(patient_amt, 0.0)
+        if remaining == 0.0 and status in {"OPEN", "PARTIAL", "ISSUED", "ACTIVE"}:
+            remaining = max(total, 0.0)
         open_balance += remaining
         inv_out.append(
             {
                 "invoice_id": str(inv.id),
                 "invoice_number": getattr(inv, "invoice_id", None) or str(inv.id),
-                "status": inv.status,
+                "status": getattr(inv, "status", None),
                 "total_amount": total,
+                "patient_amount": patient_amt,
                 "open_amount": remaining,
-                "created_at": inv.created_at.isoformat() if inv.created_at else None,
+                "created_at": _iso(getattr(inv, "created_at", None)),
             }
         )
 
@@ -93,12 +107,13 @@ def wallet_overview(db: Session, *, person_id: UUID) -> dict:
         coverage_out.append(
             {
                 "coverage_id": str(cov.id),
-                "payer_code": payer.code,
-                "payer_name": payer.name,
-                "membership_number": cov.membership_number,
-                "status": getattr(cov, "status", None) or getattr(cov, "verification_status", None),
-                "valid_from": cov.valid_from.isoformat() if getattr(cov, "valid_from", None) else None,
-                "valid_to": cov.valid_to.isoformat() if getattr(cov, "valid_to", None) else None,
+                "payer_code": getattr(payer, "code", None),
+                "payer_name": getattr(payer, "name", None),
+                "membership_number": getattr(cov, "membership_number", None),
+                "status": getattr(cov, "status", None),
+                "verification_status": getattr(cov, "verification_status", None),
+                "start_date": _iso(getattr(cov, "start_date", None)),
+                "end_date": _iso(getattr(cov, "end_date", None)),
             }
         )
 
@@ -110,7 +125,7 @@ def wallet_overview(db: Session, *, person_id: UUID) -> dict:
 
     return {
         "person_id": str(person_id),
-        "afya_id": identity.afya_id if identity else None,
+        "afya_id": getattr(identity, "afya_id", None) if identity else None,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "coverages": coverage_out,
         "utilisation_year": year,
@@ -124,10 +139,10 @@ def wallet_overview(db: Session, *, person_id: UUID) -> dict:
 
 
 def benefits_transparency(db: Session, *, person_id: UUID) -> dict:
-    """Explain what is on file — not a guarantee of SHA payment."""
     overview = wallet_overview(db, person_id=person_id)
     active_payers = [
-        c for c in overview["coverages"]
+        c
+        for c in overview["coverages"]
         if str(c.get("status") or "").upper() in {"ACTIVE", "VERIFIED", "VALID", "APPROVED"}
     ]
     return {
@@ -139,7 +154,7 @@ def benefits_transparency(db: Session, *, person_id: UUID) -> dict:
         "guidance": [
             "Coverage on file is local until verified against SHA live connector",
             "Use Can I Get This? at facility for service-level simulation",
-            "Open balance is facility billing, not national benefit balance",
+            "Open balance is facility billing (patient_amount), not national benefit balance",
         ],
         "sha_live": "Requires SHA_DHA_MODE=live and authorised tokens",
         "generated_at": overview["generated_at"],
@@ -162,10 +177,14 @@ def charge_ledger(db: Session, *, person_id: UUID, limit: int = 50) -> dict:
         items.append(
             {
                 "charge_id": str(ch.id),
-                "description": getattr(ch, "description", None) or getattr(ch, "service_name", None),
-                "amount": _dec(ch.amount),
+                "charge_number": getattr(ch, "charge_id", None),
+                "description": getattr(ch, "description", None)
+                or getattr(ch, "service_name", None)
+                or getattr(ch, "charge_id", None),
+                "amount": _dec(getattr(ch, "total_amount", None) or getattr(ch, "amount", None)),
+                "quantity": _dec(getattr(ch, "quantity", None)),
                 "status": getattr(ch, "status", None),
-                "created_at": ch.created_at.isoformat() if ch.created_at else None,
+                "created_at": _iso(getattr(ch, "created_at", None)),
             }
         )
     return {
