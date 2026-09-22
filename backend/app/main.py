@@ -129,6 +129,7 @@ from app.claims_financing.router import router as claims_financing_router
 from app.hie.router import router as hie_router
 from app.hie import models as hie_models  # noqa: F401
 from app.national_ops.router import router as national_ops_router
+from app.sha_dha.router import router as sha_dha_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -328,6 +329,7 @@ app.include_router(pharmacy_supply_router)
 app.include_router(claims_financing_router)
 app.include_router(hie_router)
 app.include_router(national_ops_router)
+app.include_router(sha_dha_router)
 
 
 @app.get("/health", tags=["System"])
