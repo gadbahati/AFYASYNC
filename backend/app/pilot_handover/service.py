@@ -22,7 +22,9 @@ def _safe_count(db: Session, stmt) -> int:
         return 0
 
 
-def pilot_evidence_pack(db: Session, *, county: str | None = None, facility_id: UUID | None = None) -> dict:
+def pilot_evidence_pack(
+    db: Session, *, county: str | None = None, facility_id: UUID | None = None
+) -> dict:
     """Single JSON pack auditors / county teams can export."""
     fac_q = select(Facility).where(Facility.status == "ACTIVE")
     if county:
@@ -32,26 +34,34 @@ def pilot_evidence_pack(db: Session, *, county: str | None = None, facility_id: 
 
     facilities = list(db.scalars(fac_q.limit(200)).all())
     facility_ids = [f.id for f in facilities]
+    scoped = bool(county) or facility_id is not None
+
+    if scoped and not facility_ids:
+        staff_count = 0
+        encounter_count = 0
+    elif facility_ids and scoped:
+        staff_count = _safe_count(
+            db,
+            select(func.count())
+            .select_from(Staff)
+            .where(Staff.status == "ACTIVE", Staff.facility_id.in_(facility_ids)),
+        )
+        encounter_count = _safe_count(
+            db,
+            select(func.count())
+            .select_from(Encounter)
+            .where(Encounter.facility_id.in_(facility_ids)),
+        )
+    else:
+        staff_count = _safe_count(
+            db, select(func.count()).select_from(Staff).where(Staff.status == "ACTIVE")
+        )
+        encounter_count = _safe_count(db, select(func.count()).select_from(Encounter))
 
     totals = {
         "active_facilities": len(facilities),
-        "active_staff": _safe_count(
-            db,
-            select(func.count()).select_from(Staff).where(
-                Staff.status == "ACTIVE",
-                Staff.facility_id.in_(facility_ids) if facility_ids else False,
-            )
-            if facility_ids
-            else select(func.count()).select_from(Staff).where(Staff.status == "ACTIVE"),
-        ),
-        "encounters": _safe_count(
-            db,
-            select(func.count()).select_from(Encounter).where(
-                Encounter.facility_id.in_(facility_ids)
-            )
-            if facility_ids
-            else select(func.count()).select_from(Encounter),
-        ),
+        "active_staff": staff_count,
+        "encounters": encounter_count,
         "claims": _safe_count(db, select(func.count()).select_from(Claim)),
         "notifiable_events": _safe_count(
             db, select(func.count()).select_from(NotifiableEvent)
