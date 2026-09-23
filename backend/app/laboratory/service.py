@@ -10,7 +10,7 @@ from app.audit.service import record_audit
 from app.billing.models import Charge, Service
 from app.billing.service import create_charge
 from app.encounters.models import Encounter
-from app.facilities.models import Staff
+from app.rbac.models import Staff
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabSample, LabTest
 from app.notifications.events import notify_patient_event
 
