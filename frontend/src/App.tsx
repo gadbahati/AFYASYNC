@@ -57,7 +57,8 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { TreatAbroadPage } from "./pages/TreatAbroadPage";
 import { PatientContinuityCardPage } from "./pages/PatientContinuityCardPage";
 import { ContinuityVerifyPage } from "./pages/ContinuityVerifyPage";
-import { FacilityContinuityScanPage } from "./pages/FacilityContinuityScanPage";\nimport { OfflineClinicPage } from "./pages/OfflineClinicPage";
+import { FacilityContinuityScanPage } from "./pages/FacilityContinuityScanPage";
+import { OfflineClinicPage } from "./pages/OfflineClinicPage";
 
 export default function App() {
   return <AuthProvider><BrowserRouter><Routes>
