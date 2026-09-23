@@ -155,6 +155,8 @@ from app.training.router import router as training_router
 from app.rollout.router import router as rollout_router
 from app.warehouse.router import router as warehouse_router
 from app.production.router import router as production_router
+from app.retention.router import router as retention_router
+from app.retention import models as retention_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -192,6 +194,7 @@ _REQUIRED_PROD_TABLES = (
     "tele_consult_requests",
     "ambulance_requests",
     "notifiable_events",
+    "erasure_requests",
 )
 
 
@@ -390,6 +393,7 @@ app.include_router(training_router)
 app.include_router(rollout_router)
 app.include_router(warehouse_router)
 app.include_router(production_router)
+app.include_router(retention_router)
 
 
 @app.get("/health", tags=["System"])
