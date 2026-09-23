@@ -165,6 +165,8 @@ from app.change_control.router import router as change_control_router
 from app.change_control import models as change_control_models  # noqa: F401
 from app.pilot_handover.router import router as pilot_handover_router
 from app.performance.router import router as performance_router
+from app.risk_register.router import router as risk_register_router
+from app.risk_register import models as risk_register_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -208,6 +210,7 @@ _REQUIRED_PROD_TABLES = (
     "dr_drills",
     "change_requests",
     "release_records",
+    "residual_risks",
 )
 
 
@@ -412,6 +415,7 @@ app.include_router(disaster_recovery_router)
 app.include_router(change_control_router)
 app.include_router(pilot_handover_router)
 app.include_router(performance_router)
+app.include_router(risk_register_router)
 
 
 @app.get("/health", tags=["System"])
