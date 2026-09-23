@@ -149,6 +149,7 @@ from app.surveillance import models as surveillance_models  # noqa: F401
 from app.quality_scorecard.router import router as quality_scorecard_router
 from app.fraud_integrity.router import router as fraud_integrity_router
 from app.security_ops.router import router as security_ops_router
+from app.reliability.router import router as reliability_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -369,6 +370,7 @@ app.include_router(surveillance_router)
 app.include_router(quality_scorecard_router)
 app.include_router(fraud_integrity_router)
 app.include_router(security_ops_router)
+app.include_router(reliability_router)
 
 
 @app.get("/health", tags=["System"])
