@@ -159,6 +159,8 @@ from app.retention.router import router as retention_router
 from app.retention import models as retention_models  # noqa: F401
 from app.partner_sandbox.router import router as partner_sandbox_router
 from app.partner_sandbox import models as partner_sandbox_models  # noqa: F401
+from app.disaster_recovery.router import router as disaster_recovery_router
+from app.disaster_recovery import models as disaster_recovery_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -198,6 +200,8 @@ _REQUIRED_PROD_TABLES = (
     "notifiable_events",
     "erasure_requests",
     "partner_interests",
+    "backup_verifications",
+    "dr_drills",
 )
 
 
@@ -398,6 +402,7 @@ app.include_router(warehouse_router)
 app.include_router(production_router)
 app.include_router(retention_router)
 app.include_router(partner_sandbox_router)
+app.include_router(disaster_recovery_router)
 
 
 @app.get("/health", tags=["System"])
