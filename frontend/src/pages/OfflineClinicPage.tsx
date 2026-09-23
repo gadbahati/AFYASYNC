@@ -7,9 +7,7 @@ type Department = { id: string; name: string; code: string; status: string };
 type Draft = { id: string; patient_id: string; department_id: string; encounter_type: string; coverage_mode: "CASH" | "SHA" | "AFYASYNC" | "OTHER"; reason: string; created_at: string; sync_status: "LOCAL" | "QUEUED" | "SYNCED" | "FAILED"; error?: string };
 type OfflineEvent = { id: string; event_type: string; status: string; attempts: number; idempotency_key: string; next_retry_at?: string | null; created_at?: string | null };
 
-const DRAFTS = "afyasync:offline:clinical-drafts:v1";
-const PATIENTS = "afyasync:offline:patient-cache:v1";
-const DEPARTMENTS = "afyasync:offline:department-cache:v1";
+const KEY = (kind: string, facilityId: string | null) => "afyasync:offline:" + kind + ":v1:" + (facilityId || "unselected");
 
 function read<T>(key: string, fallback: T): T { try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; } }
 function write(key: string, value: unknown) { localStorage.setItem(key, JSON.stringify(value)); }
@@ -17,9 +15,9 @@ function write(key: string, value: unknown) { localStorage.setItem(key, JSON.str
 export function OfflineClinicPage() {
   const auth = useAuth();
   const [online, setOnline] = useState(navigator.onLine);
-  const [patients, setPatients] = useState<Patient[]>(() => read(PATIENTS, []));
-  const [departments, setDepartments] = useState<Department[]>(() => read(DEPARTMENTS, []));
-  const [drafts, setDrafts] = useState<Draft[]>(() => read(DRAFTS, []));
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
   const [events, setEvents] = useState<OfflineEvent[]>([]);
   const [stats, setStats] = useState<any>({});
   const [selectedPatient, setSelectedPatient] = useState("");
@@ -42,12 +40,19 @@ export function OfflineClinicPage() {
       ]);
       const ps = (p?.items || []) as Patient[];
       const ds = (d || []) as Department[];
-      setPatients(ps); write(PATIENTS, ps);
-      setDepartments(ds); write(DEPARTMENTS, ds);
+      setPatients(ps); write(KEY("patients", auth.facilityId), ps);
+      setDepartments(ds); write(KEY("departments", auth.facilityId), ds);
       setStats(s || {}); setEvents((pending?.events || []) as OfflineEvent[]);
     } catch (e: any) {
       setMessage(e?.message || e?.code || "Offline mode is active. Using cached clinic data.");
     }
+  }, [auth.facilityId]);
+
+  useEffect(() => {
+    if (!auth.facilityId) return;
+    setPatients(read(KEY("patients", auth.facilityId), []));
+    setDepartments(read(KEY("departments", auth.facilityId), []));
+    setDrafts(read(KEY("drafts", auth.facilityId), []));
   }, [auth.facilityId]);
 
   useEffect(() => {
@@ -59,7 +64,7 @@ export function OfflineClinicPage() {
     return () => { window.removeEventListener("online", onlineHandler); window.removeEventListener("offline", offlineHandler); };
   }, [refresh]);
 
-  useEffect(() => { write(DRAFTS, drafts); }, [drafts]);
+  useEffect(() => { if (auth.facilityId) write(KEY("drafts", auth.facilityId), drafts); }, [drafts, auth.facilityId]);
 
   const visiblePatients = useMemo(() => {
     const q = patientSearch.trim().toLowerCase();
@@ -133,7 +138,7 @@ export function OfflineClinicPage() {
         <div className="panel-header"><div><h2>Offline safety</h2><p className="muted">The application distinguishes local storage from server acceptance.</p></div></div>
         <div className="connectivity-card"><div className="connection-indicator" /><div><strong>{online ? "Connected" : "Working offline"}</strong><p className="muted">{online ? "New local drafts can be queued and synchronised." : "Do not close or clear this browser profile until drafts are synchronised."}</p></div></div>
         <div className="notice"><strong>Important:</strong> cached data is read-only while offline. New clinical encounters are saved locally and are not treated as server records until synchronisation succeeds.</div>
-        <button className="secondary-button" onClick={async () => { setBusy(true); try { await api.offlineProbe("AfyaSync API", online, undefined, online ? "Browser reports connectivity" : "Browser reports offline"); setMessage("Connectivity probe recorded."); } catch (e: any) { setMessage(e?.message || "Probe failed."); } finally { setBusy(false); } }} disabled={busy}>Record connectivity probe</button>
+        <button className="secondary-button" onClick={async () => { setBusy(true); try { await api.offlineProbe("AfyaSync API", online, undefined, online ? "Browser reports connectivity" : "Browser reports offline"); setMessage("Connectivity probe recorded."); } catch (e: any) { setMessage(e?.message || "Probe failed."); } finally { setBusy(false); } }} disabled={busy}>Record connectivity probe</button><button className="secondary-button" onClick={() => { if (!auth.facilityId) return; if (!window.confirm("Clear this facility's offline cache and unsynchronised drafts from this browser?")) return; localStorage.removeItem(KEY("patients", auth.facilityId)); localStorage.removeItem(KEY("departments", auth.facilityId)); localStorage.removeItem(KEY("drafts", auth.facilityId)); setPatients([]); setDepartments([]); setDrafts([]); setMessage("This facility's local cache was cleared. Server records were not changed."); }}>Clear device cache</button>
       </div>
     </div>
 
