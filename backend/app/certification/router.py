@@ -1,4 +1,4 @@
-"""Certification evidence & security posture APIs (National Phase 11)."""
+"""Certification evidence, security posture & DHA submission kit APIs."""
 
 from uuid import UUID
 
@@ -9,6 +9,7 @@ from app.auth.dependencies import get_facility_context, require_permission
 from app.certification.checklist import CERTIFICATION_DOMAINS, summarise_checklist
 from app.certification.privacy_service import build_privacy_package
 from app.certification.security_posture import security_posture
+from app.certification.submission_kit import submission_kit
 from app.database import get_db
 from app.rbac.models import User
 
@@ -21,7 +22,7 @@ def evidence_pack():
     summary = summarise_checklist()
     return {
         "program": "AFYASYNC_NATIONAL_REPLACEMENT",
-        "phase": 11,
+        "phase": 30,
         "summary": summary,
         "domains": CERTIFICATION_DOMAINS,
         "developer": "BAHATI GAD WANGWE",
@@ -48,3 +49,12 @@ def privacy_package(
         return build_privacy_package(db, person_id=person_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/submission-kit")
+def dha_submission_kit(
+    user: User = Depends(require_permission("reports.read")),
+):
+    """Assembled evidence index + operator actions for DHA submission."""
+    _ = user
+    return submission_kit()
