@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
-from app.facilities.models import Staff
+from app.rbac.models import Staff
 from app.lab_intelligence.models import LabCriticalAlert, LabTestReference
 from app.lab_intelligence.service import (
     acknowledge_critical,
@@ -31,7 +31,7 @@ LAB_CATALOGUE = "lab.catalogue.write"
 def _staff(db: Session, user: User, facility_id: UUID) -> Staff:
     staff = db.scalar(
         select(Staff).where(
-            Staff.user_id == user.id,
+            Staff.person_id == user.person_id,
             Staff.facility_id == facility_id,
             Staff.status == "ACTIVE",
         )
