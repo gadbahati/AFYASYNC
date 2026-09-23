@@ -163,6 +163,7 @@ from app.disaster_recovery.router import router as disaster_recovery_router
 from app.disaster_recovery import models as disaster_recovery_models  # noqa: F401
 from app.change_control.router import router as change_control_router
 from app.change_control import models as change_control_models  # noqa: F401
+from app.pilot_handover.router import router as pilot_handover_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -408,6 +409,7 @@ app.include_router(retention_router)
 app.include_router(partner_sandbox_router)
 app.include_router(disaster_recovery_router)
 app.include_router(change_control_router)
+app.include_router(pilot_handover_router)
 
 
 @app.get("/health", tags=["System"])
