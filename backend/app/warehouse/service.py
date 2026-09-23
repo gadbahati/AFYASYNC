@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import io
 from datetime import date, datetime, timedelta, timezone
-from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -36,20 +35,8 @@ def national_fact_summary(db: Session, *, days: int = 30) -> dict:
     ) or 0
 
     encounters = db.scalar(
-        select(func.count()).select_from(Encounter).where(Encounter.created_at >= since)
-    )
-    if encounters is None:
-        # some schemas use started_at
-        try:
-            encounters = db.scalar(
-                select(func.count()).select_from(Encounter).where(
-                    Encounter.started_at >= since
-                )
-            ) or 0
-        except Exception:
-            encounters = db.scalar(select(func.count()).select_from(Encounter)) or 0
-    else:
-        encounters = int(encounters)
+        select(func.count()).select_from(Encounter).where(Encounter.started_at >= since)
+    ) or 0
 
     claims = db.scalar(
         select(func.count()).select_from(Claim).where(Claim.updated_at >= since)
@@ -65,19 +52,14 @@ def national_fact_summary(db: Session, *, days: int = 30) -> dict:
         select(func.count()).select_from(AmbulanceRequest).where(
             AmbulanceRequest.created_at >= since
         )
-    )
-    if ambulance is None:
-        ambulance = db.scalar(select(func.count()).select_from(AmbulanceRequest)) or 0
+    ) or 0
 
     tele = db.scalar(
         select(func.count()).select_from(TeleConsultRequest).where(
             TeleConsultRequest.created_at >= since
         )
-    )
-    if tele is None:
-        tele = db.scalar(select(func.count()).select_from(TeleConsultRequest)) or 0
+    ) or 0
 
-    # Status breakdowns (no patient ids)
     claim_status = {
         str(s): int(c)
         for s, c in db.execute(
@@ -116,7 +98,6 @@ def national_fact_summary(db: Session, *, days: int = 30) -> dict:
 
 
 def county_fact_table(db: Session, *, days: int = 30) -> list[dict]:
-    """Row-oriented county facts for export."""
     since = _since(days)
 
     rows = list(
@@ -165,6 +146,12 @@ def county_fact_table(db: Session, *, days: int = 30) -> list[dict]:
 
 def export_csv(rows: list[dict], *, fieldnames: list[str] | None = None) -> str:
     if not rows:
+        # Always emit header when fieldnames provided
+        if fieldnames:
+            buf = io.StringIO()
+            writer = csv.DictWriter(buf, fieldnames=fieldnames)
+            writer.writeheader()
+            return buf.getvalue()
         return ""
     fieldnames = fieldnames or list(rows[0].keys())
     buf = io.StringIO()
