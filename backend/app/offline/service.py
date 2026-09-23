@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
+from app.encounters.service import create_encounter
 from app.offline.models import OfflineConnectivityProbe, OfflineOutboxEvent
 
 _log = logging.getLogger("afyasync.offline")
@@ -20,6 +21,7 @@ ALLOWED_EVENT_TYPES = {
     "HIE_EXPORT",
     "PAYMENT_NOTIFY",
     "APPOINTMENT_SYNC",
+    "CLINICAL_ENCOUNTER",
     "CUSTOM",
 }
 
@@ -127,6 +129,25 @@ def _process_one(db: Session, event: OfflineOutboxEvent) -> str:
     et = event.event_type
     if et in {"CUSTOM", "APPOINTMENT_SYNC"}:
         return "SYNCED"
+    if et == "CLINICAL_ENCOUNTER":
+        required = {"patient_id", "department_id", "encounter_type"}
+        if not required.issubset(event.payload):
+            return "FAILED"
+        try:
+            payload = dict(event.payload)
+            payload["facility_id"] = event.facility_id
+            payload["patient_id"] = UUID(str(payload["patient_id"]))
+            payload["department_id"] = UUID(str(payload["department_id"]))
+            payload.pop("id", None)
+            payload.pop("status", None)
+            payload.pop("started_at", None)
+            actor = event.created_by
+            if actor is None:
+                return "FAILED"
+            create_encounter(db, payload, created_by=actor, actor_user_id=actor, commit=False)
+            return "SYNCED"
+        except (ValueError, TypeError, KeyError):
+            return "FAILED"
     # External-bound events: accepted into outbox drain only if payload is well-formed.
     if not event.payload:
         return "FAILED"
