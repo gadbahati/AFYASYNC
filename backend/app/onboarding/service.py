@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.facilities.models import Facility
 from app.pharmacy.models import InventoryItem, Medication
-from app.rbac.models import Staff, User
+from app.rbac.models import Staff
 from app.workforce.models import ProfessionalCredential
 
 
@@ -24,22 +24,6 @@ def facility_onboarding_kit(db: Session, *, facility_id: UUID) -> dict:
             Staff.facility_id == facility_id, Staff.status == "ACTIVE"
         )
     ) or 0
-    users_linked = db.scalar(
-        select(func.count()).select_from(User).where(
-            User.facility_id == facility_id, User.status == "ACTIVE"
-        )
-    ) or 0
-    # User may not have facility_id — count staff with user_id if present
-    try:
-        users_linked = db.scalar(
-            select(func.count()).select_from(Staff).where(
-                Staff.facility_id == facility_id,
-                Staff.status == "ACTIVE",
-                Staff.user_id.isnot(None),
-            )
-        ) or 0
-    except Exception:
-        users_linked = 0
 
     creds = db.scalar(
         select(func.count()).select_from(ProfessionalCredential).where(
@@ -55,7 +39,17 @@ def facility_onboarding_kit(db: Session, *, facility_id: UUID) -> dict:
         )
     ) or 0
 
-    meds = db.scalar(select(func.count()).select_from(Medication).where(Medication.status == "ACTIVE")) or 0
+    meds = db.scalar(
+        select(func.count()).select_from(Medication).where(Medication.status == "ACTIVE")
+    ) or 0
+
+    staff_with_prof = db.scalar(
+        select(func.count()).select_from(Staff).where(
+            Staff.facility_id == facility_id,
+            Staff.status == "ACTIVE",
+            Staff.professional_number.isnot(None),
+        )
+    ) or 0
 
     steps = [
         {
@@ -71,10 +65,10 @@ def facility_onboarding_kit(db: Session, *, facility_id: UUID) -> dict:
             "value": int(staff_count),
         },
         {
-            "code": "STAFF_LOGIN_LINKED",
-            "label": "Staff linked to login accounts",
-            "done": users_linked >= 1,
-            "value": int(users_linked),
+            "code": "STAFF_PROF_NUMBERS",
+            "label": "Staff with professional numbers",
+            "done": staff_with_prof >= 1,
+            "value": int(staff_with_prof),
         },
         {
             "code": "CREDENTIALS_LOADED",
@@ -90,7 +84,7 @@ def facility_onboarding_kit(db: Session, *, facility_id: UUID) -> dict:
         },
         {
             "code": "FORMULARY_AVAILABLE",
-            "label": "National/local formulary medications present",
+            "label": "Formulary medications present",
             "done": meds >= 1,
             "value": int(meds),
         },
@@ -109,7 +103,7 @@ def facility_onboarding_kit(db: Session, *, facility_id: UUID) -> dict:
         "steps": steps,
         "runbook": [
             "1. Confirm facility ACTIVE in registry",
-            "2. Create staff + link User accounts with roles",
+            "2. Create staff with roles and professional numbers",
             "3. Register professional credentials (licence numbers)",
             "4. Seed inventory / minimum stock levels",
             "5. Train on claims preflight + telemedicine + ambulance boards",
@@ -147,7 +141,7 @@ def migration_playbook() -> dict:
                     "Patient login with Afya ID",
                     "Book appointment end-to-end",
                     "Submit one claims preflight",
-                    "Run fraud-integrity facility-scan (expect clean or explained signals)",
+                    "Run fraud-integrity facility-scan",
                     "Run reliability readiness-matrix",
                 ],
             },
