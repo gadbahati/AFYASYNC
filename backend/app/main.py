@@ -154,6 +154,7 @@ from app.onboarding.router import router as onboarding_router
 from app.training.router import router as training_router
 from app.rollout.router import router as rollout_router
 from app.warehouse.router import router as warehouse_router
+from app.production.router import router as production_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -379,6 +380,7 @@ app.include_router(onboarding_router)
 app.include_router(training_router)
 app.include_router(rollout_router)
 app.include_router(warehouse_router)
+app.include_router(production_router)
 
 
 @app.get("/health", tags=["System"])
