@@ -1,4 +1,4 @@
-"""Seed catalogue + residual risk CRUD workflow."""
+"""Seed catalogue + residual risk CRUD workflow (hardened)."""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ class RiskError(ValueError):
 def seed_defaults(db: Session) -> dict:
     created = 0
     for item in DEFAULT_RISKS:
-        exists = db.scalar(select(ResidualRisk).where(ResidualRisk.code == item["code"]))
+        exists = db.scalar(select(ResidualRisk.id).where(ResidualRisk.code == item["code"]).limit(1))
         if exists is not None:
             continue
         db.add(
@@ -139,9 +139,13 @@ def list_risks(
     limit = max(1, min(limit, 200))
     q = select(ResidualRisk)
     if status:
-        q = q.where(ResidualRisk.status == status.strip().upper())
+        st = status.strip().upper()
+        if st in STATUSES:
+            q = q.where(ResidualRisk.status == st)
     if category:
-        q = q.where(ResidualRisk.category == category.strip().upper())
+        cat = category.strip().upper()
+        if cat in CATEGORIES:
+            q = q.where(ResidualRisk.category == cat)
     rows = db.scalars(q.order_by(ResidualRisk.code.asc()).limit(limit)).all()
     return [_ser(r) for r in rows]
 
