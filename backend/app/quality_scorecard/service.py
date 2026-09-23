@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
@@ -18,6 +19,21 @@ from app.surveillance.models import NotifiableEvent
 from app.telemedicine.models import TeleConsultRequest
 from app.workforce.models import ProfessionalCredential
 
+logger = logging.getLogger(__name__)
+
+OPEN_ER_STATUSES = (
+    "WAITING",
+    "TRIAGED",
+    "IN_CARE",
+    "ACTIVE",
+    "OPEN",
+    "BEING_SEEN",
+    "REGISTERED",
+)
+OPEN_REFERRAL_STATUSES = ("CREATED", "SENT", "ACCEPTED", "IN_TRANSIT", "PENDING")
+OPEN_AMB_STATUSES = ("REQUESTED", "DISPATCHED", "EN_ROUTE", "ARRIVED")
+OPEN_TELE_STATUSES = ("REQUESTED", "ACCEPTED")
+
 
 def _band(score: float) -> str:
     if score >= 80:
@@ -29,14 +45,12 @@ def _band(score: float) -> str:
 
 def facility_scorecard(db: Session, *, facility_id: UUID, days: int = 30) -> dict:
     days = max(7, min(days, 90))
-    since = datetime.now(timezone.utc) - timedelta(days=days)
     since_date = date.today() - timedelta(days=days)
 
     fac = db.get(Facility, facility_id)
     if fac is None:
         raise ValueError("FACILITY_NOT_FOUND")
 
-    # --- Workforce licence coverage ---
     active_staff = db.scalar(
         select(func.count()).select_from(Staff).where(
             Staff.facility_id == facility_id, Staff.status == "ACTIVE"
@@ -50,7 +64,6 @@ def facility_scorecard(db: Session, *, facility_id: UUID, days: int = 30) -> dic
     ) or 0
     workforce_pct = (100.0 * staff_with_cred / active_staff) if active_staff else 100.0
 
-    # --- Inventory stock health ---
     inv_total = db.scalar(
         select(func.count()).select_from(InventoryItem).where(
             InventoryItem.facility_id == facility_id,
@@ -66,25 +79,22 @@ def facility_scorecard(db: Session, *, facility_id: UUID, days: int = 30) -> dic
     ) or 0
     stock_ok_pct = (100.0 * (inv_total - inv_low) / inv_total) if inv_total else 100.0
 
-    # --- Emergency open load (lower is better for score) ---
     open_er = db.scalar(
         select(func.count()).select_from(EmergencyVisit).where(
             EmergencyVisit.facility_id == facility_id,
-            EmergencyVisit.status.in_(["WAITING", "TRIAGED", "IN_CARE", "ACTIVE", "OPEN", "BEING_SEEN"]),
+            EmergencyVisit.status.in_(OPEN_ER_STATUSES),
         )
     ) or 0
-    er_score = max(0.0, 100.0 - min(open_er, 50) * 2)  # 0 open = 100, 50+ open = 0
+    er_score = max(0.0, 100.0 - min(int(open_er), 50) * 2)
 
-    # --- Open referrals outbound ---
     open_ref = db.scalar(
         select(func.count()).select_from(Referral).where(
             Referral.source_facility_id == facility_id,
-            Referral.status.in_(["CREATED", "SENT", "ACCEPTED", "IN_TRANSIT", "PENDING"]),
+            Referral.status.in_(OPEN_REFERRAL_STATUSES),
         )
     ) or 0
-    ref_score = max(0.0, 100.0 - min(open_ref, 30) * 3)
+    ref_score = max(0.0, 100.0 - min(int(open_ref), 30) * 3)
 
-    # --- Surveillance: open notifiable ---
     open_notif = db.scalar(
         select(func.count()).select_from(NotifiableEvent).where(
             NotifiableEvent.facility_id == facility_id,
@@ -92,30 +102,27 @@ def facility_scorecard(db: Session, *, facility_id: UUID, days: int = 30) -> dic
             NotifiableEvent.notification_date >= since_date,
         )
     ) or 0
-    # Reporting is good; unclosed backlog is the penalty
     notif_reported = db.scalar(
         select(func.count()).select_from(NotifiableEvent).where(
             NotifiableEvent.facility_id == facility_id,
             NotifiableEvent.notification_date >= since_date,
         )
     ) or 0
-    notif_score = 100.0 if notif_reported == 0 else max(40.0, 100.0 - min(open_notif, 20) * 3)
+    notif_score = 100.0 if notif_reported == 0 else max(40.0, 100.0 - min(int(open_notif), 20) * 3)
 
-    # --- Ambulance / telemedicine activity (presence, not volume pressure) ---
     amb_open = db.scalar(
         select(func.count()).select_from(AmbulanceRequest).where(
             AmbulanceRequest.facility_id == facility_id,
-            AmbulanceRequest.status.in_(["REQUESTED", "DISPATCHED", "EN_ROUTE", "ARRIVED"]),
+            AmbulanceRequest.status.in_(OPEN_AMB_STATUSES),
         )
     ) or 0
     tele_open = db.scalar(
         select(func.count()).select_from(TeleConsultRequest).where(
             TeleConsultRequest.facility_id == facility_id,
-            TeleConsultRequest.status.in_(["REQUESTED", "ACCEPTED"]),
+            TeleConsultRequest.status.in_(OPEN_TELE_STATUSES),
         )
     ) or 0
 
-    # Weighted composite
     composite = (
         workforce_pct * 0.25
         + stock_ok_pct * 0.25
@@ -126,11 +133,41 @@ def facility_scorecard(db: Session, *, facility_id: UUID, days: int = 30) -> dic
     composite = round(min(100.0, max(0.0, composite)), 1)
 
     metrics = [
-        {"code": "WORKFORCE_LICENCE", "label": "Staff with active licence on file", "value": round(workforce_pct, 1), "unit": "%", "weight": 0.25},
-        {"code": "STOCK_OK", "label": "SKUs at or above minimum", "value": round(stock_ok_pct, 1), "unit": "%", "weight": 0.25},
-        {"code": "ER_LOAD", "label": "ER load score (higher = lighter load)", "value": round(er_score, 1), "unit": "pts", "weight": 0.20},
-        {"code": "REFERRAL_FLOW", "label": "Referral backlog score", "value": round(ref_score, 1), "unit": "pts", "weight": 0.15},
-        {"code": "SURVEILLANCE", "label": "Notifiable case handling score", "value": round(notif_score, 1), "unit": "pts", "weight": 0.15},
+        {
+            "code": "WORKFORCE_LICENCE",
+            "label": "Staff with active licence on file",
+            "value": round(workforce_pct, 1),
+            "unit": "%",
+            "weight": 0.25,
+        },
+        {
+            "code": "STOCK_OK",
+            "label": "SKUs at or above minimum",
+            "value": round(stock_ok_pct, 1),
+            "unit": "%",
+            "weight": 0.25,
+        },
+        {
+            "code": "ER_LOAD",
+            "label": "ER load score (higher = lighter load)",
+            "value": round(er_score, 1),
+            "unit": "pts",
+            "weight": 0.20,
+        },
+        {
+            "code": "REFERRAL_FLOW",
+            "label": "Referral backlog score",
+            "value": round(ref_score, 1),
+            "unit": "pts",
+            "weight": 0.15,
+        },
+        {
+            "code": "SURVEILLANCE",
+            "label": "Notifiable case handling score",
+            "value": round(notif_score, 1),
+            "unit": "pts",
+            "weight": 0.15,
+        },
     ]
 
     return {
@@ -165,10 +202,11 @@ def national_scorecard(db: Session, *, days: int = 30, limit: int = 50) -> dict:
     facilities = list(
         db.scalars(
             select(Facility).where(Facility.status == "ACTIVE").order_by(Facility.name).limit(limit)
-        )
+        ).all()
     )
     cards = []
     bands = {"GREEN": 0, "AMBER": 0, "RED": 0}
+    errors: list[str] = []
     for fac in facilities:
         try:
             card = facility_scorecard(db, facility_id=fac.id, days=days)
@@ -182,8 +220,9 @@ def national_scorecard(db: Session, *, days: int = 30, limit: int = 50) -> dict:
                 }
             )
             bands[card["band"]] = bands.get(card["band"], 0) + 1
-        except Exception:
-            continue
+        except Exception as exc:
+            logger.exception("scorecard failed facility_id=%s", fac.id)
+            errors.append(f"{fac.id}:{type(exc).__name__}")
 
     cards.sort(key=lambda x: -x["composite_score"])
     avg = round(sum(c["composite_score"] for c in cards) / len(cards), 1) if cards else 0.0
@@ -194,6 +233,7 @@ def national_scorecard(db: Session, *, days: int = 30, limit: int = 50) -> dict:
         "average_composite": avg,
         "bands": bands,
         "facilities": cards,
+        "errors": errors[:20],
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "developer": "BAHATI GAD WANGWE",
     }
