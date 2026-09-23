@@ -28,7 +28,6 @@ def county_rollout_dashboard(db: Session, *, limit_counties: int = 50) -> dict:
     by_county: dict[str, dict] = defaultdict(
         lambda: {
             "facility_count": 0,
-            "facility_ids": [],
             "staff_count": 0,
             "encounters": 0,
             "claims": 0,
@@ -41,9 +40,7 @@ def county_rollout_dashboard(db: Session, *, limit_counties: int = 50) -> dict:
     for fac in facilities:
         county = (getattr(fac, "county", None) or "UNKNOWN").strip() or "UNKNOWN"
         by_county[county]["facility_count"] += 1
-        by_county[county]["facility_ids"].append(str(fac.id))
 
-    # Aggregate operational volume by joining facility_id where possible
     staff_rows = db.execute(
         select(Facility.county, func.count())
         .select_from(Staff)
@@ -113,9 +110,8 @@ def county_rollout_dashboard(db: Session, *, limit_counties: int = 50) -> dict:
 
     counties = []
     for name, data in by_county.items():
-        # Simple maturity: facilities + activity signals
         score = 0.0
-        score += min(data["facility_count"], 10) * 4  # up to 40
+        score += min(data["facility_count"], 10) * 4
         score += 15 if data["staff_count"] > 0 else 0
         score += 15 if data["encounters"] > 0 else 0
         score += 10 if data["claims"] > 0 else 0
@@ -156,7 +152,6 @@ def county_rollout_dashboard(db: Session, *, limit_counties: int = 50) -> dict:
 
 
 def pilot_evidence_pack(db: Session, *, facility_id: UUID | None = None) -> dict:
-    """Evidence package for auditors / MoH pilot review."""
     total_facilities = db.scalar(
         select(func.count()).select_from(Facility).where(Facility.status == "ACTIVE")
     ) or 0
@@ -177,25 +172,31 @@ def pilot_evidence_pack(db: Session, *, facility_id: UUID | None = None) -> dict
             "name": getattr(fac, "name", None),
             "county": getattr(fac, "county", None),
             "status": getattr(fac, "status", None),
-            "staff": db.scalar(
-                select(func.count()).select_from(Staff).where(
-                    Staff.facility_id == facility_id, Staff.status == "ACTIVE"
+            "staff": int(
+                db.scalar(
+                    select(func.count()).select_from(Staff).where(
+                        Staff.facility_id == facility_id, Staff.status == "ACTIVE"
+                    )
                 )
-            )
-            or 0,
-            "encounters": db.scalar(
-                select(func.count()).select_from(Encounter).where(
-                    Encounter.facility_id == facility_id
+                or 0
+            ),
+            "encounters": int(
+                db.scalar(
+                    select(func.count()).select_from(Encounter).where(
+                        Encounter.facility_id == facility_id
+                    )
                 )
-            )
-            or 0,
-            "claims": db.scalar(
-                select(func.count())
-                .select_from(Claim)
-                .join(Encounter, Encounter.id == Claim.encounter_id)
-                .where(Encounter.facility_id == facility_id)
-            )
-            or 0,
+                or 0
+            ),
+            "claims": int(
+                db.scalar(
+                    select(func.count())
+                    .select_from(Claim)
+                    .join(Encounter, Encounter.id == Claim.encounter_id)
+                    .where(Encounter.facility_id == facility_id)
+                )
+                or 0
+            ),
         }
 
     evidence_checklist = [
@@ -208,6 +209,8 @@ def pilot_evidence_pack(db: Session, *, facility_id: UUID | None = None) -> dict
         {"id": "ONBOARDING_KIT", "label": "Facility onboarding kit", "status": "IMPLEMENTED"},
         {"id": "TRAINING_SOPS", "label": "Training SOP API", "status": "IMPLEMENTED"},
         {"id": "RELIABILITY", "label": "Reliability readiness matrix", "status": "IMPLEMENTED"},
+        {"id": "WAREHOUSE", "label": "National warehouse facts + CSV export", "status": "IMPLEMENTED"},
+        {"id": "DHA_SUBMISSION_KIT", "label": "Certification submission kit", "status": "IMPLEMENTED"},
         {"id": "LIVE_SHA_CREDS", "label": "Production SHA tokens", "status": "OPERATOR_OWNED"},
         {"id": "EXTERNAL_PENTEST", "label": "Independent penetration test", "status": "PENDING_EXTERNAL"},
         {"id": "DHA_CERT", "label": "DHA certification submission", "status": "PENDING_EXTERNAL"},
@@ -215,7 +218,7 @@ def pilot_evidence_pack(db: Session, *, facility_id: UUID | None = None) -> dict
 
     return {
         "program": "AFYASYNC_NATIONAL_REPLACEMENT",
-        "phase": 28,
+        "phase": 30,
         "national_totals": {
             "active_facilities": int(total_facilities),
             "active_staff": int(total_staff),
@@ -231,7 +234,9 @@ def pilot_evidence_pack(db: Session, *, facility_id: UUID | None = None) -> dict
             "/api/v1/reliability/readiness-matrix",
             "/api/v1/fraud-integrity/facility-scan",
             "/api/v1/certification/evidence",
+            "/api/v1/certification/submission-kit",
             "/api/v1/rollout/county-dashboard",
+            "/api/v1/warehouse/facts",
         ],
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "developer": "BAHATI GAD WANGWE",
