@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -21,10 +22,22 @@ TARGET_REGISTRY_RECORDS = 10_000
 _lock = threading.Lock()
 _running = False
 _retry_started = False
+_last_unavailable_log_at = 0.0
+_unavailable_log_interval_sec = 3600  # log at most once per hour
 _state: dict[str, int | bool | str] = {
-    "running": False, "pages": 0, "seen": 0, "changed": 0,
-    "message": "not_started", "source": "none", "last_success_at": ""
+    "running": False,
+    "pages": 0,
+    "seen": 0,
+    "changed": 0,
+    "message": "not_started",
+    "source": "none",
+    "last_success_at": "",
 }
+
+
+def _kmhfr_enabled() -> bool:
+    raw = (os.getenv("KMHFR_SYNC_ENABLED") or "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
 
 
 def _value(item: dict, *keys: str) -> str | None:
@@ -38,7 +51,12 @@ def _value(item: dict, *keys: str) -> str | None:
 
 
 def _active(item: dict) -> bool:
-    return (_value(item, "operation_status", "operation_status_name", "status") or "Operational").lower() in {"operational", "active", "open", "operating"}
+    return (_value(item, "operation_status", "operation_status_name", "status") or "Operational").lower() in {
+        "operational",
+        "active",
+        "open",
+        "operating",
+    }
 
 
 def _facility_id(key: str) -> str:
@@ -94,33 +112,78 @@ def _upsert(db, item: dict) -> bool:
     kind = _value(item, "facility_type_name", "facility_type", "type") or "HEALTH_FACILITY"
     active = _active(item)
 
-    facility = db.scalar(select(Facility).where(Facility.registration_number == registration).limit(1)) if registration else None
+    facility = (
+        db.scalar(select(Facility).where(Facility.registration_number == registration).limit(1))
+        if registration
+        else None
+    )
     if facility is None:
-        facility = db.scalar(select(Facility).where(func.lower(Facility.name) == name.lower(), func.lower(func.coalesce(Facility.county, "")) == (county or "").lower()).limit(1))
+        facility = db.scalar(
+            select(Facility)
+            .where(
+                func.lower(Facility.name) == name.lower(),
+                func.lower(func.coalesce(Facility.county, "")) == (county or "").lower(),
+            )
+            .limit(1)
+        )
 
     action = "UPDATED"
     if facility is None:
         identity = registration or f"{name}|{county or ''}|{sub_county or ''}"
-        facility = Facility(facility_id=_facility_id(identity), name=name, facility_type=kind, registration_number=registration, county=county, sub_county=sub_county, status="ACTIVE" if active else "INACTIVE")
+        facility = Facility(
+            facility_id=_facility_id(identity),
+            name=name,
+            facility_type=kind,
+            registration_number=registration,
+            county=county,
+            sub_county=sub_county,
+            status="ACTIVE" if active else "INACTIVE",
+        )
         db.add(facility)
         db.flush()
         action = "CREATED"
         before = None
     else:
-        before = {"name": facility.name, "facility_type": facility.facility_type, "registration_number": facility.registration_number, "county": facility.county, "sub_county": facility.sub_county, "status": facility.status}
+        before = {
+            "name": facility.name,
+            "facility_type": facility.facility_type,
+            "registration_number": facility.registration_number,
+            "county": facility.county,
+            "sub_county": facility.sub_county,
+            "status": facility.status,
+        }
         changed = False
-        for field, value in {"name": name, "facility_type": kind, "county": county, "sub_county": sub_county, "status": "ACTIVE" if active else "INACTIVE", "registration_number": registration}.items():
+        for field, value in {
+            "name": name,
+            "facility_type": kind,
+            "county": county,
+            "sub_county": sub_county,
+            "status": "ACTIVE" if active else "INACTIVE",
+            "registration_number": registration,
+        }.items():
             if value is not None and getattr(facility, field) != value:
                 setattr(facility, field, value)
                 changed = True
         if not changed:
             action = "SEEN"
 
-    existing = db.scalar(select(FacilityRegistryRecord).where(FacilityRegistryRecord.facility_id == facility.id).limit(1))
+    existing = db.scalar(
+        select(FacilityRegistryRecord).where(FacilityRegistryRecord.facility_id == facility.id).limit(1)
+    )
     now = datetime.now(timezone.utc)
-    full_after = {"name": name, "facility_type": kind, "registration_number": registration, "county": county, "sub_county": sub_county, "status": "ACTIVE" if active else "INACTIVE", **registry}
+    full_after = {
+        "name": name,
+        "facility_type": kind,
+        "registration_number": registration,
+        "county": county,
+        "sub_county": sub_county,
+        "status": "ACTIVE" if active else "INACTIVE",
+        **registry,
+    }
     if existing is None:
-        existing = FacilityRegistryRecord(facility_id=facility.id, source="KMHFR", **registry, raw_record=item, last_seen_at=now)
+        existing = FacilityRegistryRecord(
+            facility_id=facility.id, source="KMHFR", **registry, raw_record=item, last_seen_at=now
+        )
         db.add(existing)
         if action == "SEEN":
             action = "CREATED"
@@ -138,29 +201,84 @@ def _upsert(db, item: dict) -> bool:
             action = "UPDATED"
 
     if action != "SEEN":
-        db.add(FacilityRegistryHistory(facility_id=facility.id, source="KMHFR", action=action, changed_fields=changed_fields, before_record=before, after_record=full_after))
+        db.add(
+            FacilityRegistryHistory(
+                facility_id=facility.id,
+                source="KMHFR",
+                action=action,
+                changed_fields=changed_fields,
+                before_record=before,
+                after_record=full_after,
+            )
+        )
     return action != "SEEN"
+
+
+def _log_snapshot_unavailable() -> None:
+    global _last_unavailable_log_at
+    now = time.monotonic()
+    if now - _last_unavailable_log_at < _unavailable_log_interval_sec:
+        return
+    _last_unavailable_log_at = now
+    logger.warning(
+        "KMHFR_SNAPSHOT_UNAVAILABLE path=%s; using local facility data only. "
+        "Place data/kmhfr_facilities.json or set KMHFR_SYNC_ENABLED=0 to silence retries.",
+        SNAPSHOT,
+    )
 
 
 def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
     global _state
+    if not _kmhfr_enabled() and not force:
+        _state = {
+            "running": False,
+            "pages": 0,
+            "seen": 0,
+            "changed": 0,
+            "message": "disabled",
+            "source": "none",
+            "last_success_at": str(_state.get("last_success_at", "")),
+        }
+        return _state
+
     db = SessionLocal()
     seen = changed = 0
     locked = False
     try:
-        locked = bool(db.execute(text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"), {"key": LOCK_KEY}).scalar())
+        locked = bool(
+            db.execute(text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"), {"key": LOCK_KEY}).scalar()
+        )
         if not locked:
-            return {"running": True, "pages": 0, "seen": 0, "changed": 0, "message": "already_running", "source": "snapshot"}
+            return {
+                "running": True,
+                "pages": 0,
+                "seen": 0,
+                "changed": 0,
+                "message": "already_running",
+                "source": "snapshot",
+            }
         if not SNAPSHOT.exists():
-            _state = {"running": False, "pages": 0, "seen": 0, "changed": 0, "message": "snapshot_unavailable", "source": "none", "last_success_at": str(_state.get("last_success_at", ""))}
-            logger.warning("KMHFR_SNAPSHOT_UNAVAILABLE; national registry will remain on local data until the official snapshot is available")
+            _state = {
+                "running": False,
+                "pages": 0,
+                "seen": 0,
+                "changed": 0,
+                "message": "snapshot_unavailable",
+                "source": "none",
+                "last_success_at": str(_state.get("last_success_at", "")),
+            }
+            _log_snapshot_unavailable()
             return _state
         with SNAPSHOT.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
         records = payload.get("records") if isinstance(payload, dict) else payload
         if not isinstance(records, list) or len(records) < MIN_SNAPSHOT_RECORDS:
             raise RuntimeError(f"KMHFR_SNAPSHOT_INVALID:{len(records) if isinstance(records, list) else 0}")
-        logger.info("KMHFR_SNAPSHOT_IMPORT_START records=%s source=%s", len(records), payload.get("source") if isinstance(payload, dict) else "unknown")
+        logger.info(
+            "KMHFR_SNAPSHOT_IMPORT_START records=%s source=%s",
+            len(records),
+            payload.get("source") if isinstance(payload, dict) else "unknown",
+        )
         for item in records:
             if isinstance(item, dict):
                 seen += 1
@@ -172,12 +290,28 @@ def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
                     logger.info("KMHFR_SNAPSHOT_IMPORT_PROGRESS seen=%s changed=%s", seen, changed)
         db.commit()
         timestamp = datetime.now(timezone.utc).isoformat()
-        _state = {"running": False, "pages": 1, "seen": seen, "changed": changed, "message": "complete", "source": "official_kmhfr_snapshot", "last_success_at": timestamp}
+        _state = {
+            "running": False,
+            "pages": 1,
+            "seen": seen,
+            "changed": changed,
+            "message": "complete",
+            "source": "official_kmhfr_snapshot",
+            "last_success_at": timestamp,
+        }
         logger.info("KMHFR_SNAPSHOT_IMPORT_COMPLETE seen=%s changed=%s", seen, changed)
         return _state
     except Exception as exc:
         db.rollback()
-        _state = {"running": False, "pages": 0, "seen": seen, "changed": changed, "message": f"failed:{type(exc).__name__}", "source": "snapshot", "last_success_at": str(_state.get("last_success_at", ""))}
+        _state = {
+            "running": False,
+            "pages": 0,
+            "seen": seen,
+            "changed": changed,
+            "message": f"failed:{type(exc).__name__}",
+            "source": "snapshot",
+            "last_success_at": str(_state.get("last_success_at", "")),
+        }
         logger.exception("KMHFR_REGISTRY_IMPORT_FAILED seen=%s", seen)
         return _state
     finally:
@@ -191,11 +325,14 @@ def sync_all(*, force: bool = False) -> dict[str, int | bool | str]:
 
 def start_sync() -> bool:
     global _running
+    if not _kmhfr_enabled():
+        return False
     start_sync_retry_loop()
     with _lock:
         if _running:
             return False
         _running = True
+
     def worker():
         global _running
         try:
@@ -203,31 +340,50 @@ def start_sync() -> bool:
         finally:
             with _lock:
                 _running = False
+
     threading.Thread(target=worker, name="kmhfr-registry-import", daemon=True).start()
     return True
 
 
 def start_sync_retry_loop() -> bool:
     global _retry_started
+    if not _kmhfr_enabled():
+        return False
     with _lock:
         if _retry_started:
             return False
         _retry_started = True
+
     def worker():
-        time.sleep(10)
+        # Backoff: 2 min → 5 → 15 → 30 → 60 min when snapshot keeps missing
+        delays = [120, 300, 900, 1800, 3600]
+        delay_idx = 0
+        time.sleep(15)
         while True:
             try:
+                if not _kmhfr_enabled():
+                    logger.info("KMHFR_SYNC_DISABLED stopping retry loop")
+                    return
                 with SessionLocal() as db:
                     registry_records = db.scalar(select(func.count(FacilityRegistryRecord.id))) or 0
                 if registry_records >= TARGET_REGISTRY_RECORDS:
                     logger.info("KMHFR_REGISTRY_READY registry_records=%s", registry_records)
                     return
+                if not SNAPSHOT.exists():
+                    _log_snapshot_unavailable()
+                    sleep_for = delays[min(delay_idx, len(delays) - 1)]
+                    delay_idx = min(delay_idx + 1, len(delays) - 1)
+                    time.sleep(sleep_for)
+                    continue
                 if not _running:
                     logger.info("KMHFR_REGISTRY_RETRY registry_records=%s", registry_records)
                     start_sync()
+                    delay_idx = 0
             except Exception:
                 logger.exception("KMHFR_REGISTRY_RETRY_CHECK_FAILED")
-            time.sleep(60)
+            sleep_for = delays[min(delay_idx, len(delays) - 1)]
+            time.sleep(sleep_for)
+
     threading.Thread(target=worker, name="kmhfr-registry-retry", daemon=True).start()
     return True
 
@@ -236,4 +392,11 @@ def sync_state(db) -> dict[str, int | bool | str]:
     active = db.scalar(select(func.count(Facility.id)).where(Facility.status == "ACTIVE")) or 0
     total = db.scalar(select(func.count(Facility.id))) or 0
     registry = db.scalar(select(func.count(FacilityRegistryRecord.id))) or 0
-    return {"active_facilities": int(active), "total_facilities": int(total), "registry_records": int(registry), "sync_running": _running, **_state}
+    return {
+        "active_facilities": int(active),
+        "total_facilities": int(total),
+        "registry_records": int(registry),
+        "sync_running": _running,
+        "enabled": _kmhfr_enabled(),
+        **_state,
+    }
