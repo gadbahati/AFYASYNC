@@ -203,7 +203,12 @@ const _apiCore: any = {
   portalIssueContinuityCard: () => request("/api/v1/portal/continuity-card/issue", { method: "POST", body: JSON.stringify({}) }),
   portalRevokeContinuityCard: (id: string) => request(`/api/v1/portal/continuity-card/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }),
   continuityVerify: (token: string) => request("/api/v1/continuity/verify", { method: "POST", body: JSON.stringify({ token }) }, false),
-  facilityContinuityScan: (token: string) => request("/api/v1/facility/continuity/scan", { method: "POST", body: JSON.stringify({ token }) }),\n  offlineStats: () => request("/api/v1/offline/stats"),\n  offlinePending: (limit = 50) => request(`/api/v1/offline/pending?limit=${limit}`),\n  offlineEnqueue: (payload: any) => request("/api/v1/offline/enqueue", { method: "POST", body: JSON.stringify(payload) }),\n  offlineDrain: (limit = 25) => request(`/api/v1/offline/drain?limit=${limit}`, { method: "POST" }),\n  offlineProbe: (target: string, ok: boolean, latency_ms?: number, detail?: string) => request("/api/v1/offline/connectivity-probe", { method: "POST", body: JSON.stringify({ target, ok, latency_ms, detail }) }),
+  facilityContinuityScan: (token: string) => request("/api/v1/facility/continuity/scan", { method: "POST", body: JSON.stringify({ token }) }),
+  offlineStats: () => request("/api/v1/offline/stats"),
+  offlinePending: (limit = 50) => request(`/api/v1/offline/pending?limit=${limit}`),
+  offlineEnqueue: (payload: any) => request("/api/v1/offline/enqueue", { method: "POST", body: JSON.stringify(payload) }),
+  offlineDrain: (limit = 25) => request(`/api/v1/offline/drain?limit=${limit}`, { method: "POST" }),
+  offlineProbe: (target: string, ok: boolean, latency_ms?: number, detail?: string) => request("/api/v1/offline/connectivity-probe", { method: "POST", body: JSON.stringify({ target, ok, latency_ms, detail }) }),
 };
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
