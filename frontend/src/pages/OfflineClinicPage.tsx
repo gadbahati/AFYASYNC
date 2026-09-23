@@ -1,131 +1,150 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 
-type OfflineEvent = {
-  id: string;
-  event_type: string;
-  status: string;
-  attempts: number;
-  idempotency_key: string;
-  next_retry_at?: string | null;
-  created_at?: string | null;
-};
+type Patient = { id: string; afya_id: string; first_name: string; middle_name?: string | null; last_name: string; phone?: string | null; status: string };
+type Department = { id: string; name: string; code: string; status: string };
+type Draft = { id: string; patient_id: string; department_id: string; encounter_type: string; coverage_mode: "CASH" | "SHA" | "AFYASYNC" | "OTHER"; reason: string; created_at: string; sync_status: "LOCAL" | "QUEUED" | "SYNCED" | "FAILED"; error?: string };
+type OfflineEvent = { id: string; event_type: string; status: string; attempts: number; idempotency_key: string; next_retry_at?: string | null; created_at?: string | null };
 
-type OfflineStats = Record<string, number | string | null | undefined>;
+const DRAFTS = "afyasync:offline:clinical-drafts:v1";
+const PATIENTS = "afyasync:offline:patient-cache:v1";
+const DEPARTMENTS = "afyasync:offline:department-cache:v1";
 
-const LOCAL_QUEUE_KEY = "afyasync:offline-clinic-queue";
+function read<T>(key: string, fallback: T): T { try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; } }
+function write(key: string, value: unknown) { localStorage.setItem(key, JSON.stringify(value)); }
 
 export function OfflineClinicPage() {
-  const [stats, setStats] = useState<OfflineStats>({});
+  const auth = useAuth();
+  const [online, setOnline] = useState(navigator.onLine);
+  const [patients, setPatients] = useState<Patient[]>(() => read(PATIENTS, []));
+  const [departments, setDepartments] = useState<Department[]>(() => read(DEPARTMENTS, []));
+  const [drafts, setDrafts] = useState<Draft[]>(() => read(DRAFTS, []));
   const [events, setEvents] = useState<OfflineEvent[]>([]);
-  const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [stats, setStats] = useState<any>({});
+  const [selectedPatient, setSelectedPatient] = useState("");
+  const [patientSearch, setPatientSearch] = useState("");
+  const [department, setDepartment] = useState("");
+  const [encounterType, setEncounterType] = useState("OUTPATIENT");
+  const [coverageMode, setCoverageMode] = useState<Draft["coverage_mode"]>("CASH");
+  const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
-  const [eventType, setEventType] = useState("CLINIC_NOTE");
-  const [payload, setPayload] = useState('{"note":"Offline clinic draft"}');
-  const [localQueue, setLocalQueue] = useState<Array<{ id: string; event_type: string; payload: unknown; created_at: string }>>(() => {
-    try { return JSON.parse(localStorage.getItem(LOCAL_QUEUE_KEY) || "[]"); } catch { return []; }
-  });
+  const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
+    if (!navigator.onLine || !auth.facilityId) return;
     try {
-      const [s, p] = await Promise.all([api.offlineStats(), api.offlinePending()]);
-      setStats(s || {});
-      setEvents((p?.events || []) as OfflineEvent[]);
-      setMessage("");
-    } catch (error: any) {
-      setMessage(error?.message || error?.code || "Unable to load offline status.");
-    } finally { setLoading(false); }
-  }, []);
+      const [p, d, s, pending] = await Promise.all([
+        api.listPatients(100, 0),
+        api.listDepartments(auth.facilityId),
+        api.offlineStats(),
+        api.offlinePending(100),
+      ]);
+      const ps = (p?.items || []) as Patient[];
+      const ds = (d || []) as Department[];
+      setPatients(ps); write(PATIENTS, ps);
+      setDepartments(ds); write(DEPARTMENTS, ds);
+      setStats(s || {}); setEvents((pending?.events || []) as OfflineEvent[]);
+    } catch (e: any) {
+      setMessage(e?.message || e?.code || "Offline mode is active. Using cached clinic data.");
+    }
+  }, [auth.facilityId]);
 
   useEffect(() => {
-    const onOnline = () => setOnline(true);
-    const onOffline = () => setOnline(false);
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
+    const onlineHandler = () => { setOnline(true); void refresh(); };
+    const offlineHandler = () => setOnline(false);
+    window.addEventListener("online", onlineHandler);
+    window.addEventListener("offline", offlineHandler);
     void refresh();
-    return () => { window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
+    return () => { window.removeEventListener("online", onlineHandler); window.removeEventListener("offline", offlineHandler); };
   }, [refresh]);
 
-  const persistLocal = (next: typeof localQueue) => {
-    setLocalQueue(next);
-    localStorage.setItem(LOCAL_QUEUE_KEY, JSON.stringify(next));
+  useEffect(() => { write(DRAFTS, drafts); }, [drafts]);
+
+  const visiblePatients = useMemo(() => {
+    const q = patientSearch.trim().toLowerCase();
+    if (!q) return patients.slice(0, 50);
+    return patients.filter(p => [p.afya_id, p.first_name, p.middle_name, p.last_name, p.phone].filter(Boolean).join(" ").toLowerCase().includes(q)).slice(0, 50);
+  }, [patients, patientSearch]);
+
+  const selected = patients.find(p => p.id === selectedPatient);
+  const pendingLocal = drafts.filter(d => d.sync_status !== "SYNCED").length;
+  const pendingServer = events.filter(e => e.status === "PENDING" || e.status === "FAILED").length;
+
+  const saveDraft = () => {
+    if (!selectedPatient || !department || !reason.trim()) { setMessage("Select a patient and department and enter the clinical reason."); return; }
+    const draft: Draft = { id: crypto.randomUUID(), patient_id: selectedPatient, department_id: department, encounter_type: encounterType, coverage_mode: coverageMode, reason: reason.trim(), created_at: new Date().toISOString(), sync_status: "LOCAL" };
+    setDrafts(v => [...v, draft]);
+    setReason(""); setMessage("Clinical encounter saved securely on this device. It has not been submitted yet.");
   };
 
-  const queueLocally = () => {
+  const queueDraft = async (draft: Draft) => {
     try {
-      const parsed = JSON.parse(payload);
-      const next = [...localQueue, { id: crypto.randomUUID(), event_type: eventType, payload: parsed, created_at: new Date().toISOString() }];
-      persistLocal(next);
-      setMessage("Saved to this device. It will remain available even if the network drops.");
-    } catch { setMessage("Payload must be valid JSON."); }
+      const key = draft.id;
+      await api.offlineEnqueue({ event_type: "CLINICAL_ENCOUNTER", payload: { patient_id: draft.patient_id, department_id: draft.department_id, encounter_type: draft.encounter_type, coverage_mode: draft.coverage_mode, reason: draft.reason }, idempotency_key: key });
+      setDrafts(v => v.map(d => d.id === draft.id ? { ...d, sync_status: "QUEUED", error: undefined } : d));
+    } catch (e: any) {
+      setDrafts(v => v.map(d => d.id === draft.id ? { ...d, sync_status: "FAILED", error: e?.message || e?.code || "Queue failed" } : d));
+    }
   };
 
-  const enqueue = async () => {
+  const syncLocal = async () => {
+    if (!online) { setMessage("Reconnect before synchronising."); return; }
+    setBusy(true);
     try {
-      setBusy(true);
-      const parsed = JSON.parse(payload);
-      await api.offlineEnqueue({ event_type: eventType, payload: parsed, idempotency_key: crypto.randomUUID() });
-      setMessage("Event queued for synchronisation.");
+      for (const draft of drafts.filter(d => d.sync_status === "LOCAL" || d.sync_status === "FAILED")) await queueDraft(draft);
+      const result = await api.offlineDrain(100);
+      setMessage(`Synchronisation finished: ${result?.processed ?? 0} event(s) processed.`);
       await refresh();
-    } catch (error: any) {
-      setMessage(error?.message || error?.code || "Could not queue event. Save it locally instead.");
     } finally { setBusy(false); }
   };
 
-  const drain = async () => {
-    try {
-      setBusy(true);
-      const result = await api.offlineDrain();
-      setMessage(`Synchronisation complete. ${result?.processed ?? 0} event(s) processed.`);
-      await refresh();
-    } catch (error: any) {
-      setMessage(error?.message || error?.code || "Synchronisation failed.");
-    } finally { setBusy(false); }
-  };
-
-  const probe = async () => {
-    try {
-      setBusy(true);
-      await api.offlineProbe("AfyaSync API", online, undefined, online ? "Browser connectivity reported online" : "Browser is offline");
-      setMessage("Connectivity probe recorded.");
-      await refresh();
-    } catch (error: any) { setMessage(error?.message || error?.code || "Probe failed."); }
-    finally { setBusy(false); }
-  };
-
-  const pendingCount = useMemo(() => events.filter(e => e.status === "PENDING").length, [events]);
+  const removeDraft = (id: string) => setDrafts(v => v.filter(d => d.id !== id));
 
   return <section>
     <div className="page-header">
-      <div><p className="eyebrow">OFFLINE-FIRST CLINIC</p><h1>Clinic resilience</h1><p className="muted">Keep frontline work moving through weak or interrupted connectivity, then synchronise safely when the connection returns.</p></div>
-      <div className="page-actions"><button className="secondary-button" onClick={() => void refresh()} disabled={loading}>Refresh</button><button className="primary-button" onClick={() => void drain()} disabled={busy || !online}>Synchronise</button></div>
+      <div><p className="eyebrow">PHASE 21 • OFFLINE-FIRST</p><h1>Offline clinic workspace</h1><p className="muted">Continue core registration and encounter work during connectivity loss. Data is stored locally first and synchronised with an idempotent server outbox when connectivity returns.</p></div>
+      <div className="page-actions"><span className={online ? "status-pill ok" : "status-pill warning"}>{online ? "ONLINE" : "OFFLINE"}</span><button className="secondary-button" onClick={() => void refresh()}>Refresh cache</button><button className="primary-button" onClick={() => void syncLocal()} disabled={busy || !online}>{busy ? "Synchronising…" : "Synchronise"}</button></div>
     </div>
     {message && <div className="notice">{message}</div>}
     <div className="stat-grid">
-      <div className="stat-card"><span>Connection</span><strong>{online ? "Online" : "Offline"}</strong><small>{online ? "API connection available" : "Local work can still be queued"}</small></div>
-      <div className="stat-card"><span>Pending sync</span><strong>{pendingCount}</strong><small>Server-side outbox events</small></div>
-      <div className="stat-card"><span>Device queue</span><strong>{localQueue.length}</strong><small>Saved locally in this browser</small></div>
-      <div className="stat-card"><span>Server total</span><strong>{String(stats.total ?? stats.pending ?? "—")}</strong><small>Reported by offline service</small></div>
+      <div className="stat-card"><span>Connection</span><strong>{online ? "Available" : "Interrupted"}</strong><small>{online ? "Server reachable" : "Local workflow active"}</small></div>
+      <div className="stat-card"><span>Cached patients</span><strong>{patients.length}</strong><small>Last successful facility cache</small></div>
+      <div className="stat-card"><span>Local drafts</span><strong>{pendingLocal}</strong><small>Waiting for synchronisation</small></div>
+      <div className="stat-card"><span>Server outbox</span><strong>{pendingServer}</strong><small>Pending or retryable</small></div>
     </div>
+
     <div className="dashboard-grid">
       <div className="panel">
-        <div className="panel-header"><div><h2>Offline clinical queue</h2><p className="muted">Create a safe, idempotent event for the server outbox.</p></div><span className={online ? "status-pill ok" : "status-pill warning"}>{online ? "CONNECTED" : "OFFLINE"}</span></div>
-        <label>Event type<input value={eventType} onChange={e => setEventType(e.target.value)} maxLength={80} /></label>
-        <label>Payload<textarea rows={7} value={payload} onChange={e => setPayload(e.target.value)} /></label>
-        <div className="button-row"><button className="secondary-button" onClick={queueLocally}>Save on device</button><button className="primary-button" onClick={() => void enqueue()} disabled={busy || !online}>Queue for sync</button></div>
+        <div className="panel-header"><div><h2>Start encounter</h2><p className="muted">Works against the cached patient and department list when offline.</p></div></div>
+        <label>Find patient<input value={patientSearch} onChange={e => setPatientSearch(e.target.value)} placeholder="Afya ID, name or phone" /></label>
+        <label>Patient<select value={selectedPatient} onChange={e => setSelectedPatient(e.target.value)}><option value="">Select patient</option>{visiblePatients.map(p => <option key={p.id} value={p.id}>{p.afya_id} — {p.first_name} {p.middle_name || ""} {p.last_name}</option>)}</select></label>
+        {selected && <div className="notice"><strong>{selected.first_name} {selected.last_name}</strong> · {selected.afya_id}{selected.phone ? ` · ${selected.phone}` : ""}</div>}
+        <label>Department<select value={department} onChange={e => setDepartment(e.target.value)}><option value="">Select department</option>{departments.filter(d => d.status === "ACTIVE").map(d => <option key={d.id} value={d.id}>{d.name} ({d.code})</option>)}</select></label>
+        <div className="form-grid-2">
+          <label>Encounter type<select value={encounterType} onChange={e => setEncounterType(e.target.value)}><option>OUTPATIENT</option><option>EMERGENCY</option><option>INPATIENT</option><option>FOLLOW_UP</option></select></label>
+          <label>Coverage<select value={coverageMode} onChange={e => setCoverageMode(e.target.value as Draft["coverage_mode"])}><option value="CASH">Cash</option><option value="SHA">SHA</option><option value="AFYASYNC">AfyaSync</option><option value="OTHER">Other</option></select></label>
+        </div>
+        <label>Clinical reason<textarea rows={5} value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason for encounter" /></label>
+        <button className="primary-button" onClick={saveDraft}>Save encounter locally</button>
       </div>
+
       <div className="panel">
-        <div className="panel-header"><div><h2>Connectivity</h2><p className="muted">Record a connectivity check for operations and troubleshooting.</p></div></div>
-        <div className="connectivity-card"><div className="connection-indicator" /><div><strong>{online ? "Network available" : "Network unavailable"}</strong><p className="muted">{online ? "You can synchronise the server outbox." : "Continue with local queueing until service returns."}</p></div></div>
-        <button className="secondary-button" onClick={() => void probe()} disabled={busy}>Record connectivity probe</button>
+        <div className="panel-header"><div><h2>Offline safety</h2><p className="muted">The application distinguishes local storage from server acceptance.</p></div></div>
+        <div className="connectivity-card"><div className="connection-indicator" /><div><strong>{online ? "Connected" : "Working offline"}</strong><p className="muted">{online ? "New local drafts can be queued and synchronised." : "Do not close or clear this browser profile until drafts are synchronised."}</p></div></div>
+        <div className="notice"><strong>Important:</strong> cached data is read-only while offline. New clinical encounters are saved locally and are not treated as server records until synchronisation succeeds.</div>
+        <button className="secondary-button" onClick={async () => { setBusy(true); try { await api.offlineProbe("AfyaSync API", online, undefined, online ? "Browser reports connectivity" : "Browser reports offline"); setMessage("Connectivity probe recorded."); } catch (e: any) { setMessage(e?.message || "Probe failed."); } finally { setBusy(false); } }} disabled={busy}>Record connectivity probe</button>
       </div>
     </div>
+
     <div className="panel">
-      <div className="panel-header"><div><h2>Server outbox</h2><p className="muted">Events waiting for reliable processing.</p></div></div>
-      {loading ? <p className="muted">Loading…</p> : events.length === 0 ? <div className="empty-state">No pending server events.</div> : <div className="table-wrap"><table><thead><tr><th>Type</th><th>Status</th><th>Attempts</th><th>Created</th><th>Next retry</th></tr></thead><tbody>{events.map(e => <tr key={e.id}><td><strong>{e.event_type}</strong></td><td>{e.status}</td><td>{e.attempts}</td><td>{e.created_at ? new Date(e.created_at).toLocaleString() : "—"}</td><td>{e.next_retry_at ? new Date(e.next_retry_at).toLocaleString() : "Ready"}</td></tr>)}</tbody></table></div>}
+      <div className="panel-header"><div><h2>Local encounter queue</h2><p className="muted">Every draft has an explicit synchronisation state.</p></div></div>
+      {drafts.length === 0 ? <div className="empty-state">No local encounters.</div> : <div className="table-wrap"><table><thead><tr><th>Patient</th><th>Type</th><th>Coverage</th><th>Created</th><th>State</th><th>Action</th></tr></thead><tbody>{drafts.map(d => { const p=patients.find(x=>x.id===d.patient_id); return <tr key={d.id}><td><strong>{p ? `${p.first_name} ${p.last_name}` : d.patient_id}</strong><br/><span className="muted small">{p?.afya_id || "Patient unavailable in cache"}</span></td><td>{d.encounter_type}</td><td>{d.coverage_mode}</td><td>{new Date(d.created_at).toLocaleString()}</td><td>{d.sync_status}{d.error ? <><br/><span className="muted small">{d.error}</span></> : null}</td><td><div className="button-row">{d.sync_status !== "QUEUED" && <button className="secondary-button" onClick={() => void queueDraft(d)} disabled={!online}>Queue</button>}<button className="linkish" onClick={() => removeDraft(d.id)}>Remove</button></div></td></tr>;})}</tbody></table></div>}
+    </div>
+
+    <div className="panel">
+      <div className="panel-header"><div><h2>Server outbox</h2><p className="muted">Server-side events awaiting processing or retry.</p></div><span className="status-pill">{String(stats.synced ?? 0)} synced</span></div>
+      {events.length === 0 ? <div className="empty-state">No pending server events.</div> : <div className="table-wrap"><table><thead><tr><th>Type</th><th>Status</th><th>Attempts</th><th>Created</th><th>Retry</th></tr></thead><tbody>{events.map(e => <tr key={e.id}><td>{e.event_type}</td><td>{e.status}</td><td>{e.attempts}</td><td>{e.created_at ? new Date(e.created_at).toLocaleString() : "—"}</td><td>{e.next_retry_at ? new Date(e.next_retry_at).toLocaleString() : "Ready"}</td></tr>)}</tbody></table></div>}
     </div>
   </section>;
 }
