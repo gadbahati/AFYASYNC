@@ -28,12 +28,14 @@ export function OfflineClinicPage() {
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cacheLimit, setCacheLimit] = useState(100);
+  const [lastCachedAt, setLastCachedAt] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!navigator.onLine || !auth.facilityId) return;
     try {
       const [p, d, s, pending] = await Promise.all([
-        api.listPatients(100, 0),
+        api.listPatients(cacheLimit, 0),
         api.listDepartments(auth.facilityId),
         api.offlineStats(),
         api.offlinePending(100),
@@ -42,11 +44,11 @@ export function OfflineClinicPage() {
       const ds = (d || []) as Department[];
       setPatients(ps); write(KEY("patients", auth.facilityId), ps);
       setDepartments(ds); write(KEY("departments", auth.facilityId), ds);
-      setStats(s || {}); setEvents((pending?.events || []) as OfflineEvent[]);
+      setStats(s || {}); setEvents((pending?.events || []) as OfflineEvent[]); setLastCachedAt(new Date().toISOString());
     } catch (e: any) {
       setMessage(e?.message || e?.code || "Offline mode is active. Using cached clinic data.");
     }
-  }, [auth.facilityId]);
+  }, [auth.facilityId, cacheLimit]);
 
   useEffect(() => {
     if (!auth.facilityId) return;
@@ -109,14 +111,14 @@ export function OfflineClinicPage() {
   return <section>
     <div className="page-header">
       <div><p className="eyebrow">PHASE 21 • OFFLINE-FIRST</p><h1>Offline clinic workspace</h1><p className="muted">Continue core registration and encounter work during connectivity loss. Data is stored locally first and synchronised with an idempotent server outbox when connectivity returns.</p></div>
-      <div className="page-actions"><span className={online ? "status-pill ok" : "status-pill warning"}>{online ? "ONLINE" : "OFFLINE"}</span><button className="secondary-button" onClick={() => void refresh()}>Refresh cache</button><button className="primary-button" onClick={() => void syncLocal()} disabled={busy || !online}>{busy ? "Synchronising…" : "Synchronise"}</button></div>
+      <div className="page-actions"><span className={online ? "status-pill ok" : "status-pill warning"}>{online ? "ONLINE" : "OFFLINE"}</span><select value={cacheLimit} onChange={e => setCacheLimit(Number(e.target.value))}><option value={100}>Cache 100 patients</option><option value={250}>Cache 250 patients</option><option value={500}>Cache 500 patients</option></select><button className="secondary-button" onClick={() => void refresh()}>Refresh cache</button><button className="primary-button" onClick={() => void syncLocal()} disabled={busy || !online}>{busy ? "Synchronising…" : "Synchronise"}</button></div>
     </div>
     {message && <div className="notice">{message}</div>}
     <div className="stat-grid">
       <div className="stat-card"><span>Connection</span><strong>{online ? "Available" : "Interrupted"}</strong><small>{online ? "Server reachable" : "Local workflow active"}</small></div>
       <div className="stat-card"><span>Cached patients</span><strong>{patients.length}</strong><small>Last successful facility cache</small></div>
       <div className="stat-card"><span>Local drafts</span><strong>{pendingLocal}</strong><small>Waiting for synchronisation</small></div>
-      <div className="stat-card"><span>Server outbox</span><strong>{pendingServer}</strong><small>Pending or retryable</small></div>
+      <div className="stat-card"><span>Server outbox</span><strong>{pendingServer}</strong><small>Pending or retryable</small></div><div className="stat-card"><span>Cache refreshed</span><strong>{lastCachedAt ? new Date(lastCachedAt).toLocaleTimeString() : "—"}</strong><small>Local facility snapshot</small></div>
     </div>
 
     <div className="dashboard-grid">
