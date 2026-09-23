@@ -218,12 +218,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 
     async def dispatch(self, request: Request, call_next):
+        import time
+
         request_id = self._request_id(request)
         request.state.request_id = request_id
+        t0 = time.perf_counter()
         try:
             response = await call_next(request)
         except Exception:
-            runtime_metrics.request(error=True)
+            duration = time.perf_counter() - t0
+            runtime_metrics.request(error=True, status_code=500, duration_seconds=duration)
             logger.exception(
                 "Unhandled request exception request_id=%s method=%s path=%s",
                 request_id,
@@ -240,7 +244,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             )
             self._apply_headers(response, request_id)
             return response
-        runtime_metrics.request(error=response.status_code >= 500)
+        duration = time.perf_counter() - t0
+        runtime_metrics.request(
+            error=response.status_code >= 500,
+            status_code=response.status_code,
+            duration_seconds=duration,
+        )
         self._apply_headers(response, request_id)
         return response
 
