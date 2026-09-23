@@ -1,4 +1,7 @@
-"""Final national readiness declaration — aggregates prior phase gates."""
+"""Final national readiness declaration — aggregates prior phase gates.
+
+Hardened: each gate uses the real service signature; failures are isolated.
+"""
 
 from __future__ import annotations
 
@@ -11,104 +14,113 @@ def _safe(fn, *args, **kwargs):
     try:
         return {"ok": True, "data": fn(*args, **kwargs)}
     except Exception as exc:
-        return {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:300]}
+        return {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:400]}
+
+
+def _band_from(gate: dict, fallback: str = "AMBER") -> str:
+    if not gate.get("ok"):
+        return "RED"
+    data = gate.get("data")
+    if not isinstance(data, dict):
+        return fallback
+    if "band" in data:
+        return str(data["band"]).upper()
+    verdict = str(data.get("verdict") or "").upper()
+    if verdict == "ACCEPTANCE_PASS":
+        return "GREEN"
+    if verdict == "WARMUP":
+        return "AMBER"
+    if verdict == "ACCEPTANCE_FAIL":
+        return "RED"
+    if data.get("all_ok") is True:
+        return "GREEN"
+    if data.get("all_ok") is False:
+        return "AMBER"
+    if data.get("ready") is True:
+        return "GREEN"
+    if data.get("ready") is False:
+        return "RED"
+    if data.get("deploy_blocked") is True:
+        return "RED"
+    return fallback
 
 
 def declaration(db: Session) -> dict:
     gates: dict = {}
 
-    # Production
     try:
         from app.production.service import production_readiness
 
-        gates["production"] = _safe(production_readiness, db)
+        gates["production"] = _safe(production_readiness)
     except Exception as exc:
-        gates["production"] = {"ok": False, "error": type(exc).__name__}
+        gates["production"] = {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:200]}
 
-    # Observability SLOs
     try:
         from app.observability.service import evaluate_slos
 
-        gates["observability"] = _safe(evaluate_slos, db)
+        gates["observability"] = _safe(evaluate_slos)
     except Exception as exc:
-        gates["observability"] = {"ok": False, "error": type(exc).__name__}
+        gates["observability"] = {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:200]}
 
-    # DR posture
     try:
         from app.disaster_recovery.service import posture as dr_posture
 
         gates["disaster_recovery"] = _safe(dr_posture, db)
     except Exception as exc:
-        gates["disaster_recovery"] = {"ok": False, "error": type(exc).__name__}
+        gates["disaster_recovery"] = {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:200]}
 
-    # Performance acceptance
     try:
         from app.performance.service import evaluate_acceptance
 
         gates["performance"] = _safe(evaluate_acceptance)
     except Exception as exc:
-        gates["performance"] = {"ok": False, "error": type(exc).__name__}
+        gates["performance"] = {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:200]}
 
-    # Residual risk
     try:
         from app.risk_register.service import posture as risk_posture
 
         gates["risk_register"] = _safe(risk_posture, db)
     except Exception as exc:
-        gates["risk_register"] = {"ok": False, "error": type(exc).__name__}
+        gates["risk_register"] = {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:200]}
 
-    # Certification evidence
     try:
-        from app.certification.service import submission_kit
+        from app.certification.submission_kit import submission_kit
 
-        gates["certification"] = _safe(submission_kit, db)
+        gates["certification"] = _safe(submission_kit)
     except Exception as exc:
-        gates["certification"] = {"ok": False, "error": type(exc).__name__}
+        gates["certification"] = {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:200]}
 
-    # Pilot evidence
     try:
         from app.pilot_handover.service import pilot_evidence_pack
 
         gates["pilot_evidence"] = _safe(pilot_evidence_pack, db)
     except Exception as exc:
-        gates["pilot_evidence"] = {"ok": False, "error": type(exc).__name__}
+        gates["pilot_evidence"] = {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:200]}
 
-    # Reliability probes
     try:
-        from app.reliability.service import get_probes
+        from app.reliability.service import readiness_matrix
 
-        gates["reliability"] = _safe(get_probes, db)
+        gates["reliability"] = _safe(readiness_matrix, db)
     except Exception as exc:
-        gates["reliability"] = {"ok": False, "error": type(exc).__name__}
+        gates["reliability"] = {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:200]}
 
-    # Score bands from known shapes
-    def _band(key: str) -> str:
-        g = gates.get(key) or {}
-        if not g.get("ok"):
-            return "RED"
-        data = g.get("data") or {}
-        if isinstance(data, dict):
-            if "band" in data:
-                return str(data["band"]).upper()
-            if data.get("verdict") == "ACCEPTANCE_PASS":
-                return "GREEN"
-            if data.get("verdict") == "WARMUP":
-                return "AMBER"
-            if data.get("verdict") == "ACCEPTANCE_FAIL":
-                return "RED"
-            if data.get("ready") is True:
-                return "GREEN"
-            if data.get("ready") is False:
-                return "RED"
-        return "AMBER"
+    try:
+        from app.change_control.service import governance_policy
+
+        gates["change_control"] = _safe(governance_policy)
+    except Exception as exc:
+        gates["change_control"] = {"ok": False, "error": type(exc).__name__, "detail": str(exc)[:200]}
 
     bands = {
-        "production": _band("production"),
-        "observability": _band("observability"),
-        "disaster_recovery": _band("disaster_recovery"),
-        "performance": _band("performance"),
-        "risk_register": _band("risk_register"),
-        "reliability": _band("reliability"),
+        "production": _band_from(gates.get("production") or {}),
+        "observability": _band_from(gates.get("observability") or {}),
+        "disaster_recovery": _band_from(gates.get("disaster_recovery") or {}),
+        "performance": _band_from(gates.get("performance") or {}),
+        "risk_register": _band_from(gates.get("risk_register") or {}),
+        "reliability": _band_from(gates.get("reliability") or {}),
+        "certification": "GREEN" if (gates.get("certification") or {}).get("ok") else "RED",
+        "pilot_evidence": "GREEN" if (gates.get("pilot_evidence") or {}).get("ok") else "RED",
+        "change_control": "GREEN" if (gates.get("change_control") or {}).get("ok") else "RED",
     }
 
     reds = [k for k, v in bands.items() if v == "RED"]
@@ -144,6 +156,7 @@ def declaration(db: Session) -> dict:
         "Production readiness, observability SLOs, DR drills",
         "Change-control + residual risk register",
         "Pilot evidence pack + county handover",
+        "Performance acceptance + national readiness declaration",
     ]
 
     return {
