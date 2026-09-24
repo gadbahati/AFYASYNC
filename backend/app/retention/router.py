@@ -96,6 +96,7 @@ def decide(
             decision_notes=body.decision_notes,
             actor_user_id=user.id,
             apply_pseudonym=body.apply_pseudonym,
+            facility_id=facility_id,
         )
         db.commit()
         return {
