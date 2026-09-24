@@ -216,6 +216,9 @@ const _apiCore: any = {
   personMemberships: (personId: string) => request(`/api/v1/identity/memberships/person/${personId}`),
   createMembership: (payload: any) => request("/api/v1/identity/memberships", { method: "POST", body: JSON.stringify(payload) }),
   addContribution: (payload: any) => request("/api/v1/identity/contributions", { method: "POST", body: JSON.stringify(payload) }),
+  citizenWalletOverview: () => request("/api/v1/citizen-wallet/overview"),
+  citizenWalletBenefits: () => request("/api/v1/citizen-wallet/benefits"),
+  citizenWalletCharges: (limit = 50) => request(`/api/v1/citizen-wallet/charges?limit=${limit}`),
 };
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
