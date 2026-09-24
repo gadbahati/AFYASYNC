@@ -228,6 +228,10 @@ const _apiCore: any = {
   workforceCredentialCreate: (payload: any) => request("/api/v1/workforce/credentials", { method: "POST", body: JSON.stringify(payload) }),
   onboardingFacilityKit: () => request("/api/v1/onboarding/facility-kit"),
   onboardingMigrationPlaybook: () => request("/api/v1/onboarding/migration-playbook"),
+  trainingSops: (audience = "") => request(`/api/v1/training/sops${audience ? `?audience=${encodeURIComponent(audience)}` : ""}`),
+  trainingModules: () => request("/api/v1/training/modules"),
+  trainingHelp: (q = "") => request(`/api/v1/training/help${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  trainingCatalog: () => request("/api/v1/training/catalog"),
 };
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
