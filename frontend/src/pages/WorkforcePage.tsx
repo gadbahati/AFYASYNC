@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../api/client";
 
@@ -12,7 +12,6 @@ export function WorkforcePage(){
  const [staffId,setStaffId]=useState(""),[council,setCouncil]=useState("KMPDC"),[cadre,setCadre]=useState(""),[licence,setLicence]=useState(""),[expiry,setExpiry]=useState(""),[notes,setNotes]=useState("");
  const load=useCallback(async()=>{setLoading(true);setError("");try{const [s,c]=await Promise.all([api.staffList(200,0,"ACTIVE"),api.workforceCompliance(days)]);setStaff(s.items||[]);setTotal(s.total||0);setCompliance(c)}catch(e:any){setError(e?.message||"Workforce data could not be loaded")}finally{setLoading(false)}},[days]);
  useEffect(()=>{void load()},[load]);
- const chosen=useMemo(()=>staff.find(s=>s.id===staffId),[staff,staffId]);
  async function check(id:string){try{setSelected(await api.workforceStaffCheck(id));setStaffId(id)}catch(e:any){setError(e?.message||"Credential check failed")}}
  async function register(e:FormEvent){e.preventDefault();if(!staffId){setError("Select a staff member first.");return}try{await api.workforceCredentialCreate({staff_id:staffId,council_code:council,cadre,licence_number:licence,issued_on:null,expiry_date:expiry||null,notes:notes||null});setCadre("");setLicence("");setExpiry("");setNotes("");await load();await check(staffId)}catch(e:any){setError(e?.message||"Credential registration failed")}}
  return <section className="page-stack">
