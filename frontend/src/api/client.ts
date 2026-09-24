@@ -240,6 +240,13 @@ const _apiCore: any = {
   certificationSubmissionKit: () => request("/api/v1/certification/submission-kit"),
   productionReadiness: () => request("/api/v1/production/readiness"),
   productionDeployChecklist: () => request("/api/v1/production/deploy-checklist"),
+  observabilityRuntime: () => request("/api/v1/observability/runtime"),
+  observabilitySlos: () => request("/api/v1/observability/slos"),
+  observabilityTracingHooks: () => request("/api/v1/observability/tracing-hooks"),
+  retentionPolicies: () => request("/api/v1/retention/policies"),
+  retentionRequests: (status = "", limit = 50) => request(`/api/v1/retention/requests?limit=${limit}${status ? `&status=${encodeURIComponent(status)}` : ""}`),
+  createRetentionRequest: (payload: any) => request("/api/v1/retention/requests", { method: "POST", body: JSON.stringify(payload) }),
+  decideRetentionRequest: (id: string, payload: any) => request(`/api/v1/retention/requests/${id}/decide`, { method: "POST", body: JSON.stringify(payload) }),
 };
 
 export async function downloadWarehouseCsv(days = 30): Promise<string> {
