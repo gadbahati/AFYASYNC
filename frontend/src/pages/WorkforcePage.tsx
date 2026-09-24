@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { api } from "../api/client";
 
 type Staff={id:string;employee_number:string;professional_number?:string|null;department_id?:string|null;status:string};
@@ -13,7 +14,7 @@ export function WorkforcePage(){
  useEffect(()=>{void load()},[load]);
  const chosen=useMemo(()=>staff.find(s=>s.id===staffId),[staff,staffId]);
  async function check(id:string){try{setSelected(await api.workforceStaffCheck(id));setStaffId(id)}catch(e:any){setError(e?.message||"Credential check failed")}}
- async function register(e:React.FormEvent){e.preventDefault();if(!staffId){setError("Select a staff member first.");return}try{await api.workforceCredentialCreate({staff_id:staffId,council_code:council,cadre,licence_number:licence,issued_on:null,expiry_date:expiry||null,notes:notes||null});setCadre("");setLicence("");setExpiry("");setNotes("");await load();await check(staffId)}catch(e:any){setError(e?.message||"Credential registration failed")}}
+ async function register(e:FormEvent){e.preventDefault();if(!staffId){setError("Select a staff member first.");return}try{await api.workforceCredentialCreate({staff_id:staffId,council_code:council,cadre,licence_number:licence,issued_on:null,expiry_date:expiry||null,notes:notes||null});setCadre("");setLicence("");setExpiry("");setNotes("");await load();await check(staffId)}catch(e:any){setError(e?.message||"Credential registration failed")}}
  return <section className="page-stack">
   <div className="page-heading"><div><span className="eyebrow">WORKFORCE COMPLIANCE</span><h1>Workforce & credentials</h1><p className="muted">Track professional credentials and identify missing, expired or soon-to-expire licences for the current facility.</p></div><button onClick={()=>void load()} disabled={loading}>{loading?"Refreshing…":"Refresh"}</button></div>
   {error&&<div className="warning-box">{error}</div>}
