@@ -237,6 +237,7 @@ const _apiCore: any = {
   warehouseFacts: (days = 30) => request(`/api/v1/warehouse/facts?days=${days}`),
   warehouseCountyFacts: (days = 30) => request(`/api/v1/warehouse/county-facts?days=${days}`),
   warehouseCatalog: () => request("/api/v1/warehouse/catalog"),
+  certificationSubmissionKit: () => request("/api/v1/certification/submission-kit"),
 };
 
 export async function downloadWarehouseCsv(days = 30): Promise<string> {
