@@ -238,6 +238,8 @@ const _apiCore: any = {
   warehouseCountyFacts: (days = 30) => request(`/api/v1/warehouse/county-facts?days=${days}`),
   warehouseCatalog: () => request("/api/v1/warehouse/catalog"),
   certificationSubmissionKit: () => request("/api/v1/certification/submission-kit"),
+  productionReadiness: () => request("/api/v1/production/readiness"),
+  productionDeployChecklist: () => request("/api/v1/production/deploy-checklist"),
 };
 
 export async function downloadWarehouseCsv(days = 30): Promise<string> {
