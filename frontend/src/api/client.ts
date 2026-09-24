@@ -222,6 +222,10 @@ const _apiCore: any = {
   securityAccessReview: (days = 7, limit = 100) => request(`/api/v1/security-ops/access-review?days=${days}&limit=${limit}`),
   securityPrivacySummary: (days = 30) => request(`/api/v1/security-ops/privacy-summary?days=${days}`),
   securityChecklist: () => request("/api/v1/security-ops/checklist"),
+  staffList: (limit = 200, offset = 0, status = "ACTIVE") => request(`/api/v1/staff?limit=${limit}&offset=${offset}&status=${status}`),
+  workforceCompliance: (daysAhead = 60) => request(`/api/v1/workforce/compliance?days_ahead=${daysAhead}`),
+  workforceStaffCheck: (staffId: string) => request(`/api/v1/workforce/staff/${staffId}/check`),
+  workforceCredentialCreate: (payload: any) => request("/api/v1/workforce/credentials", { method: "POST", body: JSON.stringify(payload) }),
 };
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
