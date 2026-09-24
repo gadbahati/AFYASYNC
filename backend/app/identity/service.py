@@ -409,3 +409,120 @@ def list_memberships(db: Session, person_id: UUID) -> list[MembershipRecord]:
             .order_by(MembershipRecord.created_at.desc())
         )
     )
+
+
+def list_households(
+    db: Session,
+    *,
+    facility_id: UUID,
+    search: str | None = None,
+) -> list[dict]:
+    """Return active households visible through active patient-facility links."""
+    stmt = (
+        select(Household, func.count(HouseholdMember.id))
+        .join(HouseholdMember, HouseholdMember.household_id == Household.id)
+        .join(Person, Person.id == HouseholdMember.person_id)
+        .join(
+            __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility,
+            __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.patient_id == Person.id,
+        )
+        .where(
+            Household.status == "ACTIVE",
+            HouseholdMember.status == "ACTIVE",
+            __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.facility_id == facility_id,
+            __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.status == "ACTIVE",
+        )
+        .group_by(Household.id)
+        .order_by(Household.created_at.desc())
+    )
+    if search:
+        term = f"%{search.strip()}%"
+        stmt = stmt.where(
+            (Household.label.ilike(term))
+            | (Person.first_name.ilike(term))
+            | (Person.last_name.ilike(term))
+            | (Person.phone.ilike(term))
+        )
+    rows = db.execute(stmt).all()
+    out = []
+    for hh, count in rows:
+        head = db.get(Person, hh.head_person_id)
+        identity = db.scalar(select(AfyaIdentity).where(AfyaIdentity.person_id == hh.head_person_id))
+        out.append({
+            "id": hh.id,
+            "head_person_id": hh.head_person_id,
+            "head_name": " ".join(filter(None, [head.first_name, head.middle_name, head.last_name])) if head else "Unknown",
+            "head_afya_id": identity.afya_id if identity else None,
+            "label": hh.label,
+            "county": hh.county,
+            "status": hh.status,
+            "member_count": count,
+        })
+    return out
+
+
+def get_household(
+    db: Session,
+    household_id: UUID,
+    *,
+    facility_id: UUID,
+) -> dict:
+    hh = db.get(Household, household_id)
+    if hh is None or hh.status != "ACTIVE":
+        raise ValueError("HOUSEHOLD_NOT_FOUND")
+    members = list(
+        db.scalars(
+            select(HouseholdMember)
+            .join(Person, Person.id == HouseholdMember.person_id)
+            .join(
+                __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility,
+                __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.patient_id == Person.id,
+            )
+            .where(
+                HouseholdMember.household_id == household_id,
+                HouseholdMember.status == "ACTIVE",
+                __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.facility_id == facility_id,
+                __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.status == "ACTIVE",
+            )
+            .order_by(HouseholdMember.relationship_to_head, HouseholdMember.created_at)
+        )
+    )
+    if not members:
+        raise ValueError("HOUSEHOLD_NOT_FOUND")
+    result = {
+        "id": hh.id,
+        "head_person_id": hh.head_person_id,
+        "label": hh.label,
+        "county": hh.county,
+        "status": hh.status,
+        "member_count": len(members),
+        "members": [],
+    }
+    for member in members:
+        person = db.get(Person, member.person_id)
+        identity = db.scalar(select(AfyaIdentity).where(AfyaIdentity.person_id == member.person_id))
+        memberships = list_memberships(db, member.person_id)
+        result["members"].append({
+            "id": member.id,
+            "person_id": member.person_id,
+            "afya_id": identity.afya_id if identity else None,
+            "name": " ".join(filter(None, [person.first_name, person.middle_name, person.last_name])) if person else "Unknown",
+            "phone": person.phone if person else None,
+            "status": person.status if person else "UNKNOWN",
+            "relationship_to_head": member.relationship_to_head,
+            "is_dependant": member.is_dependant,
+            "effective_from": member.effective_from,
+            "memberships": [
+                {
+                    "id": m.id,
+                    "membership_number": m.membership_number,
+                    "status": m.status,
+                    "scheme_code": m.scheme_code,
+                    "employer_name": m.employer_name,
+                    "effective_from": m.effective_from,
+                    "effective_to": m.effective_to,
+                }
+                for m in memberships
+            ],
+        })
+    return result
