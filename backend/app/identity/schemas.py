@@ -127,3 +127,37 @@ class IdentityCorrectionCreate(BaseModel):
 class IdentityCorrectionReview(BaseModel):
     decision: str = Field(pattern="^(APPROVED|REJECTED)$")
     review_notes: str | None = Field(default=None, max_length=500)
+
+
+class HouseholdListItem(BaseModel):
+    id: UUID
+    head_person_id: UUID
+    head_name: str
+    head_afya_id: str | None
+    label: str | None
+    county: str | None
+    status: str
+    member_count: int
+
+
+class HouseholdMemberResponse(BaseModel):
+    id: UUID
+    person_id: UUID
+    afya_id: str | None
+    name: str
+    phone: str | None
+    status: str
+    relationship_to_head: str
+    is_dependant: bool
+    effective_from: date | None
+    memberships: list[MembershipResponse]
+
+
+class HouseholdDetailResponse(BaseModel):
+    id: UUID
+    head_person_id: UUID
+    label: str | None
+    county: str | None
+    status: str
+    member_count: int
+    members: list[HouseholdMemberResponse]
