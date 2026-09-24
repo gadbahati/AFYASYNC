@@ -14,6 +14,8 @@ from app.identity.schemas import (
     HouseholdCreate,
     HouseholdMemberAdd,
     HouseholdResponse,
+    HouseholdListItem,
+    HouseholdDetailResponse,
     IdentityCorrectionCreate,
     IdentityCorrectionReview,
     IdentityMatchResponse,
@@ -30,6 +32,8 @@ from app.identity.service import (
     mark_deceased,
     request_identity_correction,
     review_identity_correction,
+    list_households,
+    get_household,
 )
 from app.rbac.models import User
 
@@ -75,6 +79,31 @@ def identity_match(
     )
     db.commit()
     return result
+
+
+@router.get("/households", response_model=list[HouseholdListItem])
+def household_list(
+    search: str | None = None,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(IDENTITY_READ)),
+) -> list[HouseholdListItem]:
+    _ = user
+    return [HouseholdListItem(**row) for row in list_households(db, facility_id=facility_id, search=search)]
+
+
+@router.get("/households/{household_id}", response_model=HouseholdDetailResponse)
+def household_detail(
+    household_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(IDENTITY_READ)),
+) -> HouseholdDetailResponse:
+    _ = user
+    try:
+        return HouseholdDetailResponse(**get_household(db, household_id, facility_id=facility_id))
+    except ValueError as e:
+        raise _err(e) from e
 
 
 @router.post("/households", response_model=HouseholdResponse, status_code=status.HTTP_201_CREATED)
