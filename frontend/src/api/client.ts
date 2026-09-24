@@ -209,6 +209,13 @@ const _apiCore: any = {
   offlineEnqueue: (payload: any) => request("/api/v1/offline/enqueue", { method: "POST", body: JSON.stringify(payload) }),
   offlineDrain: (limit = 25) => request(`/api/v1/offline/drain?limit=${limit}`, { method: "POST" }),
   offlineProbe: (target: string, ok: boolean, latency_ms?: number, detail?: string) => request("/api/v1/offline/connectivity-probe", { method: "POST", body: JSON.stringify({ target, ok, latency_ms, detail }) }),
+  identityHouseholds: (search = "") => request(`/api/v1/identity/households${search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ""}`),
+  identityHousehold: (id: string) => request(`/api/v1/identity/households/${id}`),
+  createHousehold: (payload: any) => request("/api/v1/identity/households", { method: "POST", body: JSON.stringify(payload) }),
+  addHouseholdMember: (householdId: string, payload: any) => request(`/api/v1/identity/households/${householdId}/members`, { method: "POST", body: JSON.stringify(payload) }),
+  personMemberships: (personId: string) => request(`/api/v1/identity/memberships/person/${personId}`),
+  createMembership: (payload: any) => request("/api/v1/identity/memberships", { method: "POST", body: JSON.stringify(payload) }),
+  addContribution: (payload: any) => request("/api/v1/identity/contributions", { method: "POST", body: JSON.stringify(payload) }),
 };
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
