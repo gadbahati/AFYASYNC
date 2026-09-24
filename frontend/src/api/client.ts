@@ -232,6 +232,8 @@ const _apiCore: any = {
   trainingModules: () => request("/api/v1/training/modules"),
   trainingHelp: (q = "") => request(`/api/v1/training/help${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   trainingCatalog: () => request("/api/v1/training/catalog"),
+  rolloutCountyDashboard: (limit = 50) => request(`/api/v1/rollout/county-dashboard?limit=${limit}`),
+  rolloutPilotEvidence: (includeFacility = false) => request(`/api/v1/rollout/pilot-evidence?include_facility=${includeFacility}`),
 };
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
