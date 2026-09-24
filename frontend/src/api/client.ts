@@ -234,6 +234,9 @@ const _apiCore: any = {
   trainingCatalog: () => request("/api/v1/training/catalog"),
   rolloutCountyDashboard: (limit = 50) => request(`/api/v1/rollout/county-dashboard?limit=${limit}`),
   rolloutPilotEvidence: (includeFacility = false) => request(`/api/v1/rollout/pilot-evidence?include_facility=${includeFacility}`),
+  warehouseFacts: (days = 30) => request(`/api/v1/warehouse/facts?days=${days}`),
+  warehouseCountyFacts: (days = 30) => request(`/api/v1/warehouse/county-facts?days=${days}`),
+  warehouseCatalog: () => request("/api/v1/warehouse/catalog"),
 };
 
 export async function downloadWarehouseCsv(days = 30): Promise<string> {
