@@ -74,6 +74,10 @@ export function PatientPortalHomePage() {
           )}
 
           <div className="portal-actions">
+            <Link to="/portal/wallet" className="portal-tile">
+              <strong>Health wallet</strong>
+              <p className="muted small">View coverage, benefit utilisation, invoices and charges</p>
+            </Link>
             <Link to="/portal/book" className="portal-tile">
               <strong>Book appointment</strong>
               <p className="muted small">Choose any hospital — they accept, propose a time, or decline</p>
