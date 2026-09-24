@@ -236,4 +236,13 @@ const _apiCore: any = {
   rolloutPilotEvidence: (includeFacility = false) => request(`/api/v1/rollout/pilot-evidence?include_facility=${includeFacility}`),
 };
 
+export async function downloadWarehouseCsv(days = 30): Promise<string> {
+  const headers = new Headers();
+  const token = getAccessToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(`${API_BASE}/api/v1/warehouse/export/county-facts.csv?days=${days}`, { headers });
+  if (!res.ok) throw new ApiError(res.status, "CSV_EXPORT_FAILED");
+  return res.text();
+}
+
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
