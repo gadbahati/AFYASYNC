@@ -43,6 +43,7 @@ import { PatientLoginPage } from "./pages/PatientLoginPage";
 import { PatientMessagesPage } from "./pages/PatientMessagesPage";
 import { PatientPortalHomePage } from "./pages/PatientPortalHomePage";
 import { AfyaCitizenPage } from "./pages/AfyaCitizenPage";
+import { CitizenWalletPage } from "./pages/CitizenWalletPage";
 import { PatientRegisterPage } from "./pages/PatientRegisterPage";
 import { PatientResetPage } from "./pages/PatientResetPage";
 import { PatientVisitsPage } from "./pages/PatientVisitsPage";
@@ -71,6 +72,7 @@ export default function App() {
     <Route path="/select-facility" element={<FacilitySelectPage />} />
     <Route path="/portal" element={<PatientPortalHomePage />} />
     <Route path="/portal/citizen" element={<AfyaCitizenPage />} />
+    <Route path="/portal/wallet" element={<CitizenWalletPage />} />
     <Route path="/portal/book" element={<PatientBookAppointmentPage />} />
     <Route path="/portal/messages" element={<PatientMessagesPage />} />
     <Route path="/portal/encounters" element={<PatientVisitsPage />} />
