@@ -1,0 +1,27 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { api, ApiError } from "../api/client";
+
+type Wallet={afya_id?:string|null;coverages:any[];utilisation_year:number;utilisation_by_service:{service_code:string;amount_used:number;events:number}[];utilisation_total:number;recent_invoices:any[];estimated_open_balance:number};
+type Benefits={active_coverage_count:number;coverages:any[];utilisation_year:number;utilisation_by_service:any[];guidance:string[]};
+type Charges={count:number;charges:any[]};
+const money=(n:number|null|undefined)=>"KES "+Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const errText=(e:unknown)=>e instanceof ApiError?(e.message||e.code):"Unable to load wallet";
+
+export function CitizenWalletPage(){
+ const[wallet,setWallet]=useState<Wallet|null>(null),[benefits,setBenefits]=useState<Benefits|null>(null),[charges,setCharges]=useState<Charges|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState("");
+ const load=async()=>{setLoading(true);setError("");try{const[w,b,c]=await Promise.all([api.citizenWalletOverview(),api.citizenWalletBenefits(),api.citizenWalletCharges()]);setWallet(w);setBenefits(b);setCharges(c)}catch(e){setError(errText(e))}finally{setLoading(false)}};
+ useEffect(()=>{void load()},[]);
+ return <div className="page portal-page" style={{maxWidth:1100,margin:"0 auto",padding:16}}>
+  <p><Link to="/portal">← Portal home</Link></p>
+  <header className="page-header"><div><h1>Citizen health wallet</h1><p className="muted">A patient-owned view of coverage, benefit utilisation and facility charges.</p></div><button className="button secondary" onClick={()=>void load()}>Refresh</button></header>
+  {error&&<div className="error" role="alert">{error}</div>}{loading?<p>Loading your wallet…</p>:wallet&&<>
+   <div className="grid-3"><section className="card"><h3>Afya ID</h3><strong>{wallet.afya_id||"—"}</strong><p className="muted small">Your patient identity</p></section><section className="card"><h3>Active coverage</h3><strong>{benefits?.active_coverage_count??wallet.coverages.length}</strong><p className="muted small">Coverage records on file</p></section><section className="card"><h3>Estimated open balance</h3><strong>{money(wallet.estimated_open_balance)}</strong><p className="muted small">Facility billing view</p></section></div>
+   <section className="card" style={{marginTop:16}}><h2>Coverage</h2>{wallet.coverages.length?<div className="table-wrap"><table><thead><tr><th>Payer</th><th>Membership</th><th>Status</th><th>Verification</th><th>Dates</th></tr></thead><tbody>{wallet.coverages.map(c=><tr key={c.coverage_id}><td><strong>{c.payer_name||c.payer_code||"Payer"}</strong></td><td>{c.membership_number||"—"}</td><td>{c.status||"—"}</td><td>{c.verification_status||"Not verified"}</td><td>{c.start_date||"—"} → {c.end_date||"—"}</td></tr>)}</tbody></table></div>:<p className="muted">No coverage records are currently on file.</p>}</section>
+   <section className="card" style={{marginTop:16}}><h2>Benefit utilisation — {wallet.utilisation_year}</h2><p>Total recorded utilisation: <strong>{money(wallet.utilisation_total)}</strong></p>{wallet.utilisation_by_service.length?<div className="table-wrap"><table><thead><tr><th>Service</th><th>Amount used</th><th>Events</th></tr></thead><tbody>{wallet.utilisation_by_service.map(x=><tr key={x.service_code}><td>{x.service_code}</td><td>{money(x.amount_used)}</td><td>{x.events}</td></tr>)}</tbody></table></div>:<p className="muted">No posted utilisation recorded for this year.</p>}</section>
+   <section className="card" style={{marginTop:16}}><h2>Recent invoices</h2>{wallet.recent_invoices.length?<div className="table-wrap"><table><thead><tr><th>Invoice</th><th>Status</th><th>Patient amount</th><th>Open</th><th>Date</th></tr></thead><tbody>{wallet.recent_invoices.map(x=><tr key={x.invoice_id}><td>{x.invoice_number}</td><td>{x.status}</td><td>{money(x.patient_amount)}</td><td>{money(x.open_amount)}</td><td>{x.created_at?new Date(x.created_at).toLocaleString():"—"}</td></tr>)}</tbody></table></div>:<p className="muted">No recent invoices found.</p>}</section>
+   <section className="card" style={{marginTop:16}}><h2>Charge ledger</h2>{charges?.charges.length?<div className="table-wrap"><table><thead><tr><th>Description</th><th>Amount</th><th>Quantity</th><th>Status</th><th>Date</th></tr></thead><tbody>{charges.charges.map(x=><tr key={x.charge_id}><td>{x.description||x.charge_number||"Charge"}</td><td>{money(x.amount)}</td><td>{x.quantity}</td><td>{x.status||"—"}</td><td>{x.created_at?new Date(x.created_at).toLocaleString():"—"}</td></tr>)}</tbody></table></div>:<p className="muted">No charges found.</p>}</section>
+   <div className="info-box" style={{marginTop:16}}><strong>Important:</strong> this wallet shows records currently held by AfyaSync. Coverage on file may require live payer/SHA verification, and facility billing amounts are not the same thing as a national benefit balance.</div>
+   {benefits?.guidance?.length&&<section className="card" style={{marginTop:16}}><h3>Wallet guidance</h3><ul>{benefits.guidance.map((g,i)=><li key={i}>{g}</li>)}</ul></section>}
+  </>}</div>;
+}
