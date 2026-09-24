@@ -124,9 +124,12 @@ def decide_request(
     decision_notes: str | None = None,
     actor_user_id: UUID | None = None,
     apply_pseudonym: bool = False,
+    facility_id: UUID | None = None,
 ) -> ErasureRequest:
     req = db.get(ErasureRequest, request_id)
     if req is None:
+        raise RetentionError("REQUEST_NOT_FOUND")
+    if facility_id is not None and req.facility_id != facility_id:
         raise RetentionError("REQUEST_NOT_FOUND")
 
     st = status.strip().upper()
