@@ -246,6 +246,8 @@ const _apiCore: any = {
   partnerSandboxContracts: () => request("/api/v1/partner-sandbox/contracts"),
   drChecklist: () => request("/api/v1/dr/checklist"),
   changePolicy: () => request("/api/v1/change-control/policy"),
+  pilotHandoverEvidence: (county = "", facilityId = "") => request(`/api/v1/pilot-handover/evidence-pack${county || facilityId ? `?${county ? `county=${encodeURIComponent(county)}` : ""}${county && facilityId ? "&" : ""}${facilityId ? `facility_id=${encodeURIComponent(facilityId)}` : ""}` : ""}`),
+  pilotCountyHandover: (county: string) => request(`/api/v1/pilot-handover/county-handover?county=${encodeURIComponent(county)}`),
   changeList: (limit = 200) => request(`/api/v1/change-control/changes?limit=${limit}`),
   changeCreate: (payload: any) => request("/api/v1/change-control/changes", { method: "POST", body: JSON.stringify(payload) }),
   changeTransition: (id: string, payload: any) => request(`/api/v1/change-control/changes/${id}/transition`, { method: "POST", body: JSON.stringify(payload) }),
