@@ -219,6 +219,9 @@ const _apiCore: any = {
   citizenWalletOverview: () => request("/api/v1/citizen-wallet/overview"),
   citizenWalletBenefits: () => request("/api/v1/citizen-wallet/benefits"),
   citizenWalletCharges: (limit = 50) => request(`/api/v1/citizen-wallet/charges?limit=${limit}`),
+  securityAccessReview: (days = 7, limit = 100) => request(`/api/v1/security-ops/access-review?days=${days}&limit=${limit}`),
+  securityPrivacySummary: (days = 30) => request(`/api/v1/security-ops/privacy-summary?days=${days}`),
+  securityChecklist: () => request("/api/v1/security-ops/checklist"),
 };
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
