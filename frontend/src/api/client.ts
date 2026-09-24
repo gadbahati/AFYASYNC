@@ -226,6 +226,8 @@ const _apiCore: any = {
   workforceCompliance: (daysAhead = 60) => request(`/api/v1/workforce/compliance?days_ahead=${daysAhead}`),
   workforceStaffCheck: (staffId: string) => request(`/api/v1/workforce/staff/${staffId}/check`),
   workforceCredentialCreate: (payload: any) => request("/api/v1/workforce/credentials", { method: "POST", body: JSON.stringify(payload) }),
+  onboardingFacilityKit: () => request("/api/v1/onboarding/facility-kit"),
+  onboardingMigrationPlaybook: () => request("/api/v1/onboarding/migration-playbook"),
 };
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
