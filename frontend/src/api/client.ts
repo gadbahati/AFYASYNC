@@ -253,6 +253,7 @@ const _apiCore: any = {
   riskPosture: () => request("/api/v1/risk-register/posture"),
   riskList: (status = "", category = "") => request(`/api/v1/risk-register/risks?limit=200${status ? `&status=${encodeURIComponent(status)}` : ""}${category ? `&category=${encodeURIComponent(category)}` : ""}`),
   riskUpdate: (id: string, payload: any) => request(`/api/v1/risk-register/risks/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  nationalReadiness: () => request("/api/v1/national-readiness/declaration"),
   changeList: (limit = 200) => request(`/api/v1/change-control/changes?limit=${limit}`),
   changeCreate: (payload: any) => request("/api/v1/change-control/changes", { method: "POST", body: JSON.stringify(payload) }),
   changeTransition: (id: string, payload: any) => request(`/api/v1/change-control/changes/${id}/transition`, { method: "POST", body: JSON.stringify(payload) }),
