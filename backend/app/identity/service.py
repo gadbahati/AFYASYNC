@@ -409,7 +409,10 @@ def list_memberships(db: Session, person_id: UUID) -> list[MembershipRecord]:
             .order_by(MembershipRecord.created_at.desc())
         )
     )
-\nfrom app.config import settings\n\n
+
+from app.config import settings
+
+
 
 # Phase 43: payer-agnostic financing identity resolution
 import hashlib
