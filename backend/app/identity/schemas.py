@@ -129,35 +129,27 @@ class IdentityCorrectionReview(BaseModel):
     review_notes: str | None = Field(default=None, max_length=500)
 
 
-class HouseholdListItem(BaseModel):
-    id: UUID
-    head_person_id: UUID
-    head_name: str
-    head_afya_id: str | None
-    label: str | None
-    county: str | None
-    status: str
-    member_count: int
+# Phase 43: financing identity-resolution contracts
+from typing import Literal as _Literal
 
+FinancingIdentifierType = _Literal["AFYA_ID", "PAYER_MEMBER", "NATIONAL_ID_HASH", "PHONE"]
 
-class HouseholdMemberResponse(BaseModel):
-    id: UUID
+class FinancingIdentityRegisterRequest(BaseModel):
     person_id: UUID
-    afya_id: str | None
-    name: str
-    phone: str | None
-    status: str
-    relationship_to_head: str
-    is_dependant: bool
-    effective_from: date | None
-    memberships: list[MembershipResponse]
+    identifier_type: FinancingIdentifierType
+    identifier: str = Field(min_length=1, max_length=200)
+    payer_id: UUID | None = None
 
+class FinancingIdentityResolveRequest(BaseModel):
+    identifier_type: FinancingIdentifierType
+    identifier: str = Field(min_length=1, max_length=200)
+    payer_id: UUID | None = None
 
-class HouseholdDetailResponse(BaseModel):
-    id: UUID
-    head_person_id: UUID
-    label: str | None
-    county: str | None
+class FinancingIdentityResponse(BaseModel):
     status: str
-    member_count: int
-    members: list[HouseholdMemberResponse]
+    identifier_type: str
+    person_id: UUID | None = None
+    payer_id: UUID | None = None
+    match_count: int = 0
+    conflict: bool = False
+    evidence: dict
