@@ -409,120 +409,56 @@ def list_memberships(db: Session, person_id: UUID) -> list[MembershipRecord]:
             .order_by(MembershipRecord.created_at.desc())
         )
     )
+\nfrom app.config import settings\n\n
 
+# Phase 43: payer-agnostic financing identity resolution
+import hashlib
+import hmac
+import re
+import unicodedata
 
-def list_households(
-    db: Session,
-    *,
-    facility_id: UUID,
-    search: str | None = None,
-) -> list[dict]:
-    """Return active households visible through active patient-facility links."""
-    stmt = (
-        select(Household, func.count(HouseholdMember.id))
-        .join(HouseholdMember, HouseholdMember.household_id == Household.id)
-        .join(Person, Person.id == HouseholdMember.person_id)
-        .join(
-            __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility,
-            __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.patient_id == Person.id,
-        )
-        .where(
-            Household.status == "ACTIVE",
-            HouseholdMember.status == "ACTIVE",
-            __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.facility_id == facility_id,
-            __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.status == "ACTIVE",
-        )
-        .group_by(Household.id)
-        .order_by(Household.created_at.desc())
+def normalize_financing_identifier(identifier_type: str, value: str) -> str:
+    value = unicodedata.normalize("NFKC", value or "").strip()
+    if identifier_type == "PHONE":
+        value = re.sub(r"[^0-9+]", "", value)
+        if value.startswith("00"):
+            value = "+" + value[2:]
+    else:
+        value = re.sub(r"\s+", "", value).upper()
+    return value
+
+def financing_identifier_digest(identifier_type: str, value: str) -> str:
+    normalized = normalize_financing_identifier(identifier_type, value)
+    key = settings.jwt_secret.encode("utf-8")
+    message = f"AFYASYNC-ID-V1|{identifier_type}|{normalized}".encode("utf-8")
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+def register_financing_identifier(db: Session, payload, actor_user_id=None):
+    from app.eligibility.models import FinancingPersonIdentifier
+    digest = financing_identifier_digest(payload.identifier_type, payload.identifier)
+    q = select(FinancingPersonIdentifier).where(
+        FinancingPersonIdentifier.identifier_type == payload.identifier_type,
+        FinancingPersonIdentifier.identifier_hash == digest,
+        FinancingPersonIdentifier.status == "ACTIVE",
     )
-    if search:
-        term = f"%{search.strip()}%"
-        stmt = stmt.where(
-            (Household.label.ilike(term))
-            | (Person.first_name.ilike(term))
-            | (Person.last_name.ilike(term))
-            | (Person.phone.ilike(term))
-        )
-    rows = db.execute(stmt).all()
-    out = []
-    for hh, count in rows:
-        head = db.get(Person, hh.head_person_id)
-        identity = db.scalar(select(AfyaIdentity).where(AfyaIdentity.person_id == hh.head_person_id))
-        out.append({
-            "id": hh.id,
-            "head_person_id": hh.head_person_id,
-            "head_name": " ".join(filter(None, [head.first_name, head.middle_name, head.last_name])) if head else "Unknown",
-            "head_afya_id": identity.afya_id if identity else None,
-            "label": hh.label,
-            "county": hh.county,
-            "status": hh.status,
-            "member_count": count,
-        })
-    return out
+    if payload.payer_id:
+        q = q.where(FinancingPersonIdentifier.payer_id == payload.payer_id)
+    rows = list(db.scalars(q))
+    people = {r.person_id for r in rows}
+    if people and payload.person_id not in people:
+        return {"status":"CONFLICT","identifier_type":payload.identifier_type,"person_id":None,"payer_id":payload.payer_id,"match_count":len(people),"conflict":True,"evidence":{"engine":"UNIVERSAL_IDENTITY_V1","reason":"IDENTIFIER_ALREADY_BOUND_TO_OTHER_PERSON"}}
+    if payload.person_id in people:
+        return {"status":"EXISTS","identifier_type":payload.identifier_type,"person_id":payload.person_id,"payer_id":payload.payer_id,"match_count":1,"conflict":False,"evidence":{"engine":"UNIVERSAL_IDENTITY_V1","reason":"IDENTIFIER_ALREADY_REGISTERED"}}
+    row=FinancingPersonIdentifier(person_id=payload.person_id,identifier_type=payload.identifier_type,identifier_hash=digest,payer_id=payload.payer_id,status="ACTIVE")
+    db.add(row); db.commit()
+    return {"status":"REGISTERED","identifier_type":payload.identifier_type,"person_id":payload.person_id,"payer_id":payload.payer_id,"match_count":1,"conflict":False,"evidence":{"engine":"UNIVERSAL_IDENTITY_V1","reason":"IDENTIFIER_REGISTERED"}}
 
-
-def get_household(
-    db: Session,
-    household_id: UUID,
-    *,
-    facility_id: UUID,
-) -> dict:
-    hh = db.get(Household, household_id)
-    if hh is None or hh.status != "ACTIVE":
-        raise ValueError("HOUSEHOLD_NOT_FOUND")
-    members = list(
-        db.scalars(
-            select(HouseholdMember)
-            .join(Person, Person.id == HouseholdMember.person_id)
-            .join(
-                __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility,
-                __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.patient_id == Person.id,
-            )
-            .where(
-                HouseholdMember.household_id == household_id,
-                HouseholdMember.status == "ACTIVE",
-                __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.facility_id == facility_id,
-                __import__("app.patients.models", fromlist=["PatientFacility"]).PatientFacility.status == "ACTIVE",
-            )
-            .order_by(HouseholdMember.relationship_to_head, HouseholdMember.created_at)
-        )
-    )
-    if not members:
-        raise ValueError("HOUSEHOLD_NOT_FOUND")
-    result = {
-        "id": hh.id,
-        "head_person_id": hh.head_person_id,
-        "label": hh.label,
-        "county": hh.county,
-        "status": hh.status,
-        "member_count": len(members),
-        "members": [],
-    }
-    for member in members:
-        person = db.get(Person, member.person_id)
-        identity = db.scalar(select(AfyaIdentity).where(AfyaIdentity.person_id == member.person_id))
-        memberships = list_memberships(db, member.person_id)
-        result["members"].append({
-            "id": member.id,
-            "person_id": member.person_id,
-            "afya_id": identity.afya_id if identity else None,
-            "name": " ".join(filter(None, [person.first_name, person.middle_name, person.last_name])) if person else "Unknown",
-            "phone": person.phone if person else None,
-            "status": person.status if person else "UNKNOWN",
-            "relationship_to_head": member.relationship_to_head,
-            "is_dependant": member.is_dependant,
-            "effective_from": member.effective_from,
-            "memberships": [
-                {
-                    "id": m.id,
-                    "membership_number": m.membership_number,
-                    "status": m.status,
-                    "scheme_code": m.scheme_code,
-                    "employer_name": m.employer_name,
-                    "effective_from": m.effective_from,
-                    "effective_to": m.effective_to,
-                }
-                for m in memberships
-            ],
-        })
-    return result
+def resolve_financing_identifier(db: Session, payload):
+    from app.eligibility.models import FinancingPersonIdentifier
+    digest = financing_identifier_digest(payload.identifier_type, payload.identifier)
+    q=select(FinancingPersonIdentifier).where(FinancingPersonIdentifier.identifier_type==payload.identifier_type,FinancingPersonIdentifier.identifier_hash==digest,FinancingPersonIdentifier.status=="ACTIVE")
+    if payload.payer_id:
+        q=q.where(FinancingPersonIdentifier.payer_id==payload.payer_id)
+    people=list({r.person_id for r in db.scalars(q)})
+    status="NOT_FOUND" if not people else ("MATCH" if len(people)==1 else "CONFLICT")
+    return {"status":status,"identifier_type":payload.identifier_type,"person_id":people[0] if len(people)==1 else None,"payer_id":payload.payer_id,"match_count":len(people),"conflict":len(people)>1,"evidence":{"engine":"UNIVERSAL_IDENTITY_V1","candidate_count":len(people)}}
