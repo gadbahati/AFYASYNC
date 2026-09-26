@@ -168,6 +168,7 @@ from app.performance.router import router as performance_router
 from app.risk_register.router import router as risk_register_router
 from app.risk_register import models as risk_register_models  # noqa: F401
 from app.national_readiness.router import router as national_readiness_router
+from app.national_financing.router import router as national_financing_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -418,6 +419,7 @@ app.include_router(pilot_handover_router)
 app.include_router(performance_router)
 app.include_router(risk_register_router)
 app.include_router(national_readiness_router)
+app.include_router(national_financing_router)
 
 
 @app.get("/health", tags=["System"])
