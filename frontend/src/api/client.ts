@@ -256,6 +256,8 @@ const _apiCore: any = {
   nationalReadiness: () => request("/api/v1/national-readiness/declaration"),
   nationalFinancingOverview: () => request("/api/v1/national-financing/overview"),
   eligibilityEvaluate: (body: unknown) => request("/api/v1/eligibility/evaluate", { method: "POST", body: JSON.stringify(body) }),
+  financingIdentityRegister: (body: unknown) => request("/api/v1/identity/financing/register", { method: "POST", body: JSON.stringify(body) }),
+  financingIdentityResolve: (body: unknown) => request("/api/v1/identity/financing/resolve", { method: "POST", body: JSON.stringify(body) }),
   changeList: (limit = 200) => request(`/api/v1/change-control/changes?limit=${limit}`),
   changeCreate: (payload: any) => request("/api/v1/change-control/changes", { method: "POST", body: JSON.stringify(payload) }),
   changeTransition: (id: string, payload: any) => request(`/api/v1/change-control/changes/${id}/transition`, { method: "POST", body: JSON.stringify(payload) }),
