@@ -4,27 +4,28 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
-from app.eligibility.service import evaluate_eligibility
+from app.eligibility.service import evaluate
+from app.eligibility.schemas import EligibilityRequest
 from app.financing_preauthorization.models import FinancingPreauthorization
 
 class FinancingPreauthError(ValueError):
     pass
 
 def request(db: Session, *, facility_id, actor_user_id, payload):
-    eligibility = evaluate_eligibility(db, person_id=payload.person_id, service_code=payload.service_code, service_type=payload.service_type, payer_id=payload.payer_id, payer_plan_id=None, gross_amount=payload.requested_amount)
-    if eligibility["decision"] == "INELIGIBLE":
-        raise FinancingPreauthError(eligibility["reason_code"])
-    if eligibility["decision"] == "UNKNOWN":
+    eligibility, evidence = evaluate(db, EligibilityRequest(person_id=payload.person_id, service_code=payload.service_code, service_type=payload.service_type, payer_id=payload.payer_id, payer_plan_id=None, gross_amount=payload.requested_amount), actor_user_id=actor_user_id)
+    if eligibility.decision == "INELIGIBLE":
+        raise FinancingPreauthError(eligibility.reason_code)
+    if eligibility.decision == "UNKNOWN":
         raise FinancingPreauthError("ELIGIBILITY_UNKNOWN")
-    if eligibility["decision"] != "CONDITIONAL":
+    if eligibility.decision != "CONDITIONAL":
         raise FinancingPreauthError("PREAUTH_NOT_REQUIRED")
     row = FinancingPreauthorization(
         authorization_number=f"FXPA-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:10].upper()}",
-        person_id=payload.person_id, facility_id=facility_id, coverage_id=eligibility["coverage_id"],
+        person_id=payload.person_id, facility_id=facility_id, coverage_id=eligibility.coverage_id,
         payer_id=payload.payer_id, service_code=payload.service_code, service_type=payload.service_type,
         requested_amount=Decimal(str(payload.requested_amount)), status="PENDING",
         decision_reason="PREAUTH_REQUIRED",
-        evidence=eligibility.get("evidence") or {},
+        evidence=evidence or {},
     )
     db.add(row)
     record_audit(db, action="FINANCING_PREAUTH_REQUESTED", resource_type="FINANCING_PREAUTHORIZATION", resource_id=str(row.id), result="PENDING", user_id=actor_user_id, facility_id=facility_id, patient_id=payload.person_id, metadata={"authorization_number": row.authorization_number, "payer_id": str(payload.payer_id)}, commit=False)
