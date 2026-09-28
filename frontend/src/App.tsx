@@ -83,6 +83,7 @@ import { EligibilityEnginePage } from "./pages/EligibilityEnginePage";
 import { UniversalIdentityPage } from "./pages/UniversalIdentityPage";
 import { FinancingPreauthorizationPage } from "./pages/FinancingPreauthorizationPage";
 import { AdjudicationPage } from "./pages/AdjudicationPage";
+import SettlementPage from "./pages/SettlementPage";
 
 export default function App() {
   return <AuthProvider><BrowserRouter><Routes>
