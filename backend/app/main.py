@@ -219,6 +219,8 @@ _REQUIRED_PROD_TABLES = (
     "eligibility_decisions",
     "financing_person_identifiers",
     "financing_preauthorizations",
+    "claim_adjudications",
+    "claim_line_adjudications",
 )
 
 
