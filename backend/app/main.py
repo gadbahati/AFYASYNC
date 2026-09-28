@@ -428,7 +428,7 @@ app.include_router(national_readiness_router)
 app.include_router(national_financing_router)
 app.include_router(eligibility_router)
 app.include_router(adjudication_router)
-app.include_router(financing_preauthorization_router)
+app.include_router(financing_preaauthorization_router)
 
 
 @app.get("/health", tags=["System"])
