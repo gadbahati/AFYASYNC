@@ -178,6 +178,8 @@ from app.settlement.router import router as settlement_router
 from app.settlement import models as settlement_models  # noqa: F401
 from app.financing_wallet.router import router as financing_wallet_router
 from app.financing_wallet import models as financing_wallet_models  # noqa: F401
+from app.provider_network.router import router as provider_network_router
+from app.provider_network import models as provider_network_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -235,6 +237,9 @@ _REQUIRED_PROD_TABLES = (
     "fraud_integrity_cases",
     "financing_wallets",
     "financing_wallet_transactions",
+    "provider_network_memberships",
+    "provider_network_services",
+    "provider_network_contracts",
 )
 
 
@@ -448,6 +453,7 @@ app.include_router(adjudication_router)
 app.include_router(financing_preaauthorization_router)
 app.include_router(settlement_router)
 app.include_router(financing_wallet_router)
+app.include_router(provider_network_router)
 
 
 @app.get("/health", tags=["System"])
