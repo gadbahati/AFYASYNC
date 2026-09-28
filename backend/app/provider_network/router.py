@@ -1,5 +1,6 @@
 from uuid import UUID
 from fastapi import APIRouter,Depends,HTTPException,Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.auth.dependencies import require_national_permission
 from app.database import get_db
