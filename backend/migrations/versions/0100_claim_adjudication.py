@@ -31,7 +31,7 @@ def upgrade():
     op.create_table(
         "claim_line_adjudications",
         sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),
-        sa.Column("adjudication_id",postgresql.UUID(as_uuid=True),nullable=False,sa.ForeignKey("claim_adjudications.id",ondelete="CASCADE")),
+        sa.Column("adjudication_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("claim_adjudications.id",ondelete="CASCADE"),nullable=False),
         sa.Column("claim_item_id",postgresql.UUID(as_uuid=True),nullable=False),
         sa.Column("submitted_amount",sa.Numeric(14,2),nullable=False),
         sa.Column("allowed_amount",sa.Numeric(14,2),nullable=False),
