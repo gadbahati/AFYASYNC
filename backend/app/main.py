@@ -172,6 +172,8 @@ from app.national_financing.router import router as national_financing_router
 from app.eligibility.router import router as eligibility_router
 from app.adjudication.router import router as adjudication_router
 from app.financing_preauthorization.router import router as financing_preaauthorization_router
+from app.settlement.router import router as settlement_router
+from app.settlement import models as settlement_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -221,6 +223,11 @@ _REQUIRED_PROD_TABLES = (
     "financing_preauthorizations",
     "claim_adjudications",
     "claim_line_adjudications",
+    "settlement_obligations",
+    "settlement_batches",
+    "provider_payments",
+    "settlement_reconciliations",
+    "settlement_ledger_entries",
 )
 
 
@@ -431,6 +438,7 @@ app.include_router(national_financing_router)
 app.include_router(eligibility_router)
 app.include_router(adjudication_router)
 app.include_router(financing_preaauthorization_router)
+app.include_router(settlement_router)
 
 
 @app.get("/health", tags=["System"])
