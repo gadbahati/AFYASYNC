@@ -46,7 +46,7 @@ def adjudicate(db: Session, *, claim_id, facility_id, actor_user_id, force=False
         rule = db.scalar(select(PayerBenefitRule).where(PayerBenefitRule.payer_id == claim.payer_id, PayerBenefitRule.service_code == item.service_code).order_by(PayerBenefitRule.created_at.desc()).limit(1))
         if rule is None:
             line_allowed, decision, reason = Decimal("0"), "DENIED", "NO_BENEFIT_RULE"
-        elif getattr(rule, "excluded", False):
+        elif getattr(rule, "is_excluded", False):
             line_allowed, decision, reason = Decimal("0"), "DENIED", "SERVICE_EXCLUDED"
         elif getattr(rule, "requires_preauth", False):
             pa = db.scalar(select(FinancingPreauthorization).where(FinancingPreauthorization.person_id == claim.patient_id, FinancingPreauthorization.coverage_id == coverage.id, FinancingPreauthorization.service_code == item.service_code, FinancingPreauthorization.status.in_([ "AUTHORIZED", "CONDITIONAL" ])).order_by(FinancingPreauthorization.decided_at.desc()).limit(1))
@@ -57,7 +57,7 @@ def adjudicate(db: Session, *, claim_id, facility_id, actor_user_id, force=False
                 decision, reason = ("ALLOWED" if line_allowed == submitted else "PARTIAL"), "PREAUTH_LIMIT"
         else:
             percent = Decimal(str(getattr(rule, "payer_percent", 100) or 0)) / Decimal("100")
-            fixed = Decimal(str(getattr(rule, "fixed_copay", 0) or 0))
+            fixed = Decimal(str(getattr(rule, "fixed_patient_copay", 0) or 0))
             cap = getattr(rule, "max_covered_amount", None)
             line_allowed = max(Decimal("0"), (submitted * percent - fixed).quantize(Decimal("0.01")))
             if cap is not None:
