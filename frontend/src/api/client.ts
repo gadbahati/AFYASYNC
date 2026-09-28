@@ -260,6 +260,7 @@ const _apiCore: any = {
   financingIdentityResolve: (body: unknown) => request("/api/v1/identity/financing/resolve", { method: "POST", body: JSON.stringify(body) }),
   financingPreauthCreate: (body: unknown) => request("/api/v1/financing-preauthorizations", { method: "POST", body: JSON.stringify(body) }),
   financingPreauthDecide: (id: string, body: unknown) => request(`/api/v1/financing-preauthorizations/${id}/decision`, { method: "POST", body: JSON.stringify(body) }),
+  adjudicateClaim: (body: unknown) => request("/api/v1/adjudication/run", { method: "POST", body: JSON.stringify(body) }),
   changeList: (limit = 200) => request(`/api/v1/change-control/changes?limit=${limit}`),
   changeCreate: (payload: any) => request("/api/v1/change-control/changes", { method: "POST", body: JSON.stringify(payload) }),
   changeTransition: (id: string, payload: any) => request(`/api/v1/change-control/changes/${id}/transition`, { method: "POST", body: JSON.stringify(payload) }),
