@@ -180,6 +180,8 @@ from app.financing_wallet.router import router as financing_wallet_router
 from app.financing_wallet import models as financing_wallet_models  # noqa: F401
 from app.provider_network.router import router as provider_network_router
 from app.provider_network import models as provider_network_models  # noqa: F401
+from app.health_exchange.router import router as health_exchange_router
+from app.health_exchange import models as health_exchange_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -240,6 +242,7 @@ _REQUIRED_PROD_TABLES = (
     "provider_network_memberships",
     "provider_network_services",
     "provider_network_contracts",
+    "health_exchange_messages",
 )
 
 
@@ -454,6 +457,7 @@ app.include_router(financing_preaauthorization_router)
 app.include_router(settlement_router)
 app.include_router(financing_wallet_router)
 app.include_router(provider_network_router)
+app.include_router(health_exchange_router)
 
 
 @app.get("/health", tags=["System"])
