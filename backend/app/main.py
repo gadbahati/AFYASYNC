@@ -170,6 +170,7 @@ from app.risk_register import models as risk_register_models  # noqa: F401
 from app.national_readiness.router import router as national_readiness_router
 from app.national_financing.router import router as national_financing_router
 from app.eligibility.router import router as eligibility_router
+from app.financing_preauthorization.router import router as financing_preaauthorization_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -214,6 +215,9 @@ _REQUIRED_PROD_TABLES = (
     "change_requests",
     "release_records",
     "residual_risks",
+    "eligibility_decisions",
+    "financing_person_identifiers",
+    "financing_preauthorizations",
 )
 
 
@@ -422,6 +426,7 @@ app.include_router(risk_register_router)
 app.include_router(national_readiness_router)
 app.include_router(national_financing_router)
 app.include_router(eligibility_router)
+app.include_router(financing_preauthorization_router)
 
 
 @app.get("/health", tags=["System"])
