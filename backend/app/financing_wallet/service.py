@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.adjudication.models import ClaimAdjudication
+from app.claims.models import Claim
 from app.audit.service import record_audit
 from app.billing.models import Invoice, Payment
 from app.patients.models import Person
@@ -46,10 +47,10 @@ def _balance(db: Session, wallet_id: UUID) -> tuple[Decimal, Decimal, Decimal]:
 
 def _pending_responsibility(db: Session, person_id: UUID) -> Decimal:
     adjudicated = _money(db.scalar(select(func.coalesce(func.sum(ClaimAdjudication.patient_amount), 0)).join(
-        __import__("app.claims.models", fromlist=["Claim"]).Claim,
-        __import__("app.claims.models", fromlist=["Claim"]).Claim.id == ClaimAdjudication.claim_id,
+        Claim,
+        Claim.id == ClaimAdjudication.claim_id,
     ).where(
-        __import__("app.claims.models", fromlist=["Claim"]).Claim.patient_id == person_id,
+        Claim.patient_id == person_id,
         ClaimAdjudication.decision.in_({"APPROVED", "PARTIALLY_APPROVED"}),
     )))
     invoices = _money(db.scalar(select(func.coalesce(func.sum(Invoice.patient_amount), 0)).where(
