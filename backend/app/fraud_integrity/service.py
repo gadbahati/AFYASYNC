@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.claims.models import Claim
 from app.encounters.models import Encounter
+from app.adjudication.models import ClaimAdjudication
+from app.settlement.models import ProviderPayment, SettlementObligation
 
 
 def _dec(v) -> float:
@@ -102,7 +104,7 @@ def facility_integrity_scan(
     for claim, _ in rows:
         status_counts[str(claim.status)] += 1
 
-    # 4) Zero or negative amounts (data integrity)
+    # 6) Zero or negative amounts (data integrity)
     for claim, _ in rows:
         amt = _dec(claim.claim_amount)
         if amt <= 0 and claim.status not in {"DRAFT", "CANCELLED"}:
