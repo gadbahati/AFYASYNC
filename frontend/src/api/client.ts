@@ -324,3 +324,5 @@ export async function downloadWarehouseCsv(days = 30): Promise<string> {
 }
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
+
+  referralRoutingOptions: (payload:any) => request("/api/v1/referral-routing/options",{method:"POST",body:JSON.stringify(payload)}),
