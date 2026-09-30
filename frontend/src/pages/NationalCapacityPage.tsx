@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getNationalCapacity } from "../api/nationalCapacityApi";
+import { getNationalCapacity, getNationalServiceCapacity } from "../api/nationalCapacityApi";
 import type { NationalCapacity } from "../api/nationalCapacity";
 
 export function NationalCapacityPage() {
@@ -7,6 +7,9 @@ export function NationalCapacityPage() {
   const [county, setCounty] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [services, setServices] = useState<any[]>([]);
+  const [serviceCode, setServiceCode] = useState("");
+  const [serviceLoading, setServiceLoading] = useState(false);
   const requestRef = useRef(0);
 
   async function load() {
@@ -25,6 +28,12 @@ export function NationalCapacityPage() {
   }
 
   useEffect(() => { void load(); return () => { requestRef.current += 1; }; }, []);
+  async function loadServices() {
+    setServiceLoading(true); setError("");
+    try { setServices(await getNationalServiceCapacity({ service_code: serviceCode, county })); }
+    catch (err) { setError(err instanceof Error ? err.message : "NATIONAL_SERVICE_CAPACITY_REQUEST_FAILED"); }
+    finally { setServiceLoading(false); }
+  }
 
   const occupancyRate = data && data.total_beds > 0 ? Math.round((data.occupied_beds / data.total_beds) * 100) : 0;
 
@@ -43,6 +52,10 @@ export function NationalCapacityPage() {
       <article className="card metric-card"><span className="muted">Active departments</span><strong>{data?.active_departments.toLocaleString() ?? "—"}</strong></article>
       <article className="card metric-card"><span className="muted">Patients waiting</span><strong>{data?.waiting_queue_entries.toLocaleString() ?? "—"}</strong></article>
     </div>
+    <article className="card"><div className="card-header"><div><h2>Service capacity exchange</h2><p className="muted">Search active provider-network services by service code and see daily appointment capacity across facilities.</p></div></div>
+      <div className="filter-row"><label>Service code<input value={serviceCode} maxLength={80} placeholder="e.g. CONSULT" onChange={event => setServiceCode(event.target.value)} /></label><button type="button" className="button filter-action" onClick={() => void loadServices()} disabled={serviceLoading}>{serviceLoading ? "Searching…" : "Search service capacity"}</button></div>
+      {services.length > 0 && <div className="table-wrap"><table><thead><tr><th>Facility</th><th>Service</th><th>Network</th><th>Date</th><th>Capacity</th><th>Booked</th><th>Remaining</th><th>Status</th></tr></thead><tbody>{services.map(item => <tr key={item.facility_id + item.service_code + item.network_code}><td><strong>{item.facility_name}</strong><div className="muted small">{item.county || "Unspecified"}</div></td><td>{item.service_name}<div className="muted small">{item.service_code}</div></td><td>{item.network_code}</td><td>{item.date}</td><td>{item.daily_capacity}</td><td>{item.booked}</td><td>{item.remaining}</td><td>{item.availability}</td></tr>)}</tbody></table></div>}
+    </article>
     <article className="card"><div className="card-header"><div><h2>Facility capacity</h2><p className="muted">Operational demand and inpatient capacity by active facility.</p></div></div>{loading ? <p className="muted">Loading capacity…</p> : !data?.facilities.length ? <div className="empty-state"><strong>No active facilities found</strong><span>Adjust the county filter or confirm facility network status.</span></div> : <div className="table-wrap"><table><thead><tr><th>Facility</th><th>County</th><th>Beds</th><th>Available</th><th>Occupied</th><th>Emergency</th><th>Waiting</th></tr></thead><tbody>{data.facilities.map(facility => <tr key={facility.facility_id}><td><strong>{facility.facility_name}</strong><div className="muted small">{facility.facility_code}</div></td><td>{facility.county || "Unspecified"}</td><td>{facility.total_beds.toLocaleString()}</td><td>{facility.available_beds.toLocaleString()}</td><td>{facility.occupied_beds.toLocaleString()}</td><td>{facility.emergency_waiting.toLocaleString()}</td><td>{facility.waiting_queue_entries.toLocaleString()}</td></tr>)}</tbody></table></div>}</article>
   </section>;
 }
