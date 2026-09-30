@@ -184,6 +184,7 @@ from app.health_exchange.router import router as health_exchange_router
 from app.health_exchange import models as health_exchange_models  # noqa: F401
 from app.care_coordination.router import router as care_coordination_router
 from app.care_coordination import models as care_coordination_models  # noqa: F401
+from app.referral_routing.router import router as referral_routing_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -462,6 +463,7 @@ app.include_router(financing_wallet_router)
 app.include_router(provider_network_router)
 app.include_router(health_exchange_router)
 app.include_router(care_coordination_router)
+app.include_router(referral_routing_router)
 
 
 @app.get("/health", tags=["System"])
