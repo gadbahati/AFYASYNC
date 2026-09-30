@@ -1,8 +1,8 @@
 import {useState} from "react";
-import {api} from "../api/client";
+import {getReferralRoutingOptions} from "../api/referralRoutingApi";
 export function ReferralRoutingPage(){
  const [service,setService]=useState(""),[county,setCounty]=useState(""),[network,setNetwork]=useState(""),[day,setDay]=useState(new Date().toISOString().slice(0,10)),[rows,setRows]=useState<any[]>([]),[error,setError]=useState(""),[loading,setLoading]=useState(false);
- async function search(){setLoading(true);setError("");try{const r=await api.referralRoutingOptions({service_code:service,county:county||undefined,network_code:network||undefined,day,limit:30});setRows(r.options||[])}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}}
+ async function search(){setLoading(true);setError("");try{const r=await getReferralRoutingOptions({service_code:service,county:county||undefined,network_code:network||undefined,day,limit:30});setRows(r.options||[])}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}}
  return <section className="page-stack"><header className="page-heading"><div><p className="eyebrow">Phase 53 · Routing intelligence</p><h1>Intelligent referral routing</h1><p className="muted">Find active network providers with current service capacity before a referral is directed.</p></div></header>
  {error&&<div className="error-banner">{error}</div>}
  <article className="card"><h2>Routing request</h2><div className="filter-row"><label>Service code<input value={service} onChange={e=>setService(e.target.value)} placeholder="e.g. CARDIOLOGY" /></label><label>County<input value={county} onChange={e=>setCounty(e.target.value)} placeholder="Optional" /></label><label>Network<input value={network} onChange={e=>setNetwork(e.target.value)} placeholder="Optional" /></label><label>Date<input type="date" value={day} onChange={e=>setDay(e.target.value)} /></label><button className="button filter-action" disabled={!service||loading} onClick={()=>void search()}>{loading?"Routing…":"Find providers"}</button></div></article>
