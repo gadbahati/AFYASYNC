@@ -183,3 +183,87 @@ def payer_performance(db: Session, facility_id: UUID, days: int = 90) -> list[di
             "outstanding": float(max(Decimal("0"), approved_d - paid_d)),
         })
     return result
+
+
+def collection_priorities(db: Session, facility_id: UUID, limit: int = 100) -> dict:
+    limit = max(10, min(int(limit or 100), 500))
+    now = datetime.now(timezone.utc)
+    claims = db.execute(
+        select(Claim, Invoice).join(Invoice, Invoice.id == Claim.invoice_id).where(
+            Invoice.facility_id == facility_id,
+            Claim.paid_amount < Claim.approved_amount,
+            Claim.approved_amount > 0,
+        ).order_by(Claim.updated_at.asc()).limit(limit)
+    ).all()
+
+    actions = []
+    for claim, invoice in claims:
+        outstanding = _money(claim.approved_amount - claim.paid_amount)
+        updated = claim.updated_at or invoice.created_at or now
+        age_days = max(0, (now - updated).days)
+        if age_days >= 90:
+            priority = "CRITICAL"
+            action = "Escalate aged payer receivable and verify supporting documentation."
+        elif age_days >= 60:
+            priority = "HIGH"
+            action = "Follow up with payer and confirm claim status/payment reference."
+        elif age_days >= 30:
+            priority = "MEDIUM"
+            action = "Schedule payer follow-up and monitor adjudication."
+        else:
+            priority = "LOW"
+            action = "Monitor claim and confirm expected payment cycle."
+        score = min(100, (40 if age_days >= 90 else 30 if age_days >= 60 else 20 if age_days >= 30 else 10)
+                    + min(50, int(outstanding / Decimal("10000"))))
+        actions.append({
+            "type": "PAYER_RECEIVABLE",
+            "priority": priority,
+            "priority_score": score,
+            "claim_id": str(claim.id),
+            "claim_number": claim.claim_id,
+            "invoice_id": str(invoice.id),
+            "payer_id": str(claim.payer_id),
+            "outstanding": float(outstanding),
+            "age_days": age_days,
+            "action": action,
+        })
+
+    patient_invoices = db.execute(
+        select(Invoice).where(
+            Invoice.facility_id == facility_id,
+            Invoice.patient_amount > 0,
+            Invoice.status.in_(["OPEN", "PARTIAL", "UNPAID"]),
+        ).order_by(Invoice.created_at.asc()).limit(limit)
+    ).scalars().all()
+
+    for invoice in patient_invoices:
+        paid = _money(db.scalar(select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.invoice_id == invoice.id,
+            Payment.status.in_(["CONFIRMED", "SUCCESS", "COMPLETED", "RECORDED"])
+        )))
+        outstanding = max(Decimal("0"), _money(invoice.patient_amount) - paid)
+        if outstanding <= 0:
+            continue
+        age_days = max(0, (now - (invoice.created_at or now)).days)
+        priority = "HIGH" if age_days >= 60 else "MEDIUM" if age_days >= 30 else "LOW"
+        actions.append({
+            "type": "PATIENT_BALANCE",
+            "priority": priority,
+            "priority_score": min(100, (30 if age_days >= 60 else 20 if age_days >= 30 else 10) + min(50, int(outstanding / Decimal("5000")))),
+            "invoice_id": str(invoice.id),
+            "patient_id": str(invoice.patient_id),
+            "outstanding": float(outstanding),
+            "age_days": age_days,
+            "action": "Review patient balance and follow the facility's approved billing/communication process.",
+        })
+
+    actions.sort(key=lambda x: (-int(x["priority_score"]), -float(x["outstanding"]), -int(x["age_days"])))
+    totals = {
+        "actions": len(actions),
+        "critical": sum(1 for x in actions if x["priority"] == "CRITICAL"),
+        "high": sum(1 for x in actions if x["priority"] == "HIGH"),
+        "medium": sum(1 for x in actions if x["priority"] == "MEDIUM"),
+        "low": sum(1 for x in actions if x["priority"] == "LOW"),
+        "outstanding_amount": round(sum(float(x["outstanding"]) for x in actions), 2),
+    }
+    return {"summary": totals, "actions": actions[:limit], "generated_at": now.isoformat()}
