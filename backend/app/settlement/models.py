@@ -60,6 +60,9 @@ class SettlementReconciliation(Base):
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
     reconciled_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    variance_type: Mapped[str | None] = mapped_column(String(40))
+    notes: Mapped[str | None] = mapped_column(String(1000))
+    recovery_status: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN")
 
 class SettlementLedgerEntry(Base):
     __tablename__ = "settlement_ledger_entries"
