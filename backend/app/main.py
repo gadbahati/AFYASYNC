@@ -187,6 +187,8 @@ from app.care_coordination import models as care_coordination_models  # noqa: F4
 from app.referral_routing.router import router as referral_routing_router
 from app.referral_booking.router import router as referral_booking_router
 from app.referral_booking import models as referral_booking_models  # noqa: F401
+from app.benefit_engine.router import router as benefit_engine_router
+from app.benefit_engine import models as benefit_engine_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -250,6 +252,7 @@ _REQUIRED_PROD_TABLES = (
     "health_exchange_messages",
     "care_coordination_cases",
     "referral_bookings",
+    "benefit_rule_versions",
 )
 
 
@@ -468,6 +471,7 @@ app.include_router(health_exchange_router)
 app.include_router(care_coordination_router)
 app.include_router(referral_routing_router)
 app.include_router(referral_booking_router)
+app.include_router(benefit_engine_router)
 
 
 @app.get("/health", tags=["System"])
