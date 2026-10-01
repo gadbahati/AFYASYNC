@@ -23,7 +23,7 @@ def overview(db:Session=Depends(get_db),facility_id:UUID=Depends(get_facility_co
 @router.get("")
 def items(status:str|None=None,limit:int=Query(100,ge=1,le=500),db:Session=Depends(get_db),facility_id:UUID=Depends(get_facility_context),user:User=Depends(require_permission("claims.reconcile"))):
     _=user
-    return [x.__dict__ | {"id":str(x.id),"facility_id":str(x.facility_id),"source_id":str(x.source_id),"assigned_to":str(x.assigned_to) if x.assigned_to else None,"outstanding_amount":float(x.outstanding_amount or 0)} for x in list_work(db,facility_id,status,limit)]
+    return [{"id":str(x.id),"facility_id":str(x.facility_id),"source_type":x.source_type,"source_id":str(x.source_id),"title":x.title,"priority":x.priority,"status":x.status,"assigned_to":str(x.assigned_to) if x.assigned_to else None,"due_at":x.due_at.isoformat() if x.due_at else None,"outstanding_amount":float(x.outstanding_amount or 0),"note":x.note,"created_at":x.created_at.isoformat() if x.created_at else None,"updated_at":x.updated_at.isoformat() if x.updated_at else None} for x in list_work(db,facility_id,status,limit)]
 
 @router.post("/sync")
 def sync(db:Session=Depends(get_db),facility_id:UUID=Depends(get_facility_context),user:User=Depends(require_permission("claims.reconcile"))):
