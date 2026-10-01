@@ -189,6 +189,7 @@ from app.referral_routing.router import router as referral_routing_router
 from app.referral_booking.router import router as referral_booking_router
 from app.referral_booking import models as referral_booking_models  # noqa: F401
 from app.benefit_engine.router import router as benefit_engine_router
+from app.settlement.recovery_router import router as revenue_recovery_router
 from app.claim_clearinghouse.router import router as claim_clearinghouse_router
 from app.claim_clearinghouse import models as claim_clearinghouse_models  # noqa: F401
 from app.benefit_engine import models as benefit_engine_models  # noqa: F401
@@ -262,6 +263,8 @@ _REQUIRED_PROD_TABLES = (
     "clearinghouse_events",
     "clearinghouse_denial_codes",
     "clearinghouse_remittances",
+    "revenue_recovery_cases",
+    "recovery_case_updates",
 )
 
 
@@ -483,6 +486,7 @@ app.include_router(referral_routing_router)
 app.include_router(referral_booking_router)
 app.include_router(benefit_engine_router)
 app.include_router(claim_clearinghouse_router)
+app.include_router(revenue_recovery_router)
 
 
 @app.get("/health", tags=["System"])
