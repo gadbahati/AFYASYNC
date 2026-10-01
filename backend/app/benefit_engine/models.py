@@ -1,13 +1,12 @@
 from datetime import date, datetime
 from uuid import UUID, uuid4
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 class BenefitRuleVersion(Base):
     __tablename__ = "benefit_rule_versions"
-    __table_args__ = (UniqueConstraint("benefit_package_id","service_code","service_type","version","name", name="uq_benefit_rule_version"),)
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     benefit_package_id: Mapped[UUID] = mapped_column(ForeignKey("benefit_packages.id", ondelete="RESTRICT"), nullable=False, index=True)
     payer_id: Mapped[UUID] = mapped_column(ForeignKey("payers.id", ondelete="RESTRICT"), nullable=False, index=True)
