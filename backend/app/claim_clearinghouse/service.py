@@ -39,21 +39,26 @@ def _event(db, case, event_type, actor_id=None, to_status=None, message=None, me
     db.add(ClearinghouseEvent(case_id=case.id,event_type=event_type,from_status=case.status,to_status=to_status,actor_id=actor_id,message=message,metadata=metadata))
     if to_status: case.status=to_status
 
-def create_case(db:Session, facility_id:UUID, claim_id:UUID, idempotency_key:str, actor_id:UUID|None=None)->ClearinghouseCase:
+def create_case(db:Session, facility_id:UUID, claim_id:UUID|None, idempotency_key:str, actor_id:UUID|None=None, invoice_id:UUID|None=None)->ClearinghouseCase:
     existing=db.scalar(select(ClearinghouseCase).where(ClearinghouseCase.facility_id==facility_id,ClearinghouseCase.idempotency_key==idempotency_key))
     if existing:return existing
-    claim=db.get(Claim,claim_id)
-    if claim is None: raise ClearinghouseError("CLAIM_NOT_FOUND")
-    if claim.status not in {"READY","SUBMITTED","ACCEPTED","UNDER_REVIEW","PARTIALLY_PAID","PAID","REJECTED"}: raise ClearinghouseError("CLAIM_NOT_READY_FOR_CLEARINGHOUSE")
     from app.billing.models import Invoice
-    invoice=db.get(Invoice,claim.invoice_id)
-    if invoice is None or invoice.facility_id!=facility_id: raise ClearinghouseError("FACILITY_ACCESS_DENIED")
-    payer=db.get(Payer,claim.payer_id)
-    source=_source(payer,claim)
-    route=_route(db,facility_id,claim.payer_id,source)
-    case=ClearinghouseCase(case_number=_number(),facility_id=facility_id,claim_id=claim.id,invoice_id=invoice.id,patient_id=claim.patient_id,payer_id=claim.payer_id,source_type=source,adapter_code=route.adapter_code if route else None,idempotency_key=idempotency_key,claim_amount=claim.claim_amount,approved_amount=claim.approved_amount,paid_amount=claim.paid_amount,created_by=actor_id)
-    db.add(case);db.flush();_event(db,case,"INTAKE_CREATED",actor_id,to_status="VALIDATING",metadata={"source_type":source,"adapter_code":case.adapter_code})
-    record_audit(db,action="CLEARINGHOUSE_INTAKE",resource_type="CLEARINGHOUSE_CASE",resource_id=str(case.id),result="SUCCESS",user_id=actor_id,facility_id=facility_id,patient_id=case.patient_id,metadata={"case_number":case.case_number,"source_type":source},commit=False)
+    claim=db.get(Claim,claim_id) if claim_id else None
+    invoice=db.get(Invoice,invoice_id) if invoice_id else (db.get(Invoice,claim.invoice_id) if claim else None)
+    if invoice is None: raise ClearinghouseError("INVOICE_NOT_FOUND")
+    if invoice.facility_id!=facility_id: raise ClearinghouseError("FACILITY_ACCESS_DENIED")
+    payer_id=claim.payer_id if claim else invoice.payer_id
+    patient_id=claim.patient_id if claim else invoice.patient_id
+    amount=Decimal(str(claim.claim_amount)) if claim else Decimal(str(invoice.total_amount or invoice.payer_amount or 0))
+    if amount<=0: raise ClearinghouseError("CLAIM_AMOUNT_INVALID")
+    if claim is not None and claim.status not in {"READY","SUBMITTED","ACCEPTED","UNDER_REVIEW","PARTIALLY_PAID","PAID","REJECTED"}:
+        raise ClearinghouseError("CLAIM_NOT_READY_FOR_CLEARINGHOUSE")
+    payer=db.get(Payer,payer_id) if payer_id else None
+    source=_source(payer,claim) if claim else "SELF_PAY"
+    route=_route(db,facility_id,payer_id,source)
+    case=ClearinghouseCase(case_number=_number(),facility_id=facility_id,claim_id=claim.id if claim else None,invoice_id=invoice.id,patient_id=patient_id,payer_id=payer_id,source_type=source,adapter_code=route.adapter_code if route else None,idempotency_key=idempotency_key,claim_amount=amount,approved_amount=Decimal(str(claim.approved_amount)) if claim else amount,paid_amount=Decimal(str(claim.paid_amount)) if claim else Decimal("0"),created_by=actor_id)
+    db.add(case);db.flush();_event(db,case,"INTAKE_CREATED",actor_id,to_status="VALIDATING",metadata={"source_type":source,"adapter_code":case.adapter_code,"claim_linked":bool(claim)})
+    record_audit(db,action="CLEARINGHOUSE_INTAKE",resource_type="CLEARINGHOUSE_CASE",resource_id=str(case.id),result="SUCCESS",user_id=actor_id,facility_id=facility_id,patient_id=case.patient_id,metadata={"case_number":case.case_number,"source_type":source,"claim_linked":bool(claim)},commit=False)
     db.commit();db.refresh(case);return case
 
 def validate_case(db:Session,case_id:UUID,facility_id:UUID,actor_id:UUID|None=None)->list[str]:
