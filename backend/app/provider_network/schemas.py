@@ -16,6 +16,10 @@ class MembershipCreate(BaseModel):
 class MembershipStatusUpdate(BaseModel):
     status: str = Field(min_length=2,max_length=30)
 
+class MembershipVerificationUpdate(BaseModel):
+    verification_type: str = Field(pattern="^(LICENSE|CREDENTIAL|SERVICE)$")
+    notes: str | None = Field(default=None, max_length=2000)
+
 class ServiceCreate(BaseModel):
     facility_id: UUID
     network_code: str = Field(min_length=2,max_length=80)
@@ -36,3 +40,25 @@ class ContractCreate(BaseModel):
 
 class ContractStatusUpdate(BaseModel):
     status: str = Field(min_length=2,max_length=30)
+
+class ContractAcceptance(BaseModel):
+    notes: str | None = Field(default=None, max_length=2000)
+
+class ContractNegotiation(BaseModel):
+    notes: str | None = Field(default=None, max_length=2000)
+
+class ContractRenewal(BaseModel):
+    effective_to: datetime
+    renewal_due_at: datetime | None = None
+
+class ContractEventOut(BaseModel):
+    id: UUID
+    contract_id: UUID
+    event_type: str
+    from_status: str | None
+    to_status: str | None
+    actor_id: UUID | None
+    notes: str | None
+    metadata: dict | None
+    created_at: datetime
+    model_config = {"from_attributes": True}
