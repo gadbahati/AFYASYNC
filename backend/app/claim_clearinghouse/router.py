@@ -29,7 +29,7 @@ def create_route(payload:RouteCreate,db:Session=Depends(get_db),facility_id:UUID
 
 @router.post("/intake",response_model=CaseOut,status_code=201)
 def intake(payload:IntakeRequest,db:Session=Depends(get_db),facility_id:UUID=Depends(get_facility_context),user:User=Depends(require_permission("claims.create"))):
-    try:return create_case(db,facility_id,payload.claim_id,payload.idempotency_key,user.id)
+    try:return create_case(db,facility_id,payload.claim_id,payload.idempotency_key,user.id,payload.invoice_id)
     except ClearinghouseError as x:raise err(x) from x
 
 @router.post("/cases/{case_id}/validate",response_model=CaseOut)
