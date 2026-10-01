@@ -7,16 +7,17 @@ export default function FinancialCommandCentrePage() {
   const [overview,setOverview]=useState<any>(null);
   const [forecast,setForecast]=useState<any>(null);
   const [payers,setPayers]=useState<any[]>([]);
+  const [priorities,setPriorities]=useState<any>(null);
   const [days,setDays]=useState(90);
   const [message,setMessage]=useState("");
 
   async function load() {
-    const [o,f,p]=await Promise.all([
+    const [o,f,p,q]=await Promise.all([
       api.financialOverview(days),
       api.financialForecast(days),
       api.financialPayers(days)
     ]);
-    setOverview(o); setForecast(f); setPayers(p);
+    setOverview(o); setForecast(f); setPayers(p); setPriorities(q);
   }
 
   useEffect(()=>{ void load().catch(e=>setMessage(e instanceof Error?e.message:String(e))); },[days]);
@@ -45,6 +46,7 @@ export default function FinancialCommandCentrePage() {
       <tbody>{[30,60,90].map(h=><tr key={h}><td>{h} days</td><td>{money(forecast.forecast?.[String(h)]?.projected_billing)}</td><td>{money(forecast.forecast?.[String(h)]?.projected_cash_collection)}</td><td>{money(forecast.forecast?.[String(h)]?.projected_net_cash)}</td></tr>)}</tbody></table></div>
       <p className="muted">Daily billing run-rate: {money(forecast.daily_billing_run_rate)} · Daily cash run-rate: {money(forecast.daily_cash_run_rate)} · Cash volatility: {forecast.cash_volatility_percent}%</p>
     </section>}
+    {priorities&&<section className="card"><h2>Collection action queue</h2><p className="muted">Prioritized from outstanding payer receivables and open patient balances. This recommends operational follow-up; it does not automatically contact patients or payers.</p><div className="stat-grid"><div className="stat-card"><span>Actions</span><strong>{priorities.summary.actions}</strong></div><div className="stat-card"><span>Critical</span><strong>{priorities.summary.critical}</strong></div><div className="stat-card"><span>High</span><strong>{priorities.summary.high}</strong></div><div className="stat-card"><span>Outstanding</span><strong>{money(priorities.summary.outstanding_amount)}</strong></div></div><div className="table-wrap"><table><thead><tr><th>Priority</th><th>Type</th><th>Reference</th><th>Age</th><th>Outstanding</th><th>Recommended action</th></tr></thead><tbody>{(priorities.actions||[]).slice(0,30).map((x:any,i:number)=><tr key={i}><td>{x.priority}</td><td>{x.type}</td><td>{x.claim_number||x.invoice_id}</td><td>{x.age_days} days</td><td>{money(x.outstanding)}</td><td>{x.action}</td></tr>)}</tbody></table></div></section>}
     <section className="card"><h2>Payer performance</h2><div className="table-wrap"><table><thead><tr><th>Payer</th><th>Claims</th><th>Submitted</th><th>Approved</th><th>Paid</th><th>Approval</th><th>Collection</th><th>Outstanding</th></tr></thead>
     <tbody>{payers.map(p=><tr key={p.payer_id}><td>{p.payer_id}</td><td>{p.claims}</td><td>{money(p.submitted)}</td><td>{money(p.approved)}</td><td>{money(p.paid)}</td><td>{p.approval_rate}%</td><td>{p.collection_rate}%</td><td>{money(p.outstanding)}</td></tr>)}</tbody></table></div></section>
   </div>;
