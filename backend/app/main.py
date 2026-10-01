@@ -200,6 +200,8 @@ from app.financial_intelligence import work_queue as financial_work_queue_models
 from app.financial_intelligence.work_queue_router import router as collection_work_router
 from app.financial_intelligence.resolution_router import router as revenue_resolution_router
 from app.financial_intelligence import resolution_models as revenue_resolution_models  # noqa: F401
+from app.financial_intelligence import sla_models as payer_sla_models  # noqa: F401
+from app.financial_intelligence.sla_router import router as payer_sla_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
