@@ -528,6 +528,7 @@ def readiness_check(response: Response):
                         missing.append(table)
 
             if missing:
+                logger.error("READINESS_SCHEMA_INCOMPLETE revision=%s missing_tables=%s", alembic_rev, missing)
                 response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
                 return {
                     "success": False,
@@ -551,7 +552,8 @@ def readiness_check(response: Response):
             },
             "message": "AfyaSync API is ready",
         }
-    except Exception:
+    except Exception as exc:
+        logger.exception("READINESS_CHECK_FAILED: %s", exc)
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {
             "success": False,
