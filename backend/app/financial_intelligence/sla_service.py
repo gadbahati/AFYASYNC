@@ -54,6 +54,18 @@ def sync_sla(db,facility_id,actor_id=None,limit=500):
             c.escalation_level=1;escalated+=1;db.add(RevenueResolutionSLAEvent(case_id=c.id,event_type="SLA_AT_RISK",from_level=0,to_level=1,note="Resolution SLA approaching deadline",actor_id=actor_id))
     record_audit(db,"SYNC_REVENUE_SLA","REVENUE_RESOLUTION_SLA",str(facility_id),{"initialized":initialized,"breached":breached,"escalated":escalated},user_id=actor_id,facility_id=facility_id,commit=False);db.commit()
     return {"initialized":initialized,"breached":breached,"escalated":escalated}
+def escalation_queue(db,facility_id):
+    now=datetime.now(timezone.utc)
+    rows=db.scalars(select(RevenueResolutionCase).where(RevenueResolutionCase.facility_id==facility_id,RevenueResolutionCase.status.in_({"OPEN","IN_REVIEW","WAITING_EXTERNAL","ESCALATED"})).order_by(RevenueResolutionCase.sla_due_at.asc().nullslast()).limit(200)).all()
+    out=[]
+    for x in rows:
+        if x.sla_due_at is None: continue
+        hours=round((x.sla_due_at-now).total_seconds()/3600,1)
+        action="ESCALATE_PAYER" if x.sla_status=="BREACHED" else "CONTACT_PAYER" if x.sla_status=="AT_RISK" else "MONITOR"
+        if x.source_type=="DENIAL" and x.appeal_due_at is not None and x.appeal_due_at<=now+timedelta(hours=24): action="PREPARE_APPEAL"
+        out.append({"case_id":str(x.id),"case_number":x.case_number,"source_type":x.source_type,"title":x.title,"priority":x.priority,"status":x.status,"sla_status":x.sla_status,"escalation_level":x.escalation_level,"sla_due_at":x.sla_due_at.isoformat(),"appeal_due_at":x.appeal_due_at.isoformat() if x.appeal_due_at else None,"hours_to_sla":hours,"amount_at_risk":float(x.amount_at_risk or 0),"recommended_action":action})
+    return {"actions":len(out),"items":out}
+
 def sla_overview(db,facility_id):
     rows=db.execute(select(RevenueResolutionCase.sla_status,func.count(RevenueResolutionCase.id),func.coalesce(func.sum(RevenueResolutionCase.amount_at_risk),0)).where(RevenueResolutionCase.facility_id==facility_id,RevenueResolutionCase.status.notin_({"RESOLVED","CLOSED"})).group_by(RevenueResolutionCase.sla_status)).all()
     return {"by_status":{str(s):{"count":int(c),"amount_at_risk":float(a or 0)} for s,c,a in rows}}
