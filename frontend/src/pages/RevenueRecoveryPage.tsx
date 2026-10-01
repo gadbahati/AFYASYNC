@@ -1,0 +1,12 @@
+import {useEffect,useState} from "react";
+import {api} from "../api/client";
+export default function RevenueRecoveryPage(){
+ const [o,setO]=useState<any>(null),[cases,setCases]=useState<any[]>([]),[message,setMessage]=useState("");
+ async function load(){const [a,b]=await Promise.all([api.revenueRecoveryOverview(),api.revenueRecoveryCases()]);setO(a);setCases(b)}
+ useEffect(()=>{void load()},[]);
+ async function update(c:any){const amount=prompt("Recovered amount (KES)",String(c.recovered_amount||0));if(amount===null)return;try{await api.revenueRecoveryUpdate(c.id,{status:Number(amount)>=Number(c.expected_amount)?"RECOVERED":"IN_PROGRESS",recovered_amount:amount});setMessage("Recovery case updated.");await load()}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
+ return <div className="page-stack"><div className="page-header"><div><p className="eyebrow">Phase 58 · Revenue protection</p><h1>Revenue Recovery</h1><p className="muted">Track settlement shortfalls from payer reconciliation through recovery and closure.</p></div><button className="secondary" onClick={()=>void load()}>Refresh</button></div>
+ {message&&<div className="notice-box">{message}</div>}
+ {o&&<div className="stat-grid"><div className="stat-card"><span>Open cases</span><strong>{o.open_cases}</strong></div><div className="stat-card"><span>Outstanding</span><strong>KES {Number(o.outstanding_amount).toLocaleString()}</strong></div><div className="stat-card"><span>Recovered</span><strong>KES {Number(o.recovered_amount).toLocaleString()}</strong></div></div>}
+ <section className="card"><h2>Recovery queue</h2><div className="table-wrap"><table><thead><tr><th>Case</th><th>Reason</th><th>Priority</th><th>Expected</th><th>Recovered</th><th>Outstanding</th><th>Status</th><th></th></tr></thead><tbody>{cases.map(c=><tr key={c.id}><td>{c.case_number}</td><td>{c.reason}</td><td>{c.priority}</td><td>KES {Number(c.expected_amount).toLocaleString()}</td><td>KES {Number(c.recovered_amount).toLocaleString()}</td><td>KES {Number(c.outstanding_amount).toLocaleString()}</td><td>{c.status}</td><td>{!["RECOVERED","CLOSED","WRITTEN_OFF"].includes(c.status)&&<button onClick={()=>void update(c)}>Update</button>}</td></tr>)}</tbody></table></div></section></div>
+}
