@@ -96,6 +96,7 @@ import { ClaimsClearinghousePage } from "./pages/ClaimsClearinghousePage";
 import RevenueRecoveryPage from "./pages/RevenueRecoveryPage";
 import RevenueAnomalyPage from "./pages/RevenueAnomalyPage";
 import FinancialCommandCentrePage from "./pages/FinancialCommandCentrePage";
+import CollectionWorkQueuePage from "./pages/CollectionWorkQueuePage";
 
 export default function App() {
   return <AuthProvider><BrowserRouter><Routes>
