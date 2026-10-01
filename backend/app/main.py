@@ -274,7 +274,9 @@ _REQUIRED_PROD_TABLES = (
     "recovery_case_updates",
     "revenue_anomaly_cases",
     "revenue_anomaly_events",
-    "collection_work_items",\n    "revenue_resolution_cases",\n    "revenue_resolution_events",
+    "collection_work_items",
+    "revenue_resolution_cases",
+    "revenue_resolution_events",
 )
 
 
@@ -499,7 +501,8 @@ app.include_router(claim_clearinghouse_router)
 app.include_router(revenue_recovery_router)
 app.include_router(revenue_anomaly_router)
 app.include_router(financial_intelligence_router)
-app.include_router(collection_work_router)\napp.include_router(revenue_resolution_router)
+app.include_router(collection_work_router)
+app.include_router(revenue_resolution_router)
 
 
 @app.get("/health", tags=["System"])
