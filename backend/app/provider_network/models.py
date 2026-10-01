@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -18,6 +18,10 @@ class ProviderNetworkMembership(Base):
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     credential_status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
     referral_enabled: Mapped[bool] = mapped_column(default=True)
+    license_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    credential_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    service_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verification_notes: Mapped[str | None] = mapped_column(Text)
     claims_enabled: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -49,4 +53,22 @@ class ProviderNetworkContract(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     effective_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tariff_negotiated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    accepted_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    renewal_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    suspension_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class ProviderContractEvent(Base):
+    __tablename__ = "provider_contract_events"
+    __table_args__ = (Index("ix_provider_contract_events_contract", "contract_id", "created_at"), Index("ix_provider_contract_events_type", "event_type"))
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    contract_id: Mapped[UUID] = mapped_column(ForeignKey("provider_network_contracts.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(30))
+    to_status: Mapped[str | None] = mapped_column(String(30))
+    actor_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    metadata: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
