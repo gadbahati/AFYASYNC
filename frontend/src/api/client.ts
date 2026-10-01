@@ -323,4 +323,4 @@ export async function downloadWarehouseCsv(days = 30): Promise<string> {
   return res.text();
 }
 
-export const api: any = { ..._apiCore, ...citizenApiMethods(request), referralRoutingOptions: (payload:any) => request("/api/v1/referral-routing/options",{method:"POST",body:JSON.stringify(payload)}) };
+export const api: any = { ..._apiCore, ...citizenApiMethods(request), referralRoutingOptions: (payload:any) => request("/api/v1/referral-routing/options",{method:"POST",body:JSON.stringify(payload)}), benefitQuote: (payload:any) => request("/api/v1/benefit-engine/quote",{method:"POST",body:JSON.stringify(payload)}), benefitRules: (params:any={}) => { const q=new URLSearchParams(); if(params.payer_id) q.set("payer_id",params.payer_id); if(params.payer_plan_id) q.set("payer_plan_id",params.payer_plan_id); if(params.status) q.set("status",params.status); return request(`/api/v1/benefit-engine/rules${q.toString()?`?${q.toString()}`:""}`); }, createBenefitRule: (payload:any) => request("/api/v1/benefit-engine/rules",{method:"POST",body:JSON.stringify(payload)}) };
