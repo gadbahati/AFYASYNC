@@ -1,9 +1,9 @@
 import { useEffect,useState } from "react";
 import { api } from "../api/client";
-const money=(v:any)=>`KES ${Number(v||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+const money=(v:any)=>`KES ${Number(v||0).toLocaleString(undefined,{maximumFractionDigits:2})`;
 export default function RevenueResolutionPage(){
  const [overview,setOverview]=useState<any>(null),[cases,setCases]=useState<any[]>([]),[sla,setSla]=useState<any>(null),[queue,setQueue]=useState<any>(null),[message,setMessage]=useState("");
- async function load(){const [o,c,s]=await Promise.all([api.revenueResolutionOverview(),api.revenueResolutionCases(),api.payerSlaOverview(),api.payerSlaEscalationQueue()]);setOverview(o);setCases(c);setSla(s);setQueue(q);}
+ async function load(){const [o,c,s,q]=await Promise.all([api.revenueResolutionOverview(),api.revenueResolutionCases(),api.payerSlaOverview(),api.payerSlaEscalationQueue()]);setOverview(o);setCases(c);setSla(s);setQueue(q);}
  async function sync(){try{const r=await api.revenueResolutionSync();const s=await api.payerSlaSync();setMessage(`Synchronized ${r.created} revenue cases and initialized ${s.initialized} SLA clocks; ${s.breached} breached, ${s.escalated} escalated.`);await load();}catch(e){setMessage(e instanceof Error?e.message:String(e));}}
  async function update(id:string,status:string){try{await api.revenueResolutionUpdate(id,{status});await load();}catch(e){setMessage(e instanceof Error?e.message:String(e));}}
  useEffect(()=>{void load().catch(e=>setMessage(e instanceof Error?e.message:String(e)));},[]);
