@@ -277,6 +277,8 @@ _REQUIRED_PROD_TABLES = (
     "collection_work_items",
     "revenue_resolution_cases",
     "revenue_resolution_events",
+    "payer_sla_policies",
+    "revenue_resolution_sla_events",
 )
 
 
@@ -503,6 +505,7 @@ app.include_router(revenue_anomaly_router)
 app.include_router(financial_intelligence_router)
 app.include_router(collection_work_router)
 app.include_router(revenue_resolution_router)
+app.include_router(payer_sla_router)
 
 
 @app.get("/health", tags=["System"])
