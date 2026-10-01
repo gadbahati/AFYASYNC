@@ -14,7 +14,8 @@ class RouteCreate(BaseModel):
     configuration: dict | None = None
 
 class IntakeRequest(BaseModel):
-    claim_id: UUID
+    claim_id: UUID | None = None
+    invoice_id: UUID | None = None
     idempotency_key: str = Field(min_length=8, max_length=180)
 
 class StatusUpdate(BaseModel):
