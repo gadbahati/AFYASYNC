@@ -197,7 +197,7 @@ from app.revenue_anomaly.router import router as revenue_anomaly_router
 from app.revenue_anomaly import models as revenue_anomaly_models  # noqa: F401
 from app.financial_intelligence.router import router as financial_intelligence_router
 from app.financial_intelligence import work_queue as financial_work_queue_models  # noqa: F401
-from app.financial_intelligence.work_queue_router import router as collection_work_router
+from app.financial_intelligence.work_queue_router import router as collection_work_router\nfrom app.financial_intelligence.resolution_router import router as revenue_resolution_router\nfrom app.financial_intelligence import resolution_models as revenue_resolution_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -272,7 +272,7 @@ _REQUIRED_PROD_TABLES = (
     "recovery_case_updates",
     "revenue_anomaly_cases",
     "revenue_anomaly_events",
-    "collection_work_items",
+    "collection_work_items",\n    "revenue_resolution_cases",\n    "revenue_resolution_events",
 )
 
 
@@ -497,7 +497,7 @@ app.include_router(claim_clearinghouse_router)
 app.include_router(revenue_recovery_router)
 app.include_router(revenue_anomaly_router)
 app.include_router(financial_intelligence_router)
-app.include_router(collection_work_router)
+app.include_router(collection_work_router)\napp.include_router(revenue_resolution_router)
 
 
 @app.get("/health", tags=["System"])
