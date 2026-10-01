@@ -15,7 +15,8 @@ export default function FinancialCommandCentrePage() {
     const [o,f,p,q]=await Promise.all([
       api.financialOverview(days),
       api.financialForecast(days),
-      api.financialPayers(days)
+      api.financialPayers(days),
+      api.collectionPriorities()
     ]);
     setOverview(o); setForecast(f); setPayers(p); setPriorities(q);
   }
