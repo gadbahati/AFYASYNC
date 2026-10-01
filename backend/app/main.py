@@ -193,6 +193,8 @@ from app.settlement.recovery_router import router as revenue_recovery_router
 from app.claim_clearinghouse.router import router as claim_clearinghouse_router
 from app.claim_clearinghouse import models as claim_clearinghouse_models  # noqa: F401
 from app.benefit_engine import models as benefit_engine_models  # noqa: F401
+from app.revenue_anomaly.router import router as revenue_anomaly_router
+from app.revenue_anomaly import models as revenue_anomaly_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -265,6 +267,8 @@ _REQUIRED_PROD_TABLES = (
     "clearinghouse_remittances",
     "revenue_recovery_cases",
     "recovery_case_updates",
+    "revenue_anomaly_cases",
+    "revenue_anomaly_events",
 )
 
 
@@ -487,6 +491,7 @@ app.include_router(referral_booking_router)
 app.include_router(benefit_engine_router)
 app.include_router(claim_clearinghouse_router)
 app.include_router(revenue_recovery_router)
+app.include_router(revenue_anomaly_router)
 
 
 @app.get("/health", tags=["System"])
