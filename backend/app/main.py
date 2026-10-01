@@ -197,7 +197,9 @@ from app.revenue_anomaly.router import router as revenue_anomaly_router
 from app.revenue_anomaly import models as revenue_anomaly_models  # noqa: F401
 from app.financial_intelligence.router import router as financial_intelligence_router
 from app.financial_intelligence import work_queue as financial_work_queue_models  # noqa: F401
-from app.financial_intelligence.work_queue_router import router as collection_work_router\nfrom app.financial_intelligence.resolution_router import router as revenue_resolution_router\nfrom app.financial_intelligence import resolution_models as revenue_resolution_models  # noqa: F401
+from app.financial_intelligence.work_queue_router import router as collection_work_router
+from app.financial_intelligence.resolution_router import router as revenue_resolution_router
+from app.financial_intelligence import resolution_models as revenue_resolution_models  # noqa: F401
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
