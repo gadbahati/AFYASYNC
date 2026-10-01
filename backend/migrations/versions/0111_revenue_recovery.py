@@ -38,7 +38,20 @@ def upgrade():
     op.create_index("ix_recovery_cases_facility_status","revenue_recovery_cases",["facility_id","status"])
     op.create_index("ix_recovery_cases_payer_status","revenue_recovery_cases",["payer_id","status"])
     op.create_index("ix_recovery_cases_priority","revenue_recovery_cases",["priority","status"])
+    op.create_table(
+      "recovery_case_updates",
+      sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),
+      sa.Column("recovery_case_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("revenue_recovery_cases.id",ondelete="CASCADE"),nullable=False),
+      sa.Column("status",sa.String(30),nullable=False),
+      sa.Column("amount",sa.Numeric(14,2),nullable=False,server_default="0"),
+      sa.Column("note",sa.Text()),
+      sa.Column("actor_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("users.id",ondelete="SET NULL")),
+      sa.Column("created_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False),
+    )
+    op.create_index("ix_recovery_case_updates_case","recovery_case_updates",["recovery_case_id","created_at"])
 def downgrade():
+    op.drop_index("ix_recovery_case_updates_case",table_name="recovery_case_updates")
+    op.drop_table("recovery_case_updates")
     op.drop_index("ix_recovery_cases_priority",table_name="revenue_recovery_cases")
     op.drop_index("ix_recovery_cases_payer_status",table_name="revenue_recovery_cases")
     op.drop_index("ix_recovery_cases_facility_status",table_name="revenue_recovery_cases")
