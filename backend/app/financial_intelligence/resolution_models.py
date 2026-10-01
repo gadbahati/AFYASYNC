@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
-from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, Text, func, Integer
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
@@ -20,6 +20,12 @@ class RevenueResolutionCase(Base):
     status:Mapped[str]=mapped_column(String(30),nullable=False,default="OPEN",index=True)
     assigned_to:Mapped[UUID|None]=mapped_column(ForeignKey("users.id",ondelete="SET NULL"))
     due_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    sla_due_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    first_response_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    appeal_due_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    escalation_level:Mapped[int]=mapped_column(Integer,nullable=False,default=0)
+    sla_status:Mapped[str]=mapped_column(String(20),nullable=False,default="ON_TRACK")
+    sla_breached_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
     amount_at_risk:Mapped[Decimal]=mapped_column(Numeric(14,2),nullable=False,default=0)
     root_cause:Mapped[str|None]=mapped_column(String(80))
     resolution_action:Mapped[str|None]=mapped_column(Text)
