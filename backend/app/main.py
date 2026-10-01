@@ -179,6 +179,7 @@ from app.settlement import models as settlement_models  # noqa: F401
 from app.financing_wallet.router import router as financing_wallet_router
 from app.financing_wallet import models as financing_wallet_models  # noqa: F401
 from app.provider_network.router import router as provider_network_router
+from app.provider_network.contracting_router import router as provider_contracting_router
 from app.provider_network import models as provider_network_models  # noqa: F401
 from app.health_exchange.router import router as health_exchange_router
 from app.health_exchange import models as health_exchange_models  # noqa: F401
@@ -249,6 +250,7 @@ _REQUIRED_PROD_TABLES = (
     "provider_network_memberships",
     "provider_network_services",
     "provider_network_contracts",
+    "provider_contract_events",
     "health_exchange_messages",
     "care_coordination_cases",
     "referral_bookings",
@@ -467,6 +469,7 @@ app.include_router(financing_preaauthorization_router)
 app.include_router(settlement_router)
 app.include_router(financing_wallet_router)
 app.include_router(provider_network_router)
+app.include_router(provider_contracting_router)
 app.include_router(health_exchange_router)
 app.include_router(care_coordination_router)
 app.include_router(referral_routing_router)
