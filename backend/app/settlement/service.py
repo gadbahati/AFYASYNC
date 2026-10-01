@@ -72,7 +72,8 @@ def reconcile_batch(db: Session, *, batch_id, facility_id, received_amount, acto
     if batch is None or batch.facility_id != facility_id: raise SettlementError("BATCH_NOT_FOUND")
     expected=_money(batch.total_amount); received=_money(received_amount); diff=received-expected
     status="RECONCILED" if diff == 0 else "VARIANCE"
-    row=SettlementReconciliation(batch_id=batch.id,expected_amount=expected,received_amount=received,difference=diff,status=status,reconciled_by=actor_user_id,reconciled_at=datetime.now(timezone.utc))
+    variance_type="NONE" if diff == 0 else ("UNDERPAYMENT" if diff < 0 else "OVERPAYMENT")
+    row=SettlementReconciliation(batch_id=batch.id,expected_amount=expected,received_amount=received,difference=diff,status=status,variance_type=variance_type,reconciled_by=actor_user_id,reconciled_at=datetime.now(timezone.utc),recovery_status="NOT_REQUIRED" if diff >= 0 else "OPEN")
     db.add(row)
     batch.status="RECONCILED" if diff == 0 else "PARTIAL"
     record_audit(db, actor_user_id, "RECONCILE_SETTLEMENT_BATCH", "settlement_batch", str(batch.id), {"expected": str(expected), "received": str(received), "difference": str(diff)})
