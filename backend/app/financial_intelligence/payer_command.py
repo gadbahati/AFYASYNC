@@ -26,3 +26,5 @@ def payer_command(db:Session,facility_id,days=90):
 def payer_summary(db,facility_id,days=90):
     rows=payer_command(db,facility_id,days)["payers"]
     return {"window_days":days,"payer_count":len(rows),"configured_sla":sum(x["sla_configured"] for x in rows),"active_contracts":sum(x["contract_status"]=="ACTIVE" for x in rows),"open_resolution_cases":sum(x["active_resolution_cases"] for x in rows),"outstanding":sum(x["outstanding"] for x in rows),"recovery_outstanding":sum(x["recovery_outstanding"] for x in rows),"denial_exposure":sum(x["resolution_amount_at_risk"] for x in rows)}
+
+# Phase 66: payer command intelligence is deployment-tracked with the backend service.
