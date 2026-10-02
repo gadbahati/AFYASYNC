@@ -60,7 +60,7 @@ def upgrade():
         sa.Column("metadata",postgresql.JSONB()),
         sa.Column("created_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False),
     )
-    op.create_index("ix_payer_negotiation_events_case_created","payer_negotiation_events","case_id","created_at")
+    op.create_index("ix_payer_negotiation_events_case_created","payer_negotiation_events",["case_id","created_at"])
 
 def downgrade():
     op.drop_index("ix_payer_negotiation_events_case_created",table_name="payer_negotiation_events")
