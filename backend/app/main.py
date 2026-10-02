@@ -210,6 +210,8 @@ from app.financial_intelligence.execution_models import ContractExecutionApprova
 from app.financial_intelligence.activation_models import ContractActivationEvent  # noqa: F401
 from app.financial_intelligence.execution_router import router as contract_execution_router
 from app.financial_intelligence.activation_router import router as contract_activation_router
+from app.financial_intelligence.guardrail_router import router as contract_guardrail_router
+from app.financial_intelligence import guardrail_models as contract_guardrail_models  # noqa: F401
 from app.financial_intelligence.negotiation_router import router as payer_negotiation_router
 
 logger = logging.getLogger("afyasync.request")
@@ -293,6 +295,8 @@ _REQUIRED_PROD_TABLES = (
     "contract_execution_approvals",
     "contract_execution_events",
     "contract_activation_events",
+    "contract_compliance_guardrails",
+    "contract_compliance_guardrail_events",
 )
 
 
@@ -526,6 +530,7 @@ app.include_router(contract_renewal_router)
 app.include_router(payer_negotiation_router)
 app.include_router(contract_execution_router)
 app.include_router(contract_activation_router)
+app.include_router(contract_guardrail_router)
 
 
 @app.get("/health", tags=["System"])
