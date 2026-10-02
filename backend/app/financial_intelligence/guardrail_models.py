@@ -10,7 +10,7 @@ class ContractComplianceGuardrail(Base):
     __tablename__="contract_compliance_guardrails"
     __table_args__=(
         Index("ix_contract_guardrail_status","status","severity"),
-        Index("ix_contract_guardrail_events_type","guardrail_type"),
+        Index("ix_contract_guardrail_type","guardrail_type"),
     )
     id:Mapped[UUID]=mapped_column(PGUUID(as_uuid=True),primary_key=True,default=uuid4)
     facility_id:Mapped[UUID]=mapped_column(ForeignKey("facilities.id",ondelete="CASCADE"),nullable=False,index=True)
