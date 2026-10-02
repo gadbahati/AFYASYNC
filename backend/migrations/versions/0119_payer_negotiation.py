@@ -32,7 +32,7 @@ def upgrade():
         sa.Column("updated_at",sa.DateTime(timezone=True),server_default=sa.func.now(),nullable=False),
         sa.Column("closed_at",sa.DateTime(timezone=True)),
     )
-    op.create_index("ix_payer_negotiation_contract_status","payer_negotiation_cases","contract_id","status")
+    op.create_index("ix_payer_negotiation_contract_status","payer_negotiation_cases",["contract_id","status"])
     op.create_table(
         "payer_negotiation_items",
         sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),
