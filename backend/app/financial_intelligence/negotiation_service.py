@@ -27,7 +27,7 @@ def _snapshot(db,facility_id,contract_id):
     renewal=contract_renewal_intelligence(db,facility_id,180)
     row=next((x for x in renewal["contracts"] if x["contract_id"]==str(contract_id)),None)
     payers=payer_command(db,facility_id,90).get("payers",[])
-    payer_row=next((x for x in payers if x.get("payer_code")==c.network_code or x.get("payer_id")==str(payer.id) if payer else False),None)
+    payer_row=next((x for x in payers if payer and (x.get("payer_code")==c.network_code or x.get("payer_id")==str(payer.id))),None)
     tariffs=tariff_intelligence(db,facility_id,90,30)
     tariff_rows=[x for x in tariffs.get("services",[]) if x.get("payer_name")==(payer.name if payer else c.network_code)][:10]
     return {"captured_at":datetime.now(timezone.utc).isoformat(),"contract":{"id":str(c.id),"reference":c.contract_reference,"status":c.status,"payment_terms_days":c.payment_terms_days,"renewal_due_at":c.renewal_due_at.isoformat() if c.renewal_due_at else None},"payer":{"id":str(payer.id) if payer else None,"code":c.network_code,"name":payer.name if payer else c.network_code},"renewal":row,"payer_performance":payer_row,"tariff_evidence":tariff_rows}
