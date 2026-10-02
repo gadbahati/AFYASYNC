@@ -206,6 +206,7 @@ from app.financial_intelligence.payer_command_router import router as payer_comm
 from app.financial_intelligence.tariff_intelligence_router import router as tariff_intelligence_router
 from app.financial_intelligence.contract_renewal_router import router as contract_renewal_router
 from app.financial_intelligence.negotiation_models import PayerNegotiationCase,PayerNegotiationItem,PayerNegotiationEvent  # noqa: F401
+from app.financial_intelligence.execution_models import ContractExecutionApproval,ContractExecutionEvent  # noqa: F401
 from app.financial_intelligence.negotiation_router import router as payer_negotiation_router
 
 logger = logging.getLogger("afyasync.request")
