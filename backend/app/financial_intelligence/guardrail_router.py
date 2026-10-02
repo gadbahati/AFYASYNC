@@ -8,6 +8,7 @@ from app.rbac.models import User
 from app.financial_intelligence.guardrail_service import sync_guardrails,overview,list_guardrails,update_guardrail,events
 from app.financial_intelligence.cash_resolution_service import close_loop, sync_guardrail_work, sync_settlement_recovery
 from app.financial_intelligence.contract_cash_command import contract_cash_command
+from app.financial_intelligence.payer_cash_performance import payer_contract_cash_performance
 
 router=APIRouter(prefix="/api/v1/contract-guardrails",tags=["Contract Compliance Guardrails"])
 
@@ -21,6 +22,10 @@ class UpdateBody(BaseModel):
 @router.get("/command")
 def command(days:int=Query(90,ge=7,le=365),db:Session=Depends(get_db),facility_id=Depends(get_facility_context),user:User=Depends(require_permission("claims.reconcile"))):
     return contract_cash_command(db,facility_id,days)
+
+@router.get("/payer-performance")
+def payer_performance(days:int=Query(90,ge=7,le=365),db:Session=Depends(get_db),facility_id=Depends(get_facility_context),user:User=Depends(require_permission("claims.reconcile"))):
+    return payer_contract_cash_performance(db,facility_id,days)
 
 @router.get("/overview")
 def get_overview(db:Session=Depends(get_db),facility_id=Depends(get_facility_context),user:User=Depends(require_permission("claims.reconcile"))):
