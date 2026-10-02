@@ -20,7 +20,8 @@ def tariff_intelligence(db:Session,facility_id:UUID,days:int=90,limit:int=100):
     ).all()
     out=[]
     for code,name,payer_id,payer_name,qty,billed,approved,paid,claims in rows:
-        contract=db.scalar(select(ProviderNetworkService).where(ProviderNetworkService.facility_id==facility_id,ProviderNetworkService.network_code==select(Payer.code).where(Payer.id==payer_id).scalar_subquery(),ProviderNetworkService.service_code==code,ProviderNetworkService.status=="ACTIVE"))
+        payer_code=db.scalar(select(Payer.code).where(Payer.id==payer_id)) if payer_id else None
+        contract=db.scalar(select(ProviderNetworkService).where(ProviderNetworkService.facility_id==facility_id,ProviderNetworkService.network_code==payer_code,ProviderNetworkService.service_code==code,ProviderNetworkService.status=="ACTIVE"))
         contracted=float(contract.tariff_amount) if contract and contract.tariff_amount is not None else None
         billed=float(billed or 0); approved=float(approved or 0); paid=float(paid or 0); qty=float(qty or 0)
         billed_unit=billed/qty if qty else 0
