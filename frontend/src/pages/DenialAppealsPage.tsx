@@ -1,0 +1,13 @@
+import {useEffect,useState} from "react";
+import {api} from "../api/client";
+export default function DenialAppealsPage(){
+ const [overview,setOverview]=useState<any>(null),[appeals,setAppeals]=useState<any[]>([]),[message,setMessage]=useState("");
+ async function load(){const [o,a]=await Promise.all([api.denialAppealsOverview(),api.denialAppeals()]);setOverview(o.appeals);setAppeals(a);}
+ async function create(){const id=window.prompt("Enter rejected clearinghouse case ID");if(!id)return;try{await api.createDenialAppeal({clearinghouse_case_id:id});setMessage("Appeal workspace created.");await load();}catch(e){setMessage(e instanceof Error?e.message:String(e));}}
+ async function status(id:string,status:string){try{await api.updateDenialAppeal(id,{status});await load();}catch(e){setMessage(e instanceof Error?e.message:String(e));}}
+ useEffect(()=>{void load().catch(e=>setMessage(e instanceof Error?e.message:String(e)));},[]);
+ return <div className="page-stack"><div className="page-header"><div><p className="eyebrow">Phase 65 · Denial operations</p><h1>Denial & Appeal Centre</h1><p className="muted">Turn rejected claims into owned, deadline-driven appeal work.</p></div><button className="secondary" onClick={()=>void create()}>Create appeal</button></div>
+ {message&&<div className="notice-box">{message}</div>}
+ {overview&&<div className="stat-grid"><div className="stat-card"><span>Total</span><strong>{overview.total}</strong></div><div className="stat-card"><span>Open</span><strong>{overview.open}</strong></div><div className="stat-card"><span>Overdue</span><strong>{overview.overdue}</strong></div><div className="stat-card"><span>Submitted</span><strong>{overview.submitted}</strong></div></div>}
+ <section className="card"><h2>Appeal work queue</h2><div className="table-wrap"><table><thead><tr><th>Appeal</th><th>Status</th><th>Due</th><th>Evidence</th><th>Outcome</th><th>Action</th></tr></thead><tbody>{appeals.map(a=><tr key={a.id}><td>{a.appeal_number}</td><td>{a.status}</td><td>{a.due_at?new Date(a.due_at).toLocaleDateString():"—"}</td><td>{Object.values(a.evidence_checklist||{}).filter(Boolean).length}/{Object.keys(a.evidence_checklist||{}).length}</td><td>{a.outcome||"—"}</td><td>{a.status==="DRAFT"&&<button className="secondary" onClick={()=>void status(a.id,"READY")}>Ready</button>} {a.status==="READY"&&<button className="secondary" onClick={()=>void status(a.id,"SUBMITTED")}>Submit</button>} {a.status==="SUBMITTED"&&<button className="secondary" onClick={()=>void status(a.id,"UNDER_REVIEW")}>Review</button>}</td></tr>)}</tbody></table></div></section></div>;
+}
