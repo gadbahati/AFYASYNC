@@ -1,0 +1,13 @@
+import {useEffect,useState} from "react";
+import {api} from "../api/client";
+export default function TariffIntelligencePage(){
+ const[days,setDays]=useState(90),[data,setData]=useState<any>({services:[],actions:[]}),[loading,setLoading]=useState(true),[error,setError]=useState("");
+ const load=async()=>{setLoading(true);setError("");try{setData(await api.tariffIntelligence(days,200));}catch(e:any){setError(e?.message||"Unable to load tariff intelligence");}finally{setLoading(false);}};
+ useEffect(()=>{load()},[days]);
+ return <div className="page"><div className="page-header"><div><h1>Tariff & Reimbursement Intelligence</h1><p>Service-level view of contracted tariffs, billed value, approvals, payments and reimbursement gaps.</p></div><select value={days} onChange={e=>setDays(Number(e.target.value))}><option value={30}>30 days</option><option value={90}>90 days</option><option value={180}>180 days</option><option value={365}>365 days</option></select></div>
+ {error&&<div className="alert">{error}</div>}{loading?<div className="card">Loading intelligence…</div>:<>
+ <div className="grid grid-3"><div className="card"><strong>{data.services?.length||0}</strong><span>Service/payer lines</span></div><div className="card"><strong>{data.actions?.length||0}</strong><span>Action signals</span></div><div className="card"><strong>KES {((data.services||[]).reduce((s:any,x:any)=>s+(x.payment_gap||0),0)).toLocaleString()}</strong><span>Approved-to-paid gap</span></div></div>
+ <section className="card"><h2>Service reimbursement analysis</h2><div className="table-wrap"><table><thead><tr><th>Service</th><th>Payer</th><th>Qty</th><th>Billed</th><th>Contracted/unit</th><th>Approved</th><th>Paid</th><th>Collection</th></tr></thead><tbody>{(data.services||[]).map((x:any,i:number)=><tr key={i}><td><strong>{x.service_code}</strong><br/>{x.service_name}</td><td>{x.payer_name}</td><td>{x.quantity}</td><td>KES {x.billed.toLocaleString()}</td><td>{x.contracted_unit==null?"—":"KES "+x.contracted_unit.toLocaleString()}</td><td>KES {x.approved.toLocaleString()}</td><td>KES {x.paid.toLocaleString()}</td><td>{x.collection_rate}%</td></tr>)}</tbody></table></div></section>
+ <section className="card"><h2>Action queue</h2><div className="table-wrap"><table><thead><tr><th>Priority</th><th>Payer</th><th>Service</th><th>Action</th><th>Reason</th></tr></thead><tbody>{(data.actions||[]).map((x:any,i:number)=><tr key={i}><td>{x.priority}</td><td>{x.payer_name}</td><td>{x.service_code}</td><td><strong>{x.action}</strong></td><td>{x.reason}</td></tr>)}</tbody></table></div></section>
+ </>}</div>;
+}
