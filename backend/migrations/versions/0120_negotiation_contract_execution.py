@@ -15,7 +15,7 @@ def upgrade():
     op.add_column("provider_network_contracts",sa.Column("execution_reference",sa.String(120)))
     op.add_column("provider_network_contracts",sa.Column("executed_terms",postgresql.JSONB()))
     op.add_column("provider_network_contracts",sa.Column("execution_notes",sa.Text()))
-    op.create_index("ix_provider_network_contract_execution","provider_network_contracts","execution_status")
+    op.create_index("ix_provider_network_contract_execution","provider_network_contracts",["execution_status"])
     op.create_table("contract_execution_approvals",
         sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),
         sa.Column("facility_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("facilities.id",ondelete="CASCADE"),nullable=False,index=True),
