@@ -1,0 +1,9 @@
+import {useEffect,useState} from "react";
+const base=import.meta.env.VITE_API_URL||"";
+const headers=()=>({Authorization:"Bearer "+(localStorage.getItem("access_token")||""),"Content-Type":"application/json"});
+async function req(path:string,options:any={}){const r=await fetch(base+path,{...options,headers:{...headers(),...(options.headers||{})}});if(!r.ok)throw new Error(await r.text()||"Request failed");return r.json();}
+export default function ContractExecutionPage(){
+ const[data,setData]=useState<any>({total:0,pending_approval:0,ready:0,executed:0,rejected:0});const[error,setError]=useState("");
+ const load=async()=>{try{setData(await req("/api/v1/contract-execution/overview"))}catch(e:any){setError(e.message)}};useEffect(()=>{load()},[]);
+ return <div className="page"><div className="page-header"><div><h1>Contract Execution</h1><p>Controlled approval and execution after payer negotiations reach agreement.</p></div></div>{error&&<div className="alert">{error}</div>}<div className="grid grid-3"><div className="card"><strong>{data.pending_approval}</strong><span>Pending approval</span></div><div className="card"><strong>{data.ready}</strong><span>Ready to execute</span></div><div className="card"><strong>{data.executed}</strong><span>Executed contracts</span></div></div><section className="card"><h2>Execution controls</h2><p>Execution is gated by an approved negotiation and produces an auditable contract event.</p><div className="grid grid-3"><div><b>Total contracts</b><div>{data.total}</div></div><div><b>Rejected</b><div>{data.rejected}</div></div><div><b>Workflow</b><div>Request → Approval → Execute</div></div></div></section></div>
+}
