@@ -205,6 +205,8 @@ from app.financial_intelligence.sla_router import router as payer_sla_router
 from app.financial_intelligence.payer_command_router import router as payer_command_router
 from app.financial_intelligence.tariff_intelligence_router import router as tariff_intelligence_router
 from app.financial_intelligence.contract_renewal_router import router as contract_renewal_router
+from app.financial_intelligence.negotiation_models import PayerNegotiationCase,PayerNegotiationItem,PayerNegotiationEvent  # noqa: F401
+from app.financial_intelligence.negotiation_router import router as payer_negotiation_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -514,6 +516,7 @@ app.include_router(payer_sla_router)
 app.include_router(payer_command_router)
 app.include_router(tariff_intelligence_router)
 app.include_router(contract_renewal_router)
+app.include_router(payer_negotiation_router)
 
 
 @app.get("/health", tags=["System"])
