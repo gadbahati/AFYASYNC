@@ -124,8 +124,9 @@ def activate_contract(db:Session,facility_id:UUID,contract_id:UUID,actor_id:UUID
     return {"contract_id":str(c.id),"contract_reference":c.contract_reference,"network_code":network,"activation_status":status,"activated_at":c.activated_at.isoformat() if c.activated_at else None,"summary":summary}
 
 def overview(db:Session,facility_id:UUID):
-    rows=list(db.scalars(select(ProviderNetworkContract).where(ProviderNetworkContract.facility_id==facility_id)).all())
-    return {"total":len(rows),"not_activated":sum(x.activation_status=="NOT_ACTIVATED" for x in rows),"activated":sum(x.activation_status=="ACTIVATED" for x in rows),"partial":sum(x.activation_status=="PARTIAL" for x in rows),"no_terms":sum(x.activation_status=="NO_APPLICABLE_TERMS" for x in rows)}
+    rows=list(db.scalars(select(ProviderNetworkContract).where(ProviderNetworkContract.facility_id==facility_id).order_by(ProviderNetworkContract.created_at.desc())).all())
+    queue=[{"id":str(x.id),"reference":x.contract_reference,"network_code":x.network_code,"status":x.status,"execution_status":x.execution_status,"activation_status":x.activation_status,"effective_from":x.effective_from.isoformat() if x.effective_from else None,"activated_at":x.activated_at.isoformat() if x.activated_at else None,"activation_summary":x.activation_summary} for x in rows if x.execution_status=="EXECUTED"]
+    return {"total":len(rows),"not_activated":sum(x.activation_status=="NOT_ACTIVATED" for x in rows),"activated":sum(x.activation_status=="ACTIVATED" for x in rows),"partial":sum(x.activation_status=="PARTIAL" for x in rows),"no_terms":sum(x.activation_status=="NO_APPLICABLE_TERMS" for x in rows),"contracts":queue}
 
 def events(db:Session,facility_id:UUID,contract_id:UUID):
     _contract(db,facility_id,contract_id)
