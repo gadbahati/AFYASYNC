@@ -19,6 +19,47 @@ class ClaimsError(ValueError):
     pass
 
 
+def _contract_operational_gate(db: Session, facility_id: UUID, payer: Payer, service_codes: list[str], amounts: list[Decimal] | None = None, quantities: list[Decimal] | None = None) -> None:
+    """Enforce activated payer contract controls when a facility has an active contract for the payer."""
+    from app.provider_network.models import ProviderNetworkContract, ProviderNetworkMembership, ProviderNetworkService
+    code = (payer.code or "").strip()
+    contract = db.scalar(select(ProviderNetworkContract).where(
+        ProviderNetworkContract.facility_id == facility_id,
+        ProviderNetworkContract.network_code == code,
+        ProviderNetworkContract.status == "ACTIVE",
+        ProviderNetworkContract.execution_status == "EXECUTED",
+        ProviderNetworkContract.activation_status.in_({"ACTIVATED", "PARTIAL"}),
+    ).order_by(ProviderNetworkContract.effective_from.desc().nullslast(), ProviderNetworkContract.created_at.desc()))
+    if contract is None:
+        return
+    membership = db.scalar(select(ProviderNetworkMembership).where(
+        ProviderNetworkMembership.facility_id == facility_id,
+        ProviderNetworkMembership.network_code == code,
+    ))
+    if membership is None or not membership.claims_enabled:
+        raise ClaimsError("CONTRACT_CLAIMS_WORKFLOW_DISABLED")
+    today = datetime.now(timezone.utc)
+    if contract.effective_from and today < contract.effective_from:
+        raise ClaimsError("CONTRACT_NOT_YET_EFFECTIVE")
+    if contract.effective_to and today > contract.effective_to:
+        raise ClaimsError("CONTRACT_EXPIRED")
+    if not service_codes:
+        return
+    for idx, service_code in enumerate(service_codes):
+        svc = db.scalar(select(ProviderNetworkService).where(
+            ProviderNetworkService.facility_id == facility_id,
+            ProviderNetworkService.network_code == code,
+            ProviderNetworkService.service_code == service_code,
+            ProviderNetworkService.status == "ACTIVE",
+        ))
+        if svc is None or svc.tariff_amount is None:
+            raise ClaimsError(f"CONTRACT_TARIFF_NOT_CONFIGURED:{service_code}")
+        if amounts is not None and quantities is not None and idx < len(amounts) and idx < len(quantities):
+            contracted = Decimal(str(svc.tariff_amount)) * Decimal(str(quantities[idx]))
+            if Decimal(str(amounts[idx])) > contracted.quantize(Decimal("0.01")):
+                raise ClaimsError(f"CONTRACT_TARIFF_EXCEEDED:{service_code}")
+
+
 def _claim_number() -> str:
     return f"CLM-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}"
 
@@ -59,6 +100,7 @@ def create_claim(db: Session, facility_id: UUID, invoice_id: UUID, *, actor_user
     if mode == "AFYASYNC" and payer_code != "AFYASYNC": raise ClaimsError("AFYASYNC_MODE_REQUIRES_AFYASYNC_PAYER")
     items = list(db.scalars(select(InvoiceItem).where(InvoiceItem.invoice_id == invoice.id)))
     if not items: raise ClaimsError("CLAIM_ITEMS_REQUIRED")
+    _contract_operational_gate(db, facility_id, payer, [str(db.get(Service, db.get(Charge, item.charge_id).service_id).code) for item in items if db.get(Charge, item.charge_id) is not None and db.get(Service, db.get(Charge, item.charge_id).service_id) is not None], [Decimal(str(item.payer_amount)) for item in items], [Decimal(str(db.get(Charge, item.charge_id).quantity)) for item in items if db.get(Charge, item.charge_id) is not None])
     claim = Claim(claim_id=_claim_number(), invoice_id=invoice.id, encounter_id=encounter.id, patient_id=invoice.patient_id, payer_id=payer.id, claim_amount=Decimal("0"))
     db.add(claim); db.flush()
     claim_amount = Decimal("0")
@@ -121,6 +163,8 @@ def submit_claim(db: Session, claim_id: UUID, facility_id: UUID, *, actor_user_i
     if claim.status != "READY": raise ClaimsError("CLAIM_NOT_READY")
     payer = db.get(Payer, claim.payer_id)
     if payer is None or payer.status != "ACTIVE": raise ClaimsError("PAYER_NOT_ACTIVE")
+    items = list(db.scalars(select(ClaimItem).where(ClaimItem.claim_id == claim.id)))
+    _contract_operational_gate(db, facility_id, payer, [item.service_code for item in items], [Decimal(str(item.amount)) for item in items], [Decimal(str(item.quantity)) for item in items])
     integration = _find_payer_submission_integration(db, facility_id, payer)
     if integration is None: raise ClaimsError("PAYER_INTEGRATION_NOT_CONFIGURED")
     payload = build_claim_submission_payload(db, claim.id, facility_id)
