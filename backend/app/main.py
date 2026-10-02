@@ -202,6 +202,7 @@ from app.financial_intelligence.resolution_router import router as revenue_resol
 from app.financial_intelligence import resolution_models as revenue_resolution_models  # noqa: F401
 from app.financial_intelligence import sla_models as payer_sla_models  # noqa: F401
 from app.financial_intelligence.sla_router import router as payer_sla_router
+from app.financial_intelligence.payer_command_router import router as payer_command_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -508,6 +509,7 @@ app.include_router(financial_intelligence_router)
 app.include_router(collection_work_router)
 app.include_router(revenue_resolution_router)
 app.include_router(payer_sla_router)
+app.include_router(payer_command_router)
 
 
 @app.get("/health", tags=["System"])
