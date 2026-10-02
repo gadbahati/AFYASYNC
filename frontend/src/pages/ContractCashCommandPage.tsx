@@ -5,7 +5,7 @@ type Data={window_days:number;guardrails:{open:number;amount_at_risk:number};col
 
 export default function ContractCashCommandPage(){
   const [data,setData]=useState<Data|null>(null); const [days,setDays]=useState(90); const [busy,setBusy]=useState(false);
-  const load=async()=>{setBusy(true);try{const r=await api.get("/api/v1/contract-guardrails/command?days="+days);setData(r)}finally{setBusy(false)}};
+  const load=async()=>{setBusy(true);try{const r=await api.contractCashCommand(days);setData(r)}finally{setBusy(false)}};
   useEffect(()=>{void load()},[days]);
   const money=(n:number)=>"KES "+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0});
   return <div className="page">
