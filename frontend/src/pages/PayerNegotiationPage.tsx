@@ -1,4 +1,4 @@
-import {useEffect,useState} from "react";
+import {useState} from "react";
 const base=import.meta.env.VITE_API_URL||"";
 const auth=()=>{const t=localStorage.getItem("access_token");return t?{Authorization:"Bearer "+t,"Content-Type":"application/json"}:{"Content-Type":"application/json"}};
 async function req(path:string,options:any={}){const r=await fetch(base+path,{...options,headers:{...auth(),...(options.headers||{})}});if(!r.ok)throw new Error(await r.text()||"Request failed");return r.json();}
