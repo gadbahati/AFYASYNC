@@ -13,6 +13,7 @@ from app.financial_intelligence.leakage_intelligence import revenue_leakage_inte
 from app.financial_intelligence.recovery_cash_conversion import recovery_cash_conversion
 from app.financial_intelligence.executive_revenue_command import executive_revenue_command
 from app.financial_intelligence.revenue_control_tower import revenue_control_tower
+from app.financial_intelligence.revenue_action_priorities import revenue_action_priorities
 
 router=APIRouter(prefix="/api/v1/contract-guardrails",tags=["Contract Compliance Guardrails"])
 
@@ -26,6 +27,10 @@ class UpdateBody(BaseModel):
 @router.get("/command")
 def command(days:int=Query(90,ge=7,le=365),db:Session=Depends(get_db),facility_id=Depends(get_facility_context),user:User=Depends(require_permission("claims.reconcile"))):
     return contract_cash_command(db,facility_id,days)
+
+@router.get("/revenue-action-priorities")
+def revenue_actions(limit:int=Query(50,ge=1,le=200),db:Session=Depends(get_db),facility_id=Depends(get_facility_context),user:User=Depends(require_permission("claims.reconcile"))):
+    return revenue_action_priorities(db,facility_id,limit)
 
 @router.get("/revenue-control-tower")
 def revenue_control(days:int=Query(30,ge=1,le=365),db:Session=Depends(get_db),facility_id=Depends(get_facility_context),user:User=Depends(require_permission("claims.reconcile"))):
