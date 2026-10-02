@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import {api} from "../api/client";
-export default function ContractRenewalPage(){
+export default function ContractRenewalPage(){ void api;
  const[days,setDays]=useState(180),[data,setData]=useState<any>({contracts:[],actions:[]}),[loading,setLoading]=useState(true),[error,setError]=useState("");
  const load=async()=>{setLoading(true);try{const token=localStorage.getItem("access_token");const base=import.meta.env.VITE_API_URL||"";const r=await fetch(base+"/api/v1/contract-renewal?days="+days,{headers:token?{Authorization:"Bearer "+token}:{}});if(!r.ok)throw new Error("Unable to load contract renewal intelligence");setData(await r.json())}catch(e:any){setError(e.message)}finally{setLoading(false)}};
  useEffect(()=>{load()},[days]);
