@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID\nfrom datetime import datetime
 from fastapi import APIRouter,Depends,HTTPException,Query
 from pydantic import BaseModel,Field
 from sqlalchemy.orm import Session
@@ -17,7 +17,7 @@ class SLAPolicyIn(BaseModel):
     notes:str|None=None
 class AppealCreate(BaseModel):
     clearinghouse_case_id:UUID
-    due_at:object|None=None
+    due_at:datetime|None=None
     grounds:str|None=None
 class AppealUpdate(BaseModel):
     status:str|None=None
