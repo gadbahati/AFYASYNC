@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.billing.models import Charge, Invoice, InvoiceItem, Service
 from app.claims.models import Claim
-from app.claims.service import ClaimsError
+from app.claims.service import ClaimsError, _contract_operational_gate
 from app.coverage.models import Coverage, Payer
 from app.encounters.models import Encounter
 from app.patients.models import PatientFacility
@@ -135,6 +135,18 @@ def preflight_claim(
 
     if payer is not None and payer.integration_status != "CONFIGURED":
         warnings.append("PAYER_INTEGRATION_NOT_CONFIGURED")
+
+    if payer is not None and not errors:
+        try:
+            gate_codes=[]; gate_amounts=[]; gate_quantities=[]
+            for item in items:
+                charge=db.get(Charge,item.charge_id)
+                service=db.get(Service,charge.service_id) if charge else None
+                if service:
+                    gate_codes.append(service.code); gate_amounts.append(Decimal(str(item.payer_amount))); gate_quantities.append(Decimal(str(charge.quantity)))
+            _contract_operational_gate(db,facility_id,payer,gate_codes,gate_amounts,gate_quantities)
+        except ClaimsError as exc:
+            errors.append(str(exc))
 
     deduped_errors = list(dict.fromkeys(errors))
     deduped_warnings = list(dict.fromkeys(warnings))
