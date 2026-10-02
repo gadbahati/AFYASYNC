@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import {api} from "../api/client";
-const money=(v:any)=>`KES ${Number(v||0).toLocaleString(undefined,{maximumFractionDigits:0})`;
+const money=(v:any)=>`KES ${Number(v||0).toLocaleString(undefined,{maximumFractionDigits:0})}`;
 export default function PayerCommandPage(){
  const[rows,setRows]=useState<any[]>([]),[summary,setSummary]=useState<any>(null),[days,setDays]=useState(90),[message,setMessage]=useState("");
  async function load(){const[a,b]=await Promise.all([api.payerCommand(days),api.payerCommandSummary(days)]);setRows(a.payers||[]);setSummary(b)}
