@@ -207,6 +207,7 @@ from app.financial_intelligence.tariff_intelligence_router import router as tari
 from app.financial_intelligence.contract_renewal_router import router as contract_renewal_router
 from app.financial_intelligence.negotiation_models import PayerNegotiationCase,PayerNegotiationItem,PayerNegotiationEvent  # noqa: F401
 from app.financial_intelligence.execution_models import ContractExecutionApproval,ContractExecutionEvent  # noqa: F401
+from app.financial_intelligence.execution_router import router as contract_execution_router
 from app.financial_intelligence.negotiation_router import router as payer_negotiation_router
 
 logger = logging.getLogger("afyasync.request")
@@ -518,6 +519,7 @@ app.include_router(payer_command_router)
 app.include_router(tariff_intelligence_router)
 app.include_router(contract_renewal_router)
 app.include_router(payer_negotiation_router)
+app.include_router(contract_execution_router)
 
 
 @app.get("/health", tags=["System"])
