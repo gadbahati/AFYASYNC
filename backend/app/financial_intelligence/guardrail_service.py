@@ -5,6 +5,8 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.claims.models import Claim, ClaimItem
+from app.billing.models import Invoice
+from app.coverage.models import Payer
 from app.adjudication.models import ClaimAdjudication
 from app.provider_network.models import ProviderNetworkContract, ProviderNetworkMembership, ProviderNetworkService
 from app.financial_intelligence.guardrail_models import ContractComplianceGuardrail, ContractComplianceGuardrailEvent
@@ -12,11 +14,11 @@ from app.financial_intelligence.guardrail_models import ContractComplianceGuardr
 ACTIVE={"ACTIVE"}
 TERMINAL={"PAID","SETTLED","CLOSED","RECONCILED"}
 
-def _active_contract(db,facility_id,payer_networks):
-    if not payer_networks: return None
+def _active_contract(db,facility_id,payer_code):
+    if not payer_code: return None
     return db.scalar(select(ProviderNetworkContract).where(
         ProviderNetworkContract.facility_id==facility_id,
-        ProviderNetworkContract.network_code.in_(payer_networks),
+        ProviderNetworkContract.network_code==payer_code,
         ProviderNetworkContract.status=="ACTIVE",
         ProviderNetworkContract.execution_status=="EXECUTED",
         ProviderNetworkContract.activation_status.in_([ "ACTIVATED","PARTIAL" ]),
@@ -61,12 +63,20 @@ def _upsert(db,facility_id,contract,claim,gtype,severity,title,expected,actual,r
     return row,True
 
 def sync_guardrails(db:Session,facility_id:UUID,actor_id:UUID,limit:int=200):
-    claims=db.scalars(select(Claim).where(Claim.invoice_id.is_not(None),Claim.status!="DRAFT").order_by(Claim.updated_at.desc()).limit(max(1,min(limit,500)))).all()
+    claims=db.scalars(select(Claim).join(Invoice,Invoice.id==Claim.invoice_id).where(
+        Invoice.facility_id==facility_id, Claim.status!="DRAFT"
+    ).order_by(Claim.updated_at.desc()).limit(max(1,min(limit,500)))).all()
     created=0; checked=0
     for claim in claims:
-        membership=db.scalar(select(ProviderNetworkMembership).where(ProviderNetworkMembership.facility_id==facility_id,ProviderNetworkMembership.claims_enabled==True).limit(1))
+        payer=db.get(Payer,claim.payer_id)
+        if not payer: continue
+        membership=db.scalar(select(ProviderNetworkMembership).where(
+            ProviderNetworkMembership.facility_id==facility_id,
+            ProviderNetworkMembership.network_code==payer.code,
+            ProviderNetworkMembership.claims_enabled==True,
+        ))
         if not membership: continue
-        contract=_active_contract(db,facility_id,[membership.network_code])
+        contract=_active_contract(db,facility_id,payer.code)
         if not contract: continue
         checked+=1
         expected,missing,line_count=_expected_tariff(db,facility_id,contract.network_code,claim.id)
