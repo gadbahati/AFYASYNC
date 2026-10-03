@@ -37,6 +37,7 @@ export default function WorkspaceHomePage(){
   const [roles,setRoles]=useState<string[]>([]);
   const [permissions,setPermissions]=useState<string[]>([]);
   const [allowedWorkspaces,setAllowedWorkspaces]=useState<string[]>(["operations"]);
+  const [allowedPaths,setAllowedPaths]=useState<string[]|null>(null);
   const [summary,setSummary]=useState<ScopeSummary|null>(null);
   const [ops,setOps]=useState<OpsSummary|null>(null);
   const [summaryError,setSummaryError]=useState<string|null>(null);
@@ -48,6 +49,8 @@ export default function WorkspaceHomePage(){
       setRoles(Array.isArray(v?.roles)?v.roles:[]);
       setPermissions(Array.isArray(v?.permissions)?v.permissions:[]);
       setAllowedWorkspaces(Array.isArray(v?.allowed_workspaces)?v.allowed_workspaces:["operations"]);
+      const paths = v?.module_actions?.allowed_paths;
+      setAllowedPaths(Array.isArray(paths) ? paths : null);
     }).catch(()=>setAvailableScopes(["facility"]));
   },[scope]);
 
@@ -69,6 +72,16 @@ export default function WorkspaceHomePage(){
   },[scope]);
 
   const visible=WORKSPACES.filter(w=>allowedWorkspaces.includes(w.id));
+
+  function pathAllowed(to: string): boolean {
+    if (allowedPaths === null) return true;
+    const path = to.split("?")[0] || "/";
+    return allowedPaths.some((p) => {
+      if (p === "/") return path === "/";
+      return path === p || path.startsWith(p + "/");
+    });
+  }
+  const workspaceLinks = current.links.filter(([to]) => pathAllowed(to));
   const m=ops?.metrics;
 
   return <section className="page">
@@ -99,6 +112,9 @@ export default function WorkspaceHomePage(){
           <span className="muted">Available scopes: </span>
           <strong>{availableScopes.join(" • ")}</strong>
           <span className="muted" style={{display:"block",marginTop:6}}>{permissions.length} effective permissions</span>
+          {allowedPaths && (
+            <span className="muted" style={{display:"block",marginTop:4}}>{allowedPaths.length} authorized module paths</span>
+          )}
         </div>
       </div>
     </div>
@@ -137,7 +153,7 @@ export default function WorkspaceHomePage(){
     </div>
 
     <div className="card-grid">{visible.map(w=>(
-      <button key={w.id} type="button" className="card" onClick={()=>{setWorkspace(w.id);navigate(w.links[0][0])}} style={{textAlign:"left",cursor:"pointer",border:workspace===w.id?"2px solid #0f766e":"1px solid #e2e8f0",background:"#fff"}}>
+      <button key={w.id} type="button" className="card" onClick={()=>{setWorkspace(w.id); const first = w.links.find(([to]) => pathAllowed(to)); navigate((first?.[0]) || "/");}} style={{textAlign:"left",cursor:"pointer",border:workspace===w.id?"2px solid #0f766e":"1px solid #e2e8f0",background:"#fff"}}>
         <div style={{fontSize:30}}>{w.icon}</div>
         <h2 style={{margin:"8px 0 5px"}}>{w.label}</h2>
         <p className="muted" style={{margin:0}}>{w.description}</p>
@@ -147,8 +163,14 @@ export default function WorkspaceHomePage(){
     <div className="card" style={{marginTop:18}}>
       <h2>{current.icon} {current.label}</h2>
       <p className="muted">{current.description}</p>
+      {allowedPaths && workspaceLinks.length < current.links.length && (
+        <p className="muted small">Some modules are hidden because your role does not include the required permissions.</p>
+      )}
+      {allowedPaths && workspaceLinks.length === 0 && (
+        <p className="error" role="status">No modules available in this workspace for your permission set.</p>
+      )}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
-        {current.links.map(([to,label])=>(
+        {workspaceLinks.map(([to,label])=>(
           <button key={to} type="button" onClick={()=>navigate(to)} style={{textAlign:"left",padding:14,border:"1px solid #e2e8f0",borderRadius:8,background:"#fff",cursor:"pointer"}}>
             {label}<span style={{float:"right"}}>→</span>
           </button>
