@@ -139,8 +139,23 @@ const _apiCore: any = {
     request(
       `/api/v1/reports/facility${start || end ? `?start_date=${start || ""}&end_date=${end || ""}` : ""}`,
     ),
-  listReferrals: (role = "source") => request(`/api/v1/referrals?role=${encodeURIComponent(role)}`),
-  listTransfers: (role = "source") => request(`/api/v1/transfers?role=${encodeURIComponent(role)}`),
+  listReferrals: (role = "all", scope = "facility") =>
+    request(
+      `/api/v1/referrals?role=${encodeURIComponent(role)}&scope=${encodeURIComponent(scope)}`,
+    ),
+  listTransfers: (role = "all", scope = "facility") =>
+    request(
+      `/api/v1/referrals/transfers?role=${encodeURIComponent(role)}&scope=${encodeURIComponent(scope)}`,
+    ),
+  listAppointments: (scope = "facility", appointment_date?: string) => {
+    const q = new URLSearchParams({ scope });
+    if (appointment_date) q.set("appointment_date", appointment_date);
+    return request(`/api/v1/appointments?${q.toString()}`);
+  },
+  listBillingServices: (scope = "facility") =>
+    request(`/api/v1/billing/services?scope=${encodeURIComponent(scope)}`),
+  listInvoices: (limit = 50, scope = "facility") =>
+    request(`/api/v1/billing/invoices?limit=${limit}&scope=${encodeURIComponent(scope)}`),
   listPatients: (limit = 50, offset = 0, scope = "facility") =>
     request(
       `/api/v1/patients?limit=${limit}&offset=${offset}&scope=${encodeURIComponent(scope)}`,
