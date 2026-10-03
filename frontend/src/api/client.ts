@@ -203,6 +203,11 @@ const _apiCore: any = {
   settlementListBatches: () => request("/api/v1/settlements/batches"),
   settlementOverview: () => request("/api/v1/settlements/overview"),
   claimPreflight: (invoiceId: string) => request(`/api/v1/claims/invoices/${invoiceId}/preflight`),
+  adjudicateClaim: (claimId: string, force = false) =>
+    request("/api/v1/adjudication/run", {
+      method: "POST",
+      body: JSON.stringify({ claim_id: claimId, force }),
+    }),
   createClaim: (invoiceId: string) =>
     request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id: invoiceId }) }),
   validateClaim: (claimId: string) =>
