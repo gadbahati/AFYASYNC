@@ -126,7 +126,7 @@ import ProductReadinessPage from "./pages/ProductReadinessPage";
 import BusinessContinuityPage from "./pages/BusinessContinuityPage";
 
 export default function App() {
-  return <AuthProvider><WorkspaceProvider><GlobalCommand /><BrowserRouter><Routes>
+  return <AuthProvider><WorkspaceProvider><BrowserRouter><GlobalCommand /><Routes>
     <Route path="/login" element={<EntryPage />} />
     <Route path="/login/facility" element={<LoginPage />} />
     <Route path="/login/patient" element={<PatientLoginPage />} />
