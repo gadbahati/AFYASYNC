@@ -20,7 +20,10 @@ function parseError(body: ApiErrorBody | null, status: number): { code: string; 
   if (typeof body.detail === "string") return { code: body.detail };
   if (body.detail) return { code: body.detail.code || "REQUEST_FAILED", message: body.detail.message };
   const message = typeof body.message === "string" ? body.message : undefined;
-  const requestId = body.data && typeof body.data === "object" && typeof body.data.request_id === "string" ? body.data.request_id : undefined;
+  const requestId =
+    body.data && typeof body.data === "object" && typeof body.data.request_id === "string"
+      ? body.data.request_id
+      : undefined;
   if (status >= 500) return { code: requestId ? `SERVER_ERROR:${requestId}` : "SERVER_ERROR", message };
   return { code: message || "REQUEST_FAILED", message };
 }
@@ -70,9 +73,10 @@ async function request<T = any>(path: string, init: RequestInit = {}, retry = tr
     throw new ApiError(0, "API_UNREACHABLE");
   }
   if (res.status === 401 && retry) {
-    if (!refreshPromise) refreshPromise = tryRefresh().finally(() => {
-      refreshPromise = null;
-    });
+    if (!refreshPromise)
+      refreshPromise = tryRefresh().finally(() => {
+        refreshPromise = null;
+      });
     if (await refreshPromise) return request<T>(path, init, false);
   }
   if (!res.ok) {
@@ -140,13 +144,9 @@ const _apiCore: any = {
       `/api/v1/reports/facility${start || end ? `?start_date=${start || ""}&end_date=${end || ""}` : ""}`,
     ),
   listReferrals: (role = "all", scope = "facility") =>
-    request(
-      `/api/v1/referrals?role=${encodeURIComponent(role)}&scope=${encodeURIComponent(scope)}`,
-    ),
+    request(`/api/v1/referrals?role=${encodeURIComponent(role)}&scope=${encodeURIComponent(scope)}`),
   listTransfers: (role = "all", scope = "facility") =>
-    request(
-      `/api/v1/referrals/transfers?role=${encodeURIComponent(role)}&scope=${encodeURIComponent(scope)}`,
-    ),
+    request(`/api/v1/referrals/transfers?role=${encodeURIComponent(role)}&scope=${encodeURIComponent(scope)}`),
   listAppointments: (scope = "facility", appointment_date?: string) => {
     const q = new URLSearchParams({ scope });
     if (appointment_date) q.set("appointment_date", appointment_date);
@@ -157,17 +157,11 @@ const _apiCore: any = {
   listInvoices: (limit = 50, scope = "facility") =>
     request(`/api/v1/billing/invoices?limit=${limit}&scope=${encodeURIComponent(scope)}`),
   listPatients: (limit = 50, offset = 0, scope = "facility") =>
-    request(
-      `/api/v1/patients?limit=${limit}&offset=${offset}&scope=${encodeURIComponent(scope)}`,
-    ),
+    request(`/api/v1/patients?limit=${limit}&offset=${offset}&scope=${encodeURIComponent(scope)}`),
   searchPatients: (q: string, limit = 20, scope = "facility") =>
-    request(
-      `/api/v1/patients/search?q=${encodeURIComponent(q)}&limit=${limit}&scope=${encodeURIComponent(scope)}`,
-    ),
+    request(`/api/v1/patients/search?q=${encodeURIComponent(q)}&limit=${limit}&scope=${encodeURIComponent(scope)}`),
   listEncounters: (limit = 100, offset = 0, scope = "facility") =>
-    request(
-      `/api/v1/encounters?limit=${limit}&offset=${offset}&scope=${encodeURIComponent(scope)}`,
-    ),
+    request(`/api/v1/encounters?limit=${limit}&offset=${offset}&scope=${encodeURIComponent(scope)}`),
   listClaims: (limit = 50, scope = "facility") =>
     request(`/api/v1/claims?limit=${limit}&scope=${encodeURIComponent(scope)}`),
   getPatient: (id: string) => request(`/api/v1/patients/${id}`),
@@ -209,10 +203,33 @@ const _apiCore: any = {
   settlementListBatches: () => request("/api/v1/settlements/batches"),
   settlementOverview: () => request("/api/v1/settlements/overview"),
   claimPreflight: (invoiceId: string) => request(`/api/v1/claims/invoices/${invoiceId}/preflight`),
+  createClaim: (invoiceId: string) =>
+    request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id: invoiceId }) }),
+  validateClaim: (claimId: string) =>
+    request(`/api/v1/claims/${claimId}/validate`, { method: "POST" }),
+  submitClaim: (claimId: string) =>
+    request(`/api/v1/claims/${claimId}/submit`, { method: "POST" }),
+  recordClaimResponse: (claimId: string, payload: any) =>
+    request(`/api/v1/claims/${claimId}/response`, { method: "POST", body: JSON.stringify(payload) }),
+  reconcileClaim: (claimId: string, received_amount: number) =>
+    request(`/api/v1/claims/${claimId}/reconcile`, {
+      method: "POST",
+      body: JSON.stringify({ received_amount }),
+    }),
+  listClaimRejections: () => request("/api/v1/claims/workbench/rejections"),
+  claimsKesAtRisk: (days = 7) => request(`/api/v1/claims/risk/kes-at-risk?days=${days}`),
+  sandboxRejectClaim: (claimId: string, payload: object = {}) =>
+    request(`/api/v1/claims/${claimId}/sandbox-reject`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   financingPreauthCreate: (payload: any) =>
     request("/api/v1/financing-preauthorizations", { method: "POST", body: JSON.stringify(payload) }),
   financingPreauthDecide: (id: string, payload: any) =>
-    request(`/api/v1/financing-preauthorizations/${id}/decision`, { method: "POST", body: JSON.stringify(payload) }),
+    request(`/api/v1/financing-preauthorizations/${id}/decision`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   financingPreauthList: (params: { status?: string; person_id?: string; limit?: number } = {}) => {
     const q = new URLSearchParams();
     if (params.status) q.set("status", params.status);
