@@ -213,6 +213,7 @@ from app.financial_intelligence.activation_router import router as contract_acti
 from app.financial_intelligence.guardrail_router import router as contract_guardrail_router
 from app.financial_intelligence import guardrail_models as contract_guardrail_models  # noqa: F401
 from app.financial_intelligence.negotiation_router import router as payer_negotiation_router
+from app.financial_intelligence.revenue_workflow_router import router as revenue_workflow_router
 
 logger = logging.getLogger("afyasync.request")
 app = FastAPI(title=settings.app_name, version=settings.app_version)
@@ -528,6 +529,7 @@ app.include_router(payer_command_router)
 app.include_router(tariff_intelligence_router)
 app.include_router(contract_renewal_router)
 app.include_router(payer_negotiation_router)
+app.include_router(revenue_workflow_router)
 app.include_router(contract_execution_router)
 app.include_router(contract_activation_router)
 app.include_router(contract_guardrail_router)
