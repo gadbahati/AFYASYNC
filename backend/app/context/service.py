@@ -320,7 +320,6 @@ def context_payload(
             "facility_id": str(facility_id),
             "resolved_facility_count": len(resolved),
             "tenant_id": str(tenant_id) if tenant_id else None,
-            "tenant_id": str(tenant_id) if tenant_id else None,
         },
         "available_scopes": scopes,
         "roles": roles,
@@ -371,6 +370,7 @@ def record_scope_selection(
                 metadata={
                     "requested_scope": scope,
                     "previous_scope": previous_scope,
+                    "tenant_id": str(tenant_id) if tenant_id else None,
                     "available_scopes": scopes,
                 },
                 commit=True,
