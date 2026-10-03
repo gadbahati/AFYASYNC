@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { WorkspaceProvider } from "./workspaces/WorkspaceContext";
+import { GlobalCommand } from "./components/GlobalCommand";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { BenefitPackagesPage } from "./pages/BenefitPackagesPage";
@@ -120,7 +121,7 @@ import RevenueCashAssurancePage from "./pages/RevenueCashAssurancePage";
 import WorkspaceHomePage from "./pages/WorkspaceHomePage";
 
 export default function App() {
-  return <AuthProvider><WorkspaceProvider><BrowserRouter><Routes>
+  return <AuthProvider><WorkspaceProvider><GlobalCommand /><BrowserRouter><Routes>
     <Route path="/login" element={<EntryPage />} />
     <Route path="/login/facility" element={<LoginPage />} />
     <Route path="/login/patient" element={<PatientLoginPage />} />
