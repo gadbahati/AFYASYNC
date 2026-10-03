@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 
-/** Claims workbench — adjudicate, obligation lookup, line detail. Phase 115. */
+/** Claims workbench — adjudicate, obligation, settlement nav, risk flags. Phase 117. */
 export function ClaimsClaimsTable(props: any) {
   const {
     loading,
@@ -36,10 +37,12 @@ export function ClaimsClaimsTable(props: any) {
   const [adjError, setAdjError] = useState("");
   const [obligationInfo, setObligationInfo] = useState<any[] | null>(null);
   const [obligationError, setObligationError] = useState("");
+  const [lastObligationClaimId, setLastObligationClaimId] = useState("");
 
   async function loadObligation(claimId: string) {
     setObligationError("");
     setObligationInfo(null);
+    setLastObligationClaimId(claimId);
     try {
       const rows = await api.settlementListObligations({ claim_id: claimId, limit: 5 });
       setObligationInfo(Array.isArray(rows) ? rows : []);
@@ -111,6 +114,24 @@ export function ClaimsClaimsTable(props: any) {
                   <td>{money(c.paid_amount)}</td>
                   <td>
                     <span className="status-pill">{c.status}</span>
+                    {c.status === "REJECTED" && (
+                      <span
+                        className="status-pill"
+                        style={{ marginLeft: 6, background: "#b91c1c", color: "#fff" }}
+                        title="Fraud / rejection rework priority"
+                      >
+                        HIGH RISK
+                      </span>
+                    )}
+                    {c.status === "UNDER_REVIEW" && (
+                      <span
+                        className="status-pill"
+                        style={{ marginLeft: 6, background: "#b45309", color: "#fff" }}
+                        title="Under review"
+                      >
+                        REVIEW
+                      </span>
+                    )}
                   </td>
                   <td>
                     <div className="actions">
@@ -173,6 +194,13 @@ export function ClaimsClaimsTable(props: any) {
                       <button type="button" className="secondary" onClick={() => void loadObligation(c.id)}>
                         Obligation
                       </button>
+                      <Link
+                        to={`/settlements?claim_id=${encodeURIComponent(c.id)}`}
+                        className="secondary"
+                        style={{ display: "inline-block", padding: "0.35rem 0.6rem", textDecoration: "none" }}
+                      >
+                        Settle
+                      </Link>
                       {canSubmit(c.status) && (
                         <button
                           type="button"
@@ -309,7 +337,16 @@ export function ClaimsClaimsTable(props: any) {
           </div>
           {obligationError && <div className="error">{obligationError}</div>}
           {obligationInfo && obligationInfo.length === 0 && (
-            <p className="muted">No obligation for this claim yet (adjudicate a payable claim first).</p>
+            <>
+              <p className="muted">No obligation for this claim yet (adjudicate a payable claim first).</p>
+              {lastObligationClaimId && (
+                <p>
+                  <Link to={`/settlements?claim_id=${encodeURIComponent(lastObligationClaimId)}`}>
+                    Open Settlement workspace with this claim →
+                  </Link>
+                </p>
+              )}
+            </>
           )}
           {obligationInfo && obligationInfo.length > 0 && (
             <div className="table-wrap">
@@ -321,6 +358,7 @@ export function ClaimsClaimsTable(props: any) {
                     <th>Payable</th>
                     <th>Patient</th>
                     <th>Created</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -331,6 +369,19 @@ export function ClaimsClaimsTable(props: any) {
                       <td>{money(o.payable_amount)}</td>
                       <td>{money(o.patient_amount)}</td>
                       <td className="muted small">{o.created_at || "—"}</td>
+                      <td>
+                        <Link
+                          to={`/settlements?claim_id=${encodeURIComponent(o.claim_id || lastObligationClaimId)}`}
+                          className="secondary"
+                          style={{
+                            display: "inline-block",
+                            padding: "0.25rem 0.5rem",
+                            textDecoration: "none",
+                          }}
+                        >
+                          Open settlement
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -438,7 +489,7 @@ export function ClaimsClaimsTable(props: any) {
         </article>
       )}
 
-      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 115</p>
+      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 117</p>
     </>
   );
 }
