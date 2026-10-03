@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 import { api } from "../api/client";
 
-/** Claims list, filters, actions, rejection guide, response & reconcile forms. Phase 110. */
+/** Claims list, filters, actions, adjudication, response & reconcile. Phase 111. */
 export function ClaimsClaimsTable(props: any) {
   const {
     loading,
@@ -91,6 +91,25 @@ export function ClaimsClaimsTable(props: any) {
                           onClick={() => void action(() => api.validateClaim(c.id), "Claim validated.")}
                         >
                           Validate
+                        </button>
+                      )}
+                      {["DRAFT", "READY", "SUBMITTED", "UNDER_REVIEW", "REJECTED", "ACCEPTED"].includes(
+                        c.status,
+                      ) && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void action(async () => {
+                              const r = await api.adjudicateClaim(c.id, false);
+                              return {
+                                message: `Adjudicated: ${r.decision} · allowed ${r.allowed_amount} · patient ${r.patient_amount} (${r.reason_code})`,
+                              };
+                            }, "Claim adjudicated.")
+                          }
+                        >
+                          Adjudicate
                         </button>
                       )}
                       {canSubmit(c.status) && (
@@ -276,10 +295,9 @@ export function ClaimsClaimsTable(props: any) {
         </article>
       )}
 
-      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 110 claims workbench</p>
+      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 111 adjudication</p>
     </>
   );
 }
 
-// silence unused FormEvent import for type-only consumers
 type _FormEvent = FormEvent;
