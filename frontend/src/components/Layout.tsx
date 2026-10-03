@@ -137,6 +137,36 @@ const navGroups: readonly NavGroup[] = [
 const KENYA_CREST =
   "https://upload.wikimedia.org/wikipedia/commons/f/f6/Coat_of_arms_of_Kenya_%28Official%29.svg";
 
+const SCOPE_PATH_POLICY: Record<ContextScope, (path: string) => boolean> = {
+  facility: (path) =>
+    !path.startsWith("/national") &&
+    !path.startsWith("/coverage-simulator") &&
+    !path.startsWith("/universal-identity") &&
+    !path.startsWith("/health-exchange") &&
+    !path.startsWith("/provider-network"),
+  network: (path) =>
+    !path.startsWith("/national-command-centre") &&
+    !path.startsWith("/national-intelligence") &&
+    !path.startsWith("/national-identity") &&
+    !path.startsWith("/national-facilities") &&
+    !path.startsWith("/national-staff") &&
+    !path.startsWith("/national-payers") &&
+    !path.startsWith("/national-benefits") &&
+    !path.startsWith("/national-financing") &&
+    !path.startsWith("/national-supply") &&
+    !path.startsWith("/national/") &&
+    !path.startsWith("/coverage-simulator"),
+  county: (path) =>
+    !path.startsWith("/national-identity") &&
+    !path.startsWith("/national-facilities") &&
+    !path.startsWith("/national-staff") &&
+    !path.startsWith("/national-payers") &&
+    !path.startsWith("/national-benefits") &&
+    !path.startsWith("/national-financing") &&
+    !path.startsWith("/universal-identity"),
+  national: () => true,
+};
+
 function KenyaCrest({ className = "" }: { className?: string }) {
   return <img className={`kenya-crest ${className}`} src={KENYA_CREST} alt="Coat of arms of Kenya" />;
 }
@@ -151,11 +181,24 @@ export function Layout() {
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [scopeBusy, setScopeBusy] = useState(false);
 
-  const visibleWorkspaces = WORKSPACES.filter((w) => allowedWorkspaces.includes(w.id));
+  const pathAllowedByScope = (to: string) => SCOPE_PATH_POLICY[scope](to.split("?")[0] || "/");
+  const pathAllowed = (to: string) => pathAllowedByScope(to) && moduleAccess.isAllowed(to);
+  const visibleWorkspaces = WORKSPACES.filter(
+    (w) => allowedWorkspaces.includes(w.id) && w.links.some(([to]) => pathAllowed(to)),
+  );
   const activeWorkspace =
     visibleWorkspaces.find((item) => item.id === workspace) ||
     visibleWorkspaces[0] ||
     WORKSPACES[0];
+  const workspaceLinks = activeWorkspace.links.filter(([to]) => pathAllowed(to));
+  const filteredNavGroups = navGroups
+    .map((group) => ({
+      ...group,
+      links: group.links.filter(([to]) => pathAllowed(to)),
+    }))
+    .filter((group) => group.links.length > 0);
+  const visibleScopeOptions = SCOPE_OPTIONS.filter((opt) => availableScopes.includes(opt.value));
+  const scopeLabel = SCOPE_OPTIONS.find((o) => o.value === scope)?.label || scope;
 
   useEffect(() => {
     let cancelled = false;
@@ -189,51 +232,7 @@ export function Layout() {
     }
   }, [allowedWorkspaces, workspace]);
 
-  // Scope is a data boundary, but it must also be reflected in navigation.
-  // The backend remains authoritative; this only prevents the UI from presenting
-  // modules that cannot represent the selected operating context.
-  const scopePolicy: Record<ContextScope, (path: string) => boolean> = {
-    facility: (path) =>
-      !path.startsWith("/national") &&
-      !path.startsWith("/coverage-simulator") &&
-      !path.startsWith("/universal-identity") &&
-      !path.startsWith("/health-exchange") &&
-      !path.startsWith("/provider-network"),
-    network: (path) =>
-      !path.startsWith("/national-command-centre") &&
-      !path.startsWith("/national-intelligence") &&
-      !path.startsWith("/national-identity") &&
-      !path.startsWith("/national-facilities") &&
-      !path.startsWith("/national-staff") &&
-      !path.startsWith("/national-payers") &&
-      !path.startsWith("/national-benefits") &&
-      !path.startsWith("/national-financing") &&
-      !path.startsWith("/national-supply") &&
-      !path.startsWith("/national/") &&
-      !path.startsWith("/coverage-simulator"),
-    county: (path) =>
-      !path.startsWith("/national-identity") &&
-      !path.startsWith("/national-facilities") &&
-      !path.startsWith("/national-staff") &&
-      !path.startsWith("/national-payers") &&
-      !path.startsWith("/national-benefits") &&
-      !path.startsWith("/national-financing") &&
-      !path.startsWith("/universal-identity"),
-    national: () => true,
-  };
-  const pathAllowedByScope = (to: string) => scopePolicy[scope](to.split("?")[0] || "/");
-  const pathAllowed = (to: string) => pathAllowedByScope(to) && moduleAccess.isAllowed(to);
 
-  const workspaceLinks = activeWorkspace.links.filter(([to]) => pathAllowed(to));
-  const filteredNavGroups = navGroups
-    .map((group) => ({
-      ...group,
-      links: group.links.filter(([to]) => pathAllowed(to)),
-    }))
-    .filter((group) => group.links.length > 0);
-
-  const visibleScopeOptions = SCOPE_OPTIONS.filter((opt) => availableScopes.includes(opt.value));
-  const scopeLabel = SCOPE_OPTIONS.find((o) => o.value === scope)?.label || scope;
 
   return (
     <div className="app-shell">
