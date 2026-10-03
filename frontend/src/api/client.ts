@@ -132,6 +132,8 @@ const _apiCore: any = {
   businessContinuityOverview: () => request("/api/v1/business-continuity"),
   businessContinuityCreatePlan: (payload: any) =>
     request("/api/v1/business-continuity/plans", { method: "POST", body: JSON.stringify(payload) }),
+  productReadiness: () => request("/api/v1/product-readiness"),
+  runEndToEndSimulation: () => request("/api/v1/end-to-end-simulation/run", { method: "POST" }),
   businessContinuityRecordTest: (planId: string, payload: any) =>
     request(`/api/v1/business-continuity/plans/${planId}/tests`, { method: "POST", body: JSON.stringify(payload) }),
   setOperatingScope: (scope: string, previous_scope?: string) => {
