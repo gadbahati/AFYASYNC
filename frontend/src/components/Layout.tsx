@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useWorkspace, type ContextScope } from "../workspaces/WorkspaceContext";
@@ -145,6 +145,7 @@ export function Layout() {
   const auth = useAuth();
   const { workspace, setWorkspace, scope, setScope } = useWorkspace();
   const moduleAccess = useModuleAccess();
+  const navigate = useNavigate();
   const [availableScopes, setAvailableScopes] = useState<ContextScope[]>(["facility"]);
   const [allowedWorkspaces, setAllowedWorkspaces] = useState<string[]>(WORKSPACES.map((w) => w.id));
   const [scopeError, setScopeError] = useState<string | null>(null);
@@ -238,7 +239,10 @@ export function Layout() {
               setScopeError(null);
               api
                 .setOperatingScope(next, prev)
-                .then(() => setScope(next))
+                .then(() => {
+                  setScope(next);
+                  navigate("/workspace");
+                })
                 .catch((err: unknown) => {
                   const msg =
                     err instanceof ApiError ? err.message || err.code : "SCOPE_NOT_AUTHORIZED";
