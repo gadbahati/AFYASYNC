@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import _is_system_administrator
 from app.claims.models import Claim
+from app.context.module_actions import module_actions_payload
 from app.encounters.models import Encounter
 from app.facilities.models import Facility
 from app.patients.models import PatientFacility
@@ -111,7 +112,10 @@ def allowed_workspaces_for(permissions: list[str], *, is_admin: bool) -> list[st
         return sorted(prefixes.keys())
     allowed = ["operations"] if permissions else []
     for workspace, workspace_prefixes in prefixes.items():
-        if any(code.startswith(workspace_prefixes) for code in permissions):
+        if any(
+            any(code.startswith(prefix) for prefix in workspace_prefixes)
+            for code in permissions
+        ):
             allowed.append(workspace)
     return sorted(set(allowed))
 
@@ -308,10 +312,12 @@ def context_payload(
         "roles": roles,
         "permissions": permissions,
         "allowed_workspaces": allowed_workspaces_for(permissions, is_admin=is_admin),
+        "module_actions": module_actions_payload(permissions, is_admin=is_admin),
         "authorization": {
             "facility_context_required_for_operational_modules": True,
             "system_administrator": is_admin,
             "data_scope_enforced": True,
+            "module_actions_filtered": True,
         },
         "context_model": {
             "facility": "Operational scope for one authorized facility.",
