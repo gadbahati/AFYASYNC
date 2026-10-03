@@ -29,7 +29,7 @@ from app.auth.dependencies import _is_system_administrator
 from app.claims.models import Claim
 from app.encounters.models import Encounter
 from app.facilities.models import Facility
-from app.patients.models import Patient
+from app.patients.models import PatientFacility
 from app.rbac.models import Permission, Role, RolePermission, Staff, StaffRole, User
 
 VALID_SCOPES = ("facility", "network", "county", "national")
@@ -149,7 +149,6 @@ def resolve_facility_ids(
         raise HTTPException(status_code=403, detail="SCOPE_NOT_AUTHORIZED")
 
     if scope == "facility":
-        # Token facility already validated by get_facility_context.
         return [token_facility_id]
 
     if scope == "network":
@@ -157,7 +156,6 @@ def resolve_facility_ids(
         if token_facility_id not in ids and not _is_system_administrator(db, user):
             raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
         if _is_system_administrator(db, user) and not ids:
-            # Admin with no staff rows still operates at least on the token facility.
             return [token_facility_id]
         return ids or [token_facility_id]
 
@@ -168,7 +166,6 @@ def resolve_facility_ids(
     if scope == "county":
         county = (home.county or "").strip()
         if not county:
-            # No county on home facility → cannot expand safely.
             return [token_facility_id]
         return list(
             db.scalars(
@@ -179,7 +176,6 @@ def resolve_facility_ids(
             ).all()
         ) or [token_facility_id]
 
-    # national
     return list(db.scalars(select(Facility.id).where(Facility.status == "ACTIVE")).all()) or [
         token_facility_id
     ]
@@ -196,18 +192,33 @@ def scope_data_summary(
         db, user=user, token_facility_id=token_facility_id, scope=scope
     )
 
-    def _count(model) -> int:
+    def _count_facility_col(model) -> int:
         if not facility_ids:
-            return 0
-        col = getattr(model, "facility_id", None)
-        if col is None:
             return 0
         try:
             return int(
-                db.scalar(select(func.count()).select_from(model).where(col.in_(facility_ids))) or 0
+                db.scalar(
+                    select(func.count()).select_from(model).where(model.facility_id.in_(facility_ids))
+                )
+                or 0
             )
         except Exception:
             return 0
+
+    patients = 0
+    if facility_ids:
+        try:
+            patients = int(
+                db.scalar(
+                    select(func.count(func.distinct(PatientFacility.patient_id))).where(
+                        PatientFacility.facility_id.in_(facility_ids),
+                        PatientFacility.status == "ACTIVE",
+                    )
+                )
+                or 0
+            )
+        except Exception:
+            patients = 0
 
     facilities = list(
         db.scalars(select(Facility).where(Facility.id.in_(facility_ids)).limit(200)).all()
@@ -228,9 +239,9 @@ def scope_data_summary(
             for f in facilities[:50]
         ],
         "counts": {
-            "patients": _count(Patient),
-            "encounters": _count(Encounter),
-            "claims": _count(Claim),
+            "patients": patients,
+            "encounters": _count_facility_col(Encounter),
+            "claims": _count_facility_col(Claim),
         },
         "authorization": {
             "system_administrator": _is_system_administrator(db, user),
@@ -240,6 +251,7 @@ def scope_data_summary(
             "Counts reflect facilities authorized under the selected operating scope. "
             "Facility-scoped operational writes still require the token facility context."
         ),
+        "developer": "BAHATI GAD WANGWE",
     }
 
 
@@ -285,4 +297,5 @@ def context_payload(
             "county": "ACTIVE facilities in the same county as the token facility (authorized roles only).",
             "national": "All ACTIVE facilities (system administrator only).",
         },
+        "developer": "BAHATI GAD WANGWE",
     }
