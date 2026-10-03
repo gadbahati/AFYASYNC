@@ -236,6 +236,13 @@ const _apiCore: any = {
     }),
   listClaimRejections: () => request("/api/v1/claims/workbench/rejections"),
   claimsKesAtRisk: (days = 7) => request(`/api/v1/claims/risk/kes-at-risk?days=${days}`),
+  fraudScanClaim: (claimId: string) =>
+    request(`/api/v1/claims/${claimId}/fraud-scan`, { method: "POST" }),
+  appealClaim: (claimId: string, payload: { reason: string; evidence_ref?: string }) =>
+    request(`/api/v1/claims/${claimId}/appeal`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   sandboxRejectClaim: (claimId: string, payload: object = {}) =>
     request(`/api/v1/claims/${claimId}/sandbox-reject`, {
       method: "POST",
