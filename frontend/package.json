@@ -4,10 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/assemble-client.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/assemble-client.mjs",
     "build": "tsc -b && vite build",
     "start": "node serve.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "assemble-client": "node scripts/assemble-client.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",
