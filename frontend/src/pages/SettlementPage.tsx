@@ -47,8 +47,7 @@ export default function SettlementPage() {
           <p className="eyebrow">Phase 108 · Provider settlement</p>
           <h1>Settlement & provider payments</h1>
           <p className="muted">
-            After adjudication, generate payer obligations, batch them, record payments, and reconcile. Works with
-            authorized claims that passed benefit and preauth gates.
+            After adjudication, generate payer obligations, batch them, record payments, and reconcile.
           </p>
         </div>
       </header>
@@ -96,7 +95,12 @@ export default function SettlementPage() {
 
       <article className="card">
         <h2>3. Provider payment</h2>
+        <p className="muted small">Requires batch ID (step 2) and obligation ID from the obligation response.</p>
         <div className="form-grid">
+          <label>
+            Batch ID
+            <input value={batchId} onChange={(e) => setBatchId(e.target.value)} placeholder="UUID" />
+          </label>
           <label>
             Obligation ID
             <input value={obligationId} onChange={(e) => setObligationId(e.target.value)} placeholder="UUID" />
@@ -117,11 +121,11 @@ export default function SettlementPage() {
         <div className="form-actions">
           <button
             type="button"
-            disabled={busy || !obligationId || !amount}
+            disabled={busy || !batchId || !obligationId || !amount}
             onClick={() =>
               void run(
                 () =>
-                  api.settlementRecordPayment({
+                  api.settlementRecordPayment(batchId.trim(), {
                     obligation_id: obligationId.trim(),
                     amount: Number(amount),
                     method,
