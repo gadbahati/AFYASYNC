@@ -129,6 +129,11 @@ const _apiCore: any = {
     request(`/api/v1/tenancy/organizations/${organizationId}/users/${userId}?access_level=${encodeURIComponent(accessLevel)}`, { method: "POST" }),
   tenancySelect: (organizationId: string) =>
     request(`/api/v1/tenancy/select?organization_id=${encodeURIComponent(organizationId)}`, { method: "POST" }),
+  businessContinuityOverview: () => request("/api/v1/business-continuity"),
+  businessContinuityCreatePlan: (payload: any) =>
+    request("/api/v1/business-continuity/plans", { method: "POST", body: JSON.stringify(payload) }),
+  businessContinuityRecordTest: (planId: string, payload: any) =>
+    request(`/api/v1/business-continuity/plans/${planId}/tests`, { method: "POST", body: JSON.stringify(payload) }),
   setOperatingScope: (scope: string, previous_scope?: string) => {
     const q = new URLSearchParams({ scope });
     if (previous_scope) q.set("previous_scope", previous_scope);
