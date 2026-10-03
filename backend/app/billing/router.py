@@ -15,8 +15,8 @@ from app.billing.permissions import (
     BILLING_SERVICE_READ,
     BILLING_SERVICE_WRITE,
 )
-from app.billing.schemas import ChargeResponse, InvoiceResponse, PaymentCreate, PaymentResponse, ServiceCreate
-from app.billing.service import reprice_invoice_with_benefit_engine, BillingError, create_invoice, record_payment
+from app.billing.schemas import ChargeResponse, InvoiceResponse, PaymentCreate, PaymentResponse, ServiceCreate, ServiceResponse
+from app.billing.service import BillingError, create_invoice, record_payment, reprice_invoice_with_benefit_engine
 from app.billing.standalone_charge import StandaloneChargeCreate, create_standalone_charge
 from app.database import get_db
 from app.rbac.models import User
@@ -26,14 +26,18 @@ router = APIRouter(prefix="/api/v1/billing", tags=["Billing"])
 
 def _error(exc: BillingError) -> HTTPException:
     code = str(exc)
-    status = 404 if code.endswith("_NOT_FOUND") else 409 if code in {
-        "COVERAGE_NOT_VERIFIED",
-        "COVERAGE_RULE_NOT_CONFIGURED",
-        "NO_CHARGES",
-        "INVOICE_NOT_REPRICABLE",
-        "PAYER_REQUIRED_FOR_REPRICE",
-    } else 400
-    return HTTPException(status_code=status, detail={"code": code, "message": code})
+    mapping = {
+        "ENCOUNTER_NOT_FOUND": 404,
+        "SERVICE_NOT_FOUND": 404,
+        "INVOICE_NOT_FOUND": 404,
+        "COVERAGE_NOT_VERIFIED": 409,
+        "COVERAGE_RULE_NOT_CONFIGURED": 409,
+        "NO_CHARGES": 409,
+        "INVOICE_NOT_REPRICABLE": 409,
+        "PAYER_REQUIRED_FOR_REPRICE": 409,
+        "FACILITY_ACCESS_DENIED": 403,
+    }
+    return HTTPException(status_code=mapping.get(code, 400), detail={"code": code, "message": code})
 
 
 @router.get("/services", response_model=list[ServiceResponse])
@@ -77,29 +81,19 @@ def add_service(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(BILLING_SERVICE_WRITE)),
 ):
-    from app.billing.service import create_service  # optional if exists
-
-    try:
-        # Prefer dedicated create if present; otherwise inline minimal create is not used here.
-        from app.billing import service as billing_service
-
-        if hasattr(billing_service, "create_service"):
-            return billing_service.create_service(db, facility_id, payload.model_dump(), actor_user_id=user.id)
-        row = Service(
-            facility_id=facility_id,
-            code=payload.code,
-            name=payload.name,
-            department_id=payload.department_id,
-            service_type=payload.service_type,
-            price=payload.price,
-            status="ACTIVE",
-        )
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-        return row
-    except BillingError as exc:
-        raise _error(exc) from exc
+    row = Service(
+        facility_id=facility_id,
+        code=payload.code,
+        name=payload.name,
+        department_id=payload.department_id,
+        service_type=payload.service_type,
+        price=payload.price,
+        status="ACTIVE",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 @router.post("/charges", response_model=ChargeResponse, status_code=201)
