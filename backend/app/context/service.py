@@ -34,6 +34,7 @@ from app.facilities.models import Facility
 from app.patients.models import PatientFacility
 from app.rbac.models import Permission, Role, RolePermission, Staff, StaffRole, User
 from app.tenancy.service import organization_facility_ids
+from app.tenancy.service import organization_facility_ids
 
 VALID_SCOPES = ("facility", "network", "county", "national")
 
@@ -150,6 +151,14 @@ def resolve_facility_ids(
     scope = (scope or "facility").strip().lower()
     if scope not in VALID_SCOPES:
         raise HTTPException(status_code=400, detail="INVALID_OPERATING_SCOPE")
+
+    tenant_facilities: list[UUID] | None = None
+    if tenant_id is not None:
+        tenant_facilities = organization_facility_ids(db, user=user, organization_id=tenant_id)
+        if token_facility_id not in tenant_facilities and not _is_system_administrator(db, user):
+            raise HTTPException(status_code=403, detail="TENANT_CONTEXT_DOES_NOT_INCLUDE_FACILITY")
+        if not tenant_facilities:
+            raise HTTPException(status_code=403, detail="TENANT_HAS_NO_ACTIVE_FACILITIES")
 
     tenant_facilities: list[UUID] | None = None
     if tenant_id is not None:
@@ -319,6 +328,7 @@ def context_payload(
             "scope": active_scope,
             "facility_id": str(facility_id),
             "resolved_facility_count": len(resolved),
+            "tenant_id": str(tenant_id) if tenant_id else None,
             "tenant_id": str(tenant_id) if tenant_id else None,
         },
         "available_scopes": scopes,
