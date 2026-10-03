@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 
-/** Claims list, adjudicate, line-level adjudication detail. Phase 113. */
+/** Claims workbench — adjudicate, obligation lookup, line detail. Phase 115. */
 export function ClaimsClaimsTable(props: any) {
   const {
     loading,
@@ -34,14 +34,26 @@ export function ClaimsClaimsTable(props: any) {
   const [adjDetail, setAdjDetail] = useState<any | null>(null);
   const [adjLoading, setAdjLoading] = useState(false);
   const [adjError, setAdjError] = useState("");
+  const [obligationInfo, setObligationInfo] = useState<any[] | null>(null);
+  const [obligationError, setObligationError] = useState("");
+
+  async function loadObligation(claimId: string) {
+    setObligationError("");
+    setObligationInfo(null);
+    try {
+      const rows = await api.settlementListObligations({ claim_id: claimId, limit: 5 });
+      setObligationInfo(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      setObligationError(e instanceof ApiError ? e.message || e.code : "OBLIGATION_LOAD_FAILED");
+    }
+  }
 
   async function loadAdjudicationDetail(claimId: string) {
     setAdjLoading(true);
     setAdjError("");
     setAdjDetail(null);
     try {
-      const data = await api.getClaimAdjudicationLines(claimId);
-      setAdjDetail(data);
+      setAdjDetail(await api.getClaimAdjudicationLines(claimId));
     } catch (e) {
       setAdjError(e instanceof ApiError ? e.message || e.code : "ADJUDICATION_LOAD_FAILED");
     } finally {
@@ -121,8 +133,9 @@ export function ClaimsClaimsTable(props: any) {
                             void action(async () => {
                               const r = await api.adjudicateClaim(c.id, false);
                               void loadAdjudicationDetail(c.id);
+                              void loadObligation(c.id);
                               return {
-                                message: `Adjudicated: ${r.decision} · allowed ${r.allowed_amount} · patient ${r.patient_amount} (${r.reason_code})`,
+                                message: `Adjudicated: ${r.decision} · allowed ${r.allowed_amount}`,
                               };
                             }, "Claim adjudicated.")
                           }
@@ -135,13 +148,13 @@ export function ClaimsClaimsTable(props: any) {
                           type="button"
                           className="secondary"
                           disabled={busy}
-                          title="Force re-run benefit adjudication"
                           onClick={() =>
                             void action(async () => {
                               const r = await api.adjudicateClaim(c.id, true);
                               void loadAdjudicationDetail(c.id);
+                              void loadObligation(c.id);
                               return {
-                                message: `Re-adjudicated: ${r.decision} · allowed ${r.allowed_amount} · patient ${r.patient_amount} (${r.reason_code})`,
+                                message: `Re-adjudicated: ${r.decision} · allowed ${r.allowed_amount}`,
                               };
                             }, "Claim re-adjudicated.")
                           }
@@ -156,6 +169,9 @@ export function ClaimsClaimsTable(props: any) {
                         onClick={() => void loadAdjudicationDetail(c.id)}
                       >
                         Adj. detail
+                      </button>
+                      <button type="button" className="secondary" onClick={() => void loadObligation(c.id)}>
+                        Obligation
                       </button>
                       {canSubmit(c.status) && (
                         <button
@@ -223,7 +239,7 @@ export function ClaimsClaimsTable(props: any) {
 
       {(adjDetail || adjError || adjLoading) && (
         <article className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h2 style={{ margin: 0 }}>Adjudication detail</h2>
             <button
               type="button"
@@ -236,26 +252,21 @@ export function ClaimsClaimsTable(props: any) {
               Close
             </button>
           </div>
-          {adjLoading && <p className="muted">Loading line decisions…</p>}
+          {adjLoading && <p className="muted">Loading…</p>}
           {adjError && <div className="error">{adjError}</div>}
           {adjDetail && !adjDetail.decision && (
-            <p className="muted">No adjudication recorded for this claim yet. Run Adjudicate first.</p>
+            <p className="muted">No adjudication yet. Run Adjudicate first.</p>
           )}
-          {adjDetail && adjDetail.decision && (
+          {adjDetail?.decision && (
             <>
-              <p className="small" style={{ marginTop: 8 }}>
-                <strong>{adjDetail.decision}</strong>
-                {" · "}
-                submitted {money(adjDetail.submitted_amount)} · allowed {money(adjDetail.allowed_amount)} · patient{" "}
-                {money(adjDetail.patient_amount)}
-                {adjDetail.reason_code ? ` · ${adjDetail.reason_code}` : ""}
-                {adjDetail.adjudicated_at ? ` · ${adjDetail.adjudicated_at}` : ""}
+              <p className="small">
+                <strong>{adjDetail.decision}</strong> · allowed {money(adjDetail.allowed_amount)} · patient{" "}
+                {money(adjDetail.patient_amount)} · {adjDetail.reason_code}
               </p>
-              <div className="table-wrap" style={{ marginTop: 12 }}>
+              <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Line</th>
                       <th>Submitted</th>
                       <th>Allowed</th>
                       <th>Decision</th>
@@ -266,20 +277,65 @@ export function ClaimsClaimsTable(props: any) {
                   <tbody>
                     {(adjDetail.lines || []).map((ln: any) => (
                       <tr key={ln.id}>
-                        <td className="mono small">{String(ln.claim_item_id).slice(0, 8)}…</td>
                         <td>{money(ln.submitted_amount)}</td>
                         <td>{money(ln.allowed_amount)}</td>
-                        <td>
-                          <span className="status-pill">{ln.decision}</span>
-                        </td>
+                        <td>{ln.decision}</td>
                         <td>{ln.reason_code}</td>
-                        <td className="muted small">{ln.evidence?.service_code || "—"}</td>
+                        <td>{ln.evidence?.service_code || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </>
+          )}
+        </article>
+      )}
+
+      {(obligationInfo || obligationError) && (
+        <article className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h2 style={{ margin: 0 }}>Settlement obligation</h2>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setObligationInfo(null);
+                setObligationError("");
+              }}
+            >
+              Close
+            </button>
+          </div>
+          {obligationError && <div className="error">{obligationError}</div>}
+          {obligationInfo && obligationInfo.length === 0 && (
+            <p className="muted">No obligation for this claim yet (adjudicate a payable claim first).</p>
+          )}
+          {obligationInfo && obligationInfo.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Number</th>
+                    <th>Status</th>
+                    <th>Payable</th>
+                    <th>Patient</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {obligationInfo.map((o: any) => (
+                    <tr key={o.id}>
+                      <td>{o.obligation_number}</td>
+                      <td>{o.status}</td>
+                      <td>{money(o.payable_amount)}</td>
+                      <td>{money(o.patient_amount)}</td>
+                      <td className="muted small">{o.created_at || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </article>
       )}
@@ -294,7 +350,6 @@ export function ClaimsClaimsTable(props: any) {
                   <th>Claim</th>
                   <th>Code</th>
                   <th>Guide</th>
-                  <th>Owner</th>
                 </tr>
               </thead>
               <tbody>
@@ -302,11 +357,7 @@ export function ClaimsClaimsTable(props: any) {
                   <tr key={r.claim_id}>
                     <td>{r.claim_number}</td>
                     <td>{r.response_code || "—"}</td>
-                    <td>
-                      <strong>{r.guide_title}</strong>
-                      <p className="muted small">{r.guide_fix}</p>
-                    </td>
-                    <td>{r.guide_owner}</td>
+                    <td>{r.guide_title}</td>
                   </tr>
                 ))}
               </tbody>
@@ -326,7 +377,6 @@ export function ClaimsClaimsTable(props: any) {
                 onChange={(e) => setResponse((s: any) => ({ ...s, status: e.target.value }))}
               >
                 <option value="ACCEPTED">ACCEPTED</option>
-                <option value="UNDER_REVIEW">UNDER_REVIEW</option>
                 <option value="REJECTED">REJECTED</option>
                 <option value="PARTIALLY_PAID">PARTIALLY_PAID</option>
                 <option value="PAID">PAID</option>
@@ -338,7 +388,6 @@ export function ClaimsClaimsTable(props: any) {
                 required
                 value={response.code}
                 onChange={(e) => setResponse((s: any) => ({ ...s, code: e.target.value }))}
-                maxLength={80}
               />
             </label>
             <label className="span-2">
@@ -347,24 +396,14 @@ export function ClaimsClaimsTable(props: any) {
                 required
                 value={response.message}
                 onChange={(e) => setResponse((s: any) => ({ ...s, message: e.target.value }))}
-                maxLength={500}
               />
             </label>
             <label>
-              External reference
+              Reference
               <input
                 required
                 value={response.reference}
                 onChange={(e) => setResponse((s: any) => ({ ...s, reference: e.target.value }))}
-                maxLength={150}
-              />
-            </label>
-            <label>
-              Approved amount
-              <input
-                value={response.approved}
-                onChange={(e) => setResponse((s: any) => ({ ...s, approved: e.target.value }))}
-                disabled={response.status === "REJECTED"}
               />
             </label>
             <div className="form-actions span-2">
@@ -372,7 +411,7 @@ export function ClaimsClaimsTable(props: any) {
                 Cancel
               </button>
               <button type="submit" disabled={busy}>
-                Save response
+                Save
               </button>
             </div>
           </form>
@@ -384,10 +423,10 @@ export function ClaimsClaimsTable(props: any) {
           <h2>Reconcile — {reconcileClaim.claim_id}</h2>
           <form className="form-grid" onSubmit={onReconcile}>
             <label>
-              Received amount (KES)
+              Received amount
               <input required value={receivedAmount} onChange={(e) => setReceivedAmount(e.target.value)} />
             </label>
-            <div className="form-actions span-2">
+            <div className="form-actions">
               <button type="button" className="secondary" onClick={() => setReconcileClaim(null)}>
                 Cancel
               </button>
@@ -399,7 +438,7 @@ export function ClaimsClaimsTable(props: any) {
         </article>
       )}
 
-      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 113 adjudication detail</p>
+      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 115</p>
     </>
   );
 }
