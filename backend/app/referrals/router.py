@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
+from app.context.service import resolve_facility_ids
 from app.database import get_db
 from app.rbac.models import Staff, User
 from app.referrals.schemas import (
@@ -92,15 +93,18 @@ def list_referrals(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     role: Literal["all", "source", "destination"] = Query(default="all"),
+    scope: str = Query(default="facility", description="facility | network | county | national"),
     user: User = Depends(require_permission("referrals.read")),
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
 ) -> ReferralListResponse:
-    items, total = list_referrals_for_facility(db, facility_id, limit=limit, offset=offset, role=role)
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope=scope)
+    items, total = list_referrals_for_facility(
+        db, facility_id, limit=limit, offset=offset, role=role, facility_ids=facility_ids
+    )
     return ReferralListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-# Transfer routes MUST be registered before /{referral_id} to avoid path capture
 @router.post("/transfers", response_model=TransferOut, status_code=status.HTTP_201_CREATED)
 def create_transfer_endpoint(
     payload: TransferCreate,
@@ -125,11 +129,15 @@ def list_transfers(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     role: Literal["all", "source", "destination"] = Query(default="all"),
+    scope: str = Query(default="facility", description="facility | network | county | national"),
     user: User = Depends(require_permission("referrals.read")),
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
 ) -> TransferListResponse:
-    items, total = list_transfers_for_facility(db, facility_id, limit=limit, offset=offset, role=role)
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope=scope)
+    items, total = list_transfers_for_facility(
+        db, facility_id, limit=limit, offset=offset, role=role, facility_ids=facility_ids
+    )
     return TransferListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
