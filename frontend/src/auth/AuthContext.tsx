@@ -17,6 +17,7 @@ type AuthState = {
   facilityId: string | null;
   facilityName: string | null;
   accountType: "patient" | "staff" | null;
+  contextScope: "facility" | "network" | "county" | "national";
   pendingFacilities: FacilityOption[] | null;
   login: (username: string, password: string) => Promise<"ready" | "select_facility">;
   patientLogin: (identifier: string, password: string) => Promise<void>;
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [facilityId, setFacilityId] = useState<string | null>(getFacilityId());
   const [facilityName, setFacilityName] = useState<string | null>(getFacilityName());
   const [accountType, setAccountType] = useState<"patient" | "staff" | null>(getAccountType());
+  const [contextScope, setContextScope] = useState<"facility" | "network" | "county" | "national">("facility");
   const [pendingFacilities, setPendingFacilities] = useState<FacilityOption[] | null>(null);
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFacilityId(null);
       setFacilityName(null);
       setAccountType(null);
+      setContextScope("facility");
       setPendingFacilities(null);
     };
     window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
@@ -80,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setFacilityId(null);
         setFacilityName(null);
         setAccountType(null);
+        setContextScope("facility");
       })
       .finally(() => setReady(true));
   }, []);
@@ -121,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const me: AuthMe = await api.me();
     setUsername(me.data.username);
     setAccountType("staff");
+    setContextScope("facility");
     setPendingFacilities(null);
     return "ready";
   }, []);
@@ -206,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       facilityId,
       facilityName,
       accountType,
+      contextScope,
       pendingFacilities,
       login,
       patientLogin,
@@ -219,6 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       facilityId,
       facilityName,
       accountType,
+      contextScope,
       pendingFacilities,
       login,
       patientLogin,
