@@ -33,6 +33,7 @@ from app.encounters.models import Encounter
 from app.facilities.models import Facility
 from app.patients.models import PatientFacility
 from app.rbac.models import Permission, Role, RolePermission, Staff, StaffRole, User
+from app.tenancy.service import organization_facility_ids
 
 VALID_SCOPES = ("facility", "network", "county", "national")
 
@@ -143,11 +144,20 @@ def resolve_facility_ids(
     user: User,
     token_facility_id: UUID,
     scope: str,
+    tenant_id: UUID | None = None,
 ) -> list[UUID]:
     """Return the facility IDs the caller may read under the given scope."""
     scope = (scope or "facility").strip().lower()
     if scope not in VALID_SCOPES:
         raise HTTPException(status_code=400, detail="INVALID_OPERATING_SCOPE")
+
+    tenant_facilities: list[UUID] | None = None
+    if tenant_id is not None:
+        tenant_facilities = organization_facility_ids(db, user=user, organization_id=tenant_id)
+        if token_facility_id not in tenant_facilities and not _is_system_administrator(db, user):
+            raise HTTPException(status_code=403, detail="TENANT_CONTEXT_DOES_NOT_INCLUDE_FACILITY")
+        if not tenant_facilities:
+            raise HTTPException(status_code=403, detail="TENANT_HAS_NO_ACTIVE_FACILITIES")
 
     scopes = available_scopes(db, user)
     if scope not in scopes:
@@ -179,6 +189,8 @@ def resolve_facility_ids(
 
     if scope == "network":
         ids = staff_facility_ids(db, user)
+        if tenant_facilities is not None:
+            ids = [x for x in ids if x in tenant_facilities]
         if token_facility_id not in ids and not _is_system_administrator(db, user):
             raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
         if _is_system_administrator(db, user) and not ids:
@@ -193,18 +205,15 @@ def resolve_facility_ids(
         county = (home.county or "").strip()
         if not county:
             return [token_facility_id]
-        return list(
-            db.scalars(
-                select(Facility.id).where(
-                    Facility.status == "ACTIVE",
-                    Facility.county == county,
-                )
-            ).all()
-        ) or [token_facility_id]
+        query = select(Facility.id).where(Facility.status == "ACTIVE", Facility.county == county)
+        if tenant_facilities is not None:
+            query = query.where(Facility.id.in_(tenant_facilities))
+        return list(db.scalars(query).all()) or [token_facility_id]
 
-    return list(db.scalars(select(Facility.id).where(Facility.status == "ACTIVE")).all()) or [
-        token_facility_id
-    ]
+    query = select(Facility.id).where(Facility.status == "ACTIVE")
+    if tenant_facilities is not None:
+        query = query.where(Facility.id.in_(tenant_facilities))
+    return list(db.scalars(query).all()) or [token_facility_id]
 
 
 def scope_data_summary(
@@ -213,9 +222,10 @@ def scope_data_summary(
     user: User,
     token_facility_id: UUID,
     scope: str,
+    tenant_id: UUID | None = None,
 ) -> dict:
     facility_ids = resolve_facility_ids(
-        db, user=user, token_facility_id=token_facility_id, scope=scope
+        db, user=user, token_facility_id=token_facility_id, scope=scope, tenant_id=tenant_id
     )
 
     def _count_facility_col(model) -> int:
@@ -252,6 +262,7 @@ def scope_data_summary(
 
     return {
         "scope": scope,
+        "tenant_id": str(tenant_id) if tenant_id else None,
         "facility_count": len(facility_ids),
         "facility_ids": [str(x) for x in facility_ids[:100]],
         "facilities": [
@@ -287,6 +298,7 @@ def context_payload(
     user: User,
     facility_id: UUID,
     scope: str | None = None,
+    tenant_id: UUID | None = None,
 ) -> dict:
     is_admin = _is_system_administrator(db, user)
     permissions = user_permission_codes(db, user)
@@ -299,7 +311,7 @@ def context_payload(
         active_scope = "facility"
 
     resolved = resolve_facility_ids(
-        db, user=user, token_facility_id=facility_id, scope=active_scope
+        db, user=user, token_facility_id=facility_id, scope=active_scope, tenant_id=tenant_id
     )
 
     return {
@@ -307,6 +319,7 @@ def context_payload(
             "scope": active_scope,
             "facility_id": str(facility_id),
             "resolved_facility_count": len(resolved),
+            "tenant_id": str(tenant_id) if tenant_id else None,
         },
         "available_scopes": scopes,
         "roles": roles,
