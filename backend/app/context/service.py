@@ -155,7 +155,7 @@ def resolve_facility_ids(
     tenant_facilities: list[UUID] | None = None
     if tenant_id is not None:
         tenant_facilities = organization_facility_ids(db, user=user, organization_id=tenant_id)
-        if token_facility_id not in tenant_facilities and not _is_system_administrator(db, user):
+        if token_facility_id not in tenant_facilities:
             raise HTTPException(status_code=403, detail="TENANT_CONTEXT_DOES_NOT_INCLUDE_FACILITY")
         if not tenant_facilities:
             raise HTTPException(status_code=403, detail="TENANT_HAS_NO_ACTIVE_FACILITIES")
