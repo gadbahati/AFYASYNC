@@ -529,5 +529,3 @@ export function ClaimsClaimsTable(props: any) {
     </>
   );
 }
-
-type _FormEvent = FormEvent;
