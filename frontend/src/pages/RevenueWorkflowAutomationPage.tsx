@@ -6,7 +6,8 @@ export default function RevenueWorkflowAutomationPage(){
   const [result,setResult]=useState<any>(null);
   const [running,setRunning]=useState(false); const [orchestrating,setOrchestrating]=useState(false); const [reconciling,setReconciling]=useState(false); const [verifying,setVerifying]=useState(false);
   async function orchestrate(){setOrchestrating(true);try{setResult(await api.revenueWorkflowOrchestrate(limit));}finally{setOrchestrating(false);}}
-  async function reconcile(){setReconciling(true);try{setResult(await api.revenueWorkflowReconcile(limit));}finally{setReconciling(false);}}\n  async function verifyCash(){setVerifying(true);try{setResult(await api.cashClosureVerify(limit));}finally{setVerifying(false);}}
+  async function reconcile(){setReconciling(true);try{setResult(await api.revenueWorkflowReconcile(limit));}finally{setReconciling(false);}}
+  async function verifyCash(){setVerifying(true);try{setResult(await api.cashClosureVerify(limit));}finally{setVerifying(false);}}
   async function run(){
     setRunning(true);
     try{setResult(await api.revenueWorkflowAutomate(limit));}
