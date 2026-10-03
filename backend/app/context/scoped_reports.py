@@ -42,6 +42,7 @@ def build_scoped_operations_summary(
     user: User,
     token_facility_id: UUID,
     scope: str,
+    tenant_id: UUID | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> dict:
@@ -50,7 +51,7 @@ def build_scoped_operations_summary(
     start_dt, end_dt = _window(start, end)
 
     facility_ids = resolve_facility_ids(
-        db, user=user, token_facility_id=token_facility_id, scope=scope
+        db, user=user, token_facility_id=token_facility_id, scope=scope, tenant_id=tenant_id
     )
     if not facility_ids:
         facility_ids = [token_facility_id]
@@ -121,6 +122,7 @@ def build_scoped_operations_summary(
 
     return {
         "scope": scope,
+        "tenant_id": str(tenant_id) if tenant_id else None,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "facility_count": len(facility_ids),
