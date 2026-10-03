@@ -189,6 +189,18 @@ const _apiCore: any = {
   listBenefitPackages: () => request("/api/v1/benefits/packages"),
   repriceInvoiceBenefits: (invoiceId: string) =>
     request(`/api/v1/billing/invoices/${invoiceId}/reprice-benefits`, { method: "POST" }),
+  financingPreauthCreate: (payload: any) =>
+    request("/api/v1/financing-preauthorizations", { method: "POST", body: JSON.stringify(payload) }),
+  financingPreauthDecide: (id: string, payload: any) =>
+    request(`/api/v1/financing-preauthorizations/${id}/decision`, { method: "POST", body: JSON.stringify(payload) }),
+  financingPreauthList: (params: { status?: string; person_id?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.status) q.set("status", params.status);
+    if (params.person_id) q.set("person_id", params.person_id);
+    if (params.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request(`/api/v1/financing-preauthorizations${qs ? `?${qs}` : ""}`);
+  },
   me: () => request("/api/v1/auth/me"),
   logout: (refresh_token?: string) =>
     request("/api/v1/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token }) }, false),
