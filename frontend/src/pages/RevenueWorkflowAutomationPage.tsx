@@ -14,7 +14,7 @@ export default function RevenueWorkflowAutomationPage(){
   }
   return <section className="page">
     <div className="page-header"><div><h1>Revenue workflow automation</h1><p>Turn prioritized revenue issues into traceable collection work without creating duplicate active tasks.</p></div>
-      <button className="primary" onClick={run} disabled={running}>{running?"Synchronizing…":"Automate revenue actions"}</button><button className="secondary" onClick={orchestrate} disabled={orchestrating}>{orchestrating?"Orchestrating…":"Run orchestration"}</button>
+      <button className="primary" onClick={run} disabled={running}>{running?"Synchronizing…":"Automate revenue actions"}</button><button className="secondary" onClick={orchestrate} disabled={orchestrating}>{orchestrating?"Orchestrating…":"Run orchestration"}</button><button className="secondary" onClick={reconcile} disabled={reconciling}>{reconciling?"Verifying…":"Verify & close work"}</button>
     </div>
     <div className="card-grid">
       <div className="card"><span className="muted">Batch limit</span><strong><input type="number" min={1} max={200} value={limit} onChange={e=>setLimit(Number(e.target.value)||50)} /></strong></div>
