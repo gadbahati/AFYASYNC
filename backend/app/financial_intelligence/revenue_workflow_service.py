@@ -8,6 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.financial_intelligence.work_queue import CollectionWorkItem
+from app.financial_intelligence.guardrail_models import ContractComplianceGuardrail
+from app.financial_intelligence.resolution_models import RevenueResolutionCase
+from app.settlement.recovery import RevenueRecoveryCase
 
 LEVELS=["LOW","MEDIUM","HIGH","CRITICAL"]
 
@@ -102,3 +105,27 @@ def automate_revenue_actions(db:Session,facility_id:UUID,actor_id:UUID,limit:int
     })
     db.commit()
     return {"created":created,"updated":updated,"skipped":skipped,"candidates":len(data["items"]),"note":"Idempotent synchronization; active work items are updated rather than duplicated."}
+
+def reconcile_revenue_work(db:Session,facility_id:UUID,actor_id:UUID,limit:int=200):
+    items=list(db.scalars(select(CollectionWorkItem).where(CollectionWorkItem.facility_id==facility_id,CollectionWorkItem.status.in_(["OPEN","IN_PROGRESS","SNOOZED"])).order_by(CollectionWorkItem.created_at.asc()).limit(max(1,min(limit,500)))).all())
+    closed=0
+    for item in items:
+        resolved=False
+        if item.source_type in {"CONTRACT_GUARDRAIL","REVENUE_ACTION_GUARDRAIL"}:
+            source=db.get(ContractComplianceGuardrail,item.source_id)
+            resolved=source is not None and source.status in {"RESOLVED","DISMISSED"}
+        elif item.source_type=="REVENUE_ACTION_RESOLUTION":
+            source=db.get(RevenueResolutionCase,item.source_id)
+            resolved=source is not None and source.status in {"RESOLVED","CLOSED"}
+        elif item.source_type=="REVENUE_ACTION_RECOVERY":
+            source=db.get(RevenueRecoveryCase,item.source_id)
+            resolved=source is not None and source.status in {"RECOVERED","CLOSED","WRITTEN_OFF"}
+        if resolved:
+            item.status="DONE"
+            item.outstanding_amount=0
+            item.note=(item.note or "")+" Automatically closed after source lifecycle verification."
+            closed+=1
+    db.flush()
+    record_audit(db,actor_id,"RECONCILE_REVENUE_WORK","collection_work_items",str(facility_id),{"checked":len(items),"closed":closed})
+    db.commit()
+    return {"checked":len(items),"closed":closed,"note":"Work closes only after the underlying guardrail, recovery, or resolution record reaches a terminal state."}
