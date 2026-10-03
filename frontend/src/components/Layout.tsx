@@ -4,6 +4,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useWorkspace, type ContextScope } from "../workspaces/WorkspaceContext";
 import { WORKSPACES } from "../workspaces/workspaces";
+import { useModuleAccess } from "../auth/ModuleAccessContext";
 
 type NavLinkItem = readonly [string, string];
 type NavGroup = { label: string; links: readonly NavLinkItem[] };
@@ -143,16 +144,23 @@ function KenyaCrest({ className = "" }: { className?: string }) {
 export function Layout() {
   const auth = useAuth();
   const { workspace, setWorkspace, scope, setScope } = useWorkspace();
-  const activeWorkspace = WORKSPACES.find((item) => item.id === workspace) || WORKSPACES[0];
+  const moduleAccess = useModuleAccess();
   const [availableScopes, setAvailableScopes] = useState<ContextScope[]>(["facility"]);
+  const [allowedWorkspaces, setAllowedWorkspaces] = useState<string[]>(WORKSPACES.map((w) => w.id));
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [scopeBusy, setScopeBusy] = useState(false);
+
+  const visibleWorkspaces = WORKSPACES.filter((w) => allowedWorkspaces.includes(w.id));
+  const activeWorkspace =
+    visibleWorkspaces.find((item) => item.id === workspace) ||
+    visibleWorkspaces[0] ||
+    WORKSPACES[0];
 
   useEffect(() => {
     let cancelled = false;
     api
       .contextOverview()
-      .then((v: { available_scopes?: string[] }) => {
+      .then((v: { available_scopes?: string[]; allowed_workspaces?: string[] }) => {
         if (cancelled) return;
         const scopes = (Array.isArray(v?.available_scopes) ? v.available_scopes : ["facility"]).filter(
           (s): s is ContextScope =>
@@ -162,6 +170,9 @@ export function Layout() {
         if (scopes.length && !scopes.includes(scope)) {
           setScope(scopes[0]);
         }
+        if (Array.isArray(v?.allowed_workspaces) && v.allowed_workspaces.length) {
+          setAllowedWorkspaces(v.allowed_workspaces);
+        }
       })
       .catch(() => {
         if (!cancelled) setAvailableScopes(["facility"]);
@@ -170,6 +181,20 @@ export function Layout() {
       cancelled = true;
     };
   }, [auth.facilityId]);
+
+  useEffect(() => {
+    if (!visibleWorkspaces.some((w) => w.id === workspace) && visibleWorkspaces[0]) {
+      setWorkspace(visibleWorkspaces[0].id);
+    }
+  }, [allowedWorkspaces, workspace]);
+
+  const workspaceLinks = activeWorkspace.links.filter(([to]) => moduleAccess.isAllowed(to));
+  const filteredNavGroups = navGroups
+    .map((group) => ({
+      ...group,
+      links: group.links.filter(([to]) => moduleAccess.isAllowed(to)),
+    }))
+    .filter((group) => group.links.length > 0);
 
   const scopeLabel = SCOPE_OPTIONS.find((o) => o.value === scope)?.label || scope;
 
@@ -264,7 +289,7 @@ export function Layout() {
             onChange={(e) => setWorkspace(e.target.value as typeof workspace)}
             style={{ width: "100%", padding: "9px 10px", borderRadius: 9 }}
           >
-            {WORKSPACES.map((item) => (
+            {visibleWorkspaces.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.icon} {item.label}
               </option>
@@ -281,18 +306,23 @@ export function Layout() {
             <div className="nav-section">
               {activeWorkspace.icon} {activeWorkspace.label}
             </div>
-            {activeWorkspace.links.map(([to, label]) => (
+            {workspaceLinks.map(([to, label]) => (
               <NavLink key={to} to={to} end={to === "/"}>
                 <span className="nav-dot" aria-hidden="true" />
                 {label}
               </NavLink>
             ))}
+            {moduleAccess.ready && workspaceLinks.length === 0 && (
+              <p className="muted small" style={{ padding: "8px 12px" }}>
+                No modules in this workspace for your role.
+              </p>
+            )}
           </div>
           <details className="nav-group">
             <summary className="nav-section" style={{ cursor: "pointer" }}>
               All modules
             </summary>
-            {navGroups.map((group) => (
+            {filteredNavGroups.map((group) => (
               <div key={group.label}>
                 <div className="nav-section">{group.label}</div>
                 {group.links.map(([to, label]) => (
@@ -303,6 +333,11 @@ export function Layout() {
                 ))}
               </div>
             ))}
+            {moduleAccess.ready && filteredNavGroups.length === 0 && (
+              <p className="muted small" style={{ padding: "8px 12px" }}>
+                All-modules list limited by your permissions.
+              </p>
+            )}
           </details>
         </nav>
 
