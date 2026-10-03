@@ -180,6 +180,8 @@ const _apiCore: any = {
   },
   createBenefitRule: (payload: any) =>
     request("/api/v1/benefit-engine/rules", { method: "POST", body: JSON.stringify(payload) }),
+  importBenefitRules: (payload: { rules: any[]; stop_on_error?: boolean }) =>
+    request("/api/v1/benefit-engine/rules/import", { method: "POST", body: JSON.stringify(payload) }),
   listBenefitPackages: () => request("/api/v1/benefits/packages"),
   repriceInvoiceBenefits: (invoiceId: string) =>
     request(`/api/v1/billing/invoices/${invoiceId}/reprice-benefits`, { method: "POST" }),
