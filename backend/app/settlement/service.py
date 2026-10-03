@@ -90,12 +90,12 @@ def create_batch(db: Session, *, facility_id, payer_id, actor_user_id):
         payer_id=payer_id,
         total_amount=total,
         status="OPEN",
+        created_by=actor_user_id,
     )
     db.add(batch)
     db.flush()
     for o in obligations:
         o.status = "IN_BATCH"
-        o.batch_id = batch.id
     record_audit(
         db,
         action="CREATE_SETTLEMENT_BATCH",
@@ -104,7 +104,7 @@ def create_batch(db: Session, *, facility_id, payer_id, actor_user_id):
         result="SUCCESS",
         user_id=actor_user_id,
         facility_id=facility_id,
-        metadata={"count": len(obligations), "total": str(total)},
+        metadata={"obligation_count": len(obligations), "amount": str(batch.total_amount)},
         commit=False,
     )
     db.commit()
@@ -119,22 +119,40 @@ def record_payment(db: Session, *, batch_id, facility_id, payload, actor_user_id
     obligation = db.get(SettlementObligation, payload.obligation_id)
     if obligation is None or obligation.facility_id != facility_id:
         raise SettlementError("OBLIGATION_NOT_FOUND")
+    if obligation.status not in {"IN_BATCH", "READY"}:
+        raise SettlementError("OBLIGATION_NOT_PAYABLE")
+    existing = db.scalar(select(ProviderPayment).where(ProviderPayment.obligation_id == obligation.id))
+    if existing:
+        return existing
     amount = _money(payload.amount)
-    if amount <= 0:
-        raise SettlementError("INVALID_PAYMENT_AMOUNT")
+    if amount != _money(obligation.payable_amount):
+        raise SettlementError("PAYMENT_AMOUNT_MISMATCH")
     payment = ProviderPayment(
-        payment_number=f"FXPP-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:10].upper()}",
-        facility_id=facility_id,
+        payment_reference=f"FXPP-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:10].upper()}",
         batch_id=batch.id,
         obligation_id=obligation.id,
+        facility_id=facility_id,
+        payer_id=batch.payer_id,
         amount=amount,
         method=payload.method,
-        external_reference=getattr(payload, "external_reference", None),
+        external_reference=payload.external_reference,
         status="RECORDED",
     )
     db.add(payment)
-    db.flush()
-    obligation.status = "PAID"
+    obligation.status = "SETTLED"
+    db.add(
+        SettlementLedgerEntry(
+            batch_id=batch.id,
+            obligation_id=obligation.id,
+            entry_type="PROVIDER_PAYMENT",
+            debit_amount=Decimal("0"),
+            credit_amount=amount,
+            reference=payment.payment_reference,
+        )
+    )
+    claim = db.get(Claim, obligation.claim_id)
+    if claim is not None:
+        claim.paid_amount = _money(claim.paid_amount) + amount
     record_audit(
         db,
         action="RECORD_PROVIDER_PAYMENT",
@@ -143,7 +161,7 @@ def record_payment(db: Session, *, batch_id, facility_id, payload, actor_user_id
         result="SUCCESS",
         user_id=actor_user_id,
         facility_id=facility_id,
-        metadata={"amount": str(amount), "batch_id": str(batch.id)},
+        metadata={"batch_id": str(batch.id), "amount": str(amount)},
         commit=False,
     )
     db.commit()
@@ -155,39 +173,35 @@ def reconcile_batch(db: Session, *, batch_id, facility_id, received_amount, acto
     batch = db.get(SettlementBatch, batch_id)
     if batch is None or batch.facility_id != facility_id:
         raise SettlementError("BATCH_NOT_FOUND")
-    received = _money(received_amount)
     expected = _money(batch.total_amount)
-    variance = (received - expected).quantize(Decimal("0.01"))
-    rec = SettlementReconciliation(
+    received = _money(received_amount)
+    diff = received - expected
+    status = "RECONCILED" if diff == 0 else "VARIANCE"
+    variance_type = "NONE" if diff == 0 else ("UNDERPAYMENT" if diff < 0 else "OVERPAYMENT")
+    row = SettlementReconciliation(
         batch_id=batch.id,
-        facility_id=facility_id,
         expected_amount=expected,
         received_amount=received,
-        variance_amount=variance,
-        status="MATCHED" if variance == 0 else "VARIANCE",
+        difference=diff,
+        status=status,
+        variance_type=variance_type,
+        reconciled_by=actor_user_id,
+        reconciled_at=datetime.now(timezone.utc),
+        recovery_status="NOT_REQUIRED" if diff >= 0 else "OPEN",
     )
-    db.add(rec)
-    batch.status = "RECONCILED"
-    db.add(
-        SettlementLedgerEntry(
-            facility_id=facility_id,
-            batch_id=batch.id,
-            entry_type="RECONCILIATION",
-            amount=received,
-            metadata_json={"variance": str(variance)},
-        )
-    )
+    db.add(row)
+    batch.status = "RECONCILED" if diff == 0 else "PARTIAL"
     record_audit(
         db,
         action="RECONCILE_SETTLEMENT_BATCH",
         resource_type="SETTLEMENT_BATCH",
         resource_id=str(batch.id),
-        result=rec.status,
+        result="SUCCESS",
         user_id=actor_user_id,
         facility_id=facility_id,
-        metadata={"received": str(received), "expected": str(expected), "variance": str(variance)},
+        metadata={"expected": str(expected), "received": str(received), "difference": str(diff)},
         commit=False,
     )
     db.commit()
-    db.refresh(rec)
-    return rec
+    db.refresh(row)
+    return row
