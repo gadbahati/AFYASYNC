@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
+import { useWorkspace } from "../workspaces/WorkspaceContext";
 
 type Claim = {
   id: string;
@@ -98,6 +99,7 @@ function canSandboxReject(status: string) {
 }
 
 export function ClaimsPage() {
+  const { scope } = useWorkspace();
   const [claims, setClaims] = useState<Claim[]>([]);
   const [rejections, setRejections] = useState<RejectionItem[]>([]);
   const [invoiceId, setInvoiceId] = useState("");
@@ -124,7 +126,7 @@ export function ClaimsPage() {
     setError(null);
     try {
       const [c, r, k] = await Promise.all([
-        api.listClaims(),
+        api.listClaims(50, scope),
         api.listClaimRejections(),
         api.claimsKesAtRisk(7).catch(() => null),
       ]);
@@ -140,7 +142,7 @@ export function ClaimsPage() {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [scope]);
 
   const filtered = useMemo(() => {
     if (statusFilter === "ALL") return claims;
@@ -240,8 +242,7 @@ export function ClaimsPage() {
       setError("Response fields exceed allowed length.");
       return;
     }
-    const approved =
-      response.status === "REJECTED" ? 0 : Number(response.approved || 0);
+    const approved = response.status === "REJECTED" ? 0 : Number(response.approved || 0);
     if (response.status !== "REJECTED" && (Number.isNaN(approved) || approved < 0)) {
       setError("Approved amount must be a non-negative number.");
       return;
@@ -296,8 +297,7 @@ export function ClaimsPage() {
           <p className="eyebrow">Revenue & financing</p>
           <h1>Claims & rework</h1>
           <p className="muted">
-            SHA / payer claims from real invoices — preflight with rejection risk score, validate,
-            submit, response, and reconciliation.
+            Claims under <strong>{scope}</strong> scope — preflight, validate, submit, response, and reconciliation.
           </p>
         </div>
         <button type="button" className="button secondary" onClick={() => void load()}>
@@ -351,8 +351,7 @@ export function ClaimsPage() {
       <article className="card">
         <h2>Create claim from invoice</h2>
         <p className="muted small">
-          Run <strong>preflight</strong> first. Risk score shows rejection likelihood before you
-          create the claim.
+          Run <strong>preflight</strong> first. Risk score shows rejection likelihood before you create the claim.
         </p>
         <form className="form-grid" onSubmit={onCreate}>
           <label className="span-2">
@@ -387,10 +386,7 @@ export function ClaimsPage() {
           </div>
         </form>
         {preflight && (
-          <div
-            className={preflight.ready ? "success-box" : "error"}
-            style={{ marginTop: "1rem" }}
-          >
+          <div className={preflight.ready ? "success-box" : "error"} style={{ marginTop: "1rem" }}>
             <strong>
               {preflight.ready ? "Ready for claim" : "Not ready"}
               {preflight.risk_band != null && (
@@ -437,7 +433,9 @@ export function ClaimsPage() {
         <>
           <article className="card">
             <div className="page-heading" style={{ marginBottom: "0.75rem" }}>
-              <h2>Facility claims ({filtered.length})</h2>
+              <h2>
+                Claims ({scope}) — {filtered.length}
+              </h2>
               <div className="filter-chips">
                 {STATUS_FILTERS.map((s) => (
                   <button
@@ -486,9 +484,7 @@ export function ClaimsPage() {
                               type="button"
                               className="secondary"
                               disabled={busy}
-                              onClick={() =>
-                                void action(() => api.validateClaim(c.id), "Claim validated.")
-                              }
+                              onClick={() => void action(() => api.validateClaim(c.id), "Claim validated.")}
                             >
                               Validate
                             </button>
@@ -497,9 +493,7 @@ export function ClaimsPage() {
                             <button
                               type="button"
                               disabled={busy}
-                              onClick={() =>
-                                void action(() => api.submitClaim(c.id), "Claim submitted.")
-                              }
+                              onClick={() => void action(() => api.submitClaim(c.id), "Claim submitted.")}
                             >
                               Submit
                             </button>
@@ -531,12 +525,7 @@ export function ClaimsPage() {
                               onClick={() => {
                                 setReconcileClaim(c);
                                 setReceivedAmount(
-                                  String(
-                                    Math.max(
-                                      0,
-                                      Number(c.approved_amount) - Number(c.paid_amount),
-                                    ),
-                                  ),
+                                  String(Math.max(0, Number(c.approved_amount) - Number(c.paid_amount))),
                                 );
                               }}
                             >
@@ -549,10 +538,7 @@ export function ClaimsPage() {
                               className="secondary"
                               disabled={busy}
                               onClick={() =>
-                                void action(
-                                  () => api.sandboxRejectClaim(c.id),
-                                  "Sandbox rejection recorded.",
-                                )
+                                void action(() => api.sandboxRejectClaim(c.id), "Sandbox rejection recorded.")
                               }
                             >
                               Sandbox reject
@@ -565,7 +551,7 @@ export function ClaimsPage() {
                   {filtered.length === 0 && (
                     <tr>
                       <td colSpan={7} className="muted">
-                        No claims in this filter.
+                        No claims in this filter under the current scope.
                       </td>
                     </tr>
                   )}
