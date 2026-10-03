@@ -136,7 +136,20 @@ const _apiCore: any = {
     ),
   listReferrals: (role = "source") => request(`/api/v1/referrals?role=${encodeURIComponent(role)}`),
   listTransfers: (role = "source") => request(`/api/v1/transfers?role=${encodeURIComponent(role)}`),
-  listPatients: (limit = 50, offset = 0) => request(`/api/v1/patients?limit=${limit}&offset=${offset}`),
+  listPatients: (limit = 50, offset = 0, scope = "facility") =>
+    request(
+      `/api/v1/patients?limit=${limit}&offset=${offset}&scope=${encodeURIComponent(scope)}`,
+    ),
+  searchPatients: (q: string, limit = 20, scope = "facility") =>
+    request(
+      `/api/v1/patients/search?q=${encodeURIComponent(q)}&limit=${limit}&scope=${encodeURIComponent(scope)}`,
+    ),
+  listEncounters: (limit = 100, offset = 0, scope = "facility") =>
+    request(
+      `/api/v1/encounters?limit=${limit}&offset=${offset}&scope=${encodeURIComponent(scope)}`,
+    ),
+  listClaims: (limit = 50, scope = "facility") =>
+    request(`/api/v1/claims?limit=${limit}&scope=${encodeURIComponent(scope)}`),
   getPatient: (id: string) => request(`/api/v1/patients/${id}`),
   createPatient: (payload: any) => request("/api/v1/patients", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request("/api/v1/auth/me"),
