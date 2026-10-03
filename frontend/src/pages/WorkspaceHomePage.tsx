@@ -44,6 +44,8 @@ export default function WorkspaceHomePage(){
   const [ops,setOps]=useState<OpsSummary|null>(null);
   const [summaryError,setSummaryError]=useState<string|null>(null);
   const [summaryLoading,setSummaryLoading]=useState(false);
+  const [scopeBusy,setScopeBusy]=useState(false);
+  const [scopeError,setScopeError]=useState<string|null>(null);
 
   useEffect(()=>{
     api.tenancyOverview().then((v:any)=>{
@@ -79,9 +81,46 @@ export default function WorkspaceHomePage(){
       if(!cancelled) setSummaryError(err?.message || err?.code || "SCOPE_SUMMARY_FAILED");
     }).finally(()=>{ if(!cancelled) setSummaryLoading(false); });
     return ()=>{ cancelled=true; };
-  },[scope]);
+  },[scope,tenantId]);
 
-  const visible=WORKSPACES.filter(w=>allowedWorkspaces.includes(w.id));
+  function scopePathAllowed(to: string): boolean {
+    const path = to.split("?")[0] || "/";
+    if (scope === "facility") {
+      return !path.startsWith("/national") &&
+        !path.startsWith("/coverage-simulator") &&
+        !path.startsWith("/universal-identity") &&
+        !path.startsWith("/health-exchange") &&
+        !path.startsWith("/provider-network");
+    }
+    if (scope === "network") {
+      return !path.startsWith("/national-command-centre") &&
+        !path.startsWith("/national-intelligence") &&
+        !path.startsWith("/national-identity") &&
+        !path.startsWith("/national-facilities") &&
+        !path.startsWith("/national-staff") &&
+        !path.startsWith("/national-payers") &&
+        !path.startsWith("/national-benefits") &&
+        !path.startsWith("/national-financing") &&
+        !path.startsWith("/national-supply") &&
+        !path.startsWith("/national/") &&
+        !path.startsWith("/coverage-simulator");
+    }
+    if (scope === "county") {
+      return !path.startsWith("/national-identity") &&
+        !path.startsWith("/national-facilities") &&
+        !path.startsWith("/national-staff") &&
+        !path.startsWith("/national-payers") &&
+        !path.startsWith("/national-benefits") &&
+        !path.startsWith("/national-financing") &&
+        !path.startsWith("/universal-identity");
+    }
+    return true;
+  }
+
+  const visible=WORKSPACES.filter(w=>
+    allowedWorkspaces.includes(w.id) &&
+    w.links.some(([to])=>scopePathAllowed(to) && pathAllowed(to))
+  );
 
   function pathAllowed(to: string): boolean {
     if (allowedPaths === null) return true;
@@ -91,7 +130,7 @@ export default function WorkspaceHomePage(){
       return path === p || path.startsWith(p + "/");
     });
   }
-  const workspaceLinks = current.links.filter(([to]) => pathAllowed(to));
+  const workspaceLinks = current.links.filter(([to]) => scopePathAllowed(to) && pathAllowed(to));
   const m=ops?.metrics;
 
   return <section className="page">
@@ -119,12 +158,28 @@ export default function WorkspaceHomePage(){
     <div className="card" style={{marginBottom:18}}>
       <h2 style={{marginTop:0}}>Operating context</h2>
       <p className="muted">This changes which facilities the platform may aggregate. Ordinary staff stay at facility/network; county and national require explicit authorization.</p>
-      <select value={scope} onChange={(e)=>setScope(e.target.value as typeof scope)} style={{padding:"10px 12px",minWidth:240,borderRadius:8,border:"1px solid #cbd5e1",background:"#fff"}}>
-        <option value="facility">Facility</option>
-        <option value="network" disabled={!availableScopes.includes("network")}>Network{availableScopes.includes("network")?"":" — restricted"}</option>
-        <option value="county" disabled={!availableScopes.includes("county")}>County{availableScopes.includes("county")?"":" — restricted"}</option>
-        <option value="national" disabled={!availableScopes.includes("national")}>National{availableScopes.includes("national")?"":" — restricted"}</option>
+      <select value={scope} disabled={scopeBusy} onChange={async(e)=>{
+        const next=e.target.value as typeof scope;
+        if(next===scope || scopeBusy) return;
+        setScopeBusy(true);
+        setScopeError(null);
+        try {
+          await api.setOperatingScope(next,scope);
+          setScope(next);
+          navigate("/workspace");
+        } catch(err:any) {
+          setScopeError(err?.message || err?.code || "SCOPE_NOT_AUTHORIZED");
+        } finally {
+          setScopeBusy(false);
+        }
+      }} style={{padding:"10px 12px",minWidth:240,borderRadius:8,border:"1px solid #cbd5e1",background:"#fff",cursor:scopeBusy?"wait":"pointer"}}>
+        {["facility","network","county","national"].map(value=>(
+          <option key={value} value={value} disabled={!availableScopes.includes(value)}>
+            {value[0].toUpperCase()+value.slice(1)}{availableScopes.includes(value)?"":" — restricted"}
+          </option>
+        ))}
       </select>
+      {scopeError && <p className="error" role="alert">{scopeError}</p>}
     </div>
 
     <div className="card" style={{marginBottom:18}}>
