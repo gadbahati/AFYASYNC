@@ -26,6 +26,12 @@ class ClaimPreflightResponse(BaseModel):
     risk_band: str = Field(default="LOW")
     block_submit: bool = False
     risk_factors: list[RiskFactorOut] = Field(default_factory=list)
+    # Phase 104 — benefit engine cross-check
+    benefit_unknown_rules: int = Field(default=0, ge=0)
+    benefit_preauth_lines: int = Field(default=0, ge=0)
+    benefit_ineligible_lines: int = Field(default=0, ge=0)
+    benefit_engine_payer_total: float = Field(default=0, ge=0, le=100_000_000)
+    benefit_engine_patient_total: float = Field(default=0, ge=0, le=100_000_000)
 
 
 class FacilityKesAtRiskResponse(BaseModel):
