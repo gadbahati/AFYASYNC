@@ -25,6 +25,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.audit.service import record_audit
 from app.auth.dependencies import _is_system_administrator
 from app.claims.models import Claim
 from app.encounters.models import Encounter
@@ -146,7 +147,28 @@ def resolve_facility_ids(
 
     scopes = available_scopes(db, user)
     if scope not in scopes:
-        raise HTTPException(status_code=403, detail="SCOPE_NOT_AUTHORIZED")
+        try:
+            record_audit(
+                db,
+                action="SCOPE_NOT_AUTHORIZED",
+                resource_type="OPERATING_CONTEXT",
+                resource_id=str(token_facility_id),
+                result="DENIED",
+                user_id=user.id,
+                facility_id=token_facility_id,
+                metadata={"requested_scope": scope, "available_scopes": scopes},
+                commit=True,
+            )
+        except Exception:
+            db.rollback()
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "SCOPE_NOT_AUTHORIZED",
+                "message": f"Your role cannot use '{scope}' scope. Allowed: {', '.join(scopes)}.",
+                "available_scopes": scopes,
+            },
+        )
 
     if scope == "facility":
         return [token_facility_id]
@@ -297,5 +319,79 @@ def context_payload(
             "county": "ACTIVE facilities in the same county as the token facility (authorized roles only).",
             "national": "All ACTIVE facilities (system administrator only).",
         },
+        "developer": "BAHATI GAD WANGWE",
+    }
+
+
+def record_scope_selection(
+    db: Session,
+    *,
+    user: User,
+    facility_id: UUID,
+    scope: str,
+    previous_scope: str | None = None,
+) -> dict:
+    """Explicit, auditable operating-scope change (Phase 95)."""
+    scope = (scope or "facility").strip().lower()
+    if scope not in VALID_SCOPES:
+        raise HTTPException(status_code=400, detail="INVALID_OPERATING_SCOPE")
+
+    scopes = available_scopes(db, user)
+    if scope not in scopes:
+        try:
+            record_audit(
+                db,
+                action="SCOPE_CHANGE_DENIED",
+                resource_type="OPERATING_CONTEXT",
+                resource_id=str(facility_id),
+                result="DENIED",
+                user_id=user.id,
+                facility_id=facility_id,
+                metadata={
+                    "requested_scope": scope,
+                    "previous_scope": previous_scope,
+                    "available_scopes": scopes,
+                },
+                commit=True,
+            )
+        except Exception:
+            db.rollback()
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "SCOPE_NOT_AUTHORIZED",
+                "message": f"Your role cannot use '{scope}' scope. Allowed: {', '.join(scopes)}.",
+                "available_scopes": scopes,
+            },
+        )
+
+    facility_ids = resolve_facility_ids(
+        db, user=user, token_facility_id=facility_id, scope=scope
+    )
+    try:
+        record_audit(
+            db,
+            action="SET_OPERATING_SCOPE",
+            resource_type="OPERATING_CONTEXT",
+            resource_id=str(facility_id),
+            result="SUCCESS",
+            user_id=user.id,
+            facility_id=facility_id,
+            metadata={
+                "scope": scope,
+                "previous_scope": previous_scope,
+                "resolved_facility_count": len(facility_ids),
+            },
+            commit=True,
+        )
+    except Exception:
+        db.rollback()
+
+    return {
+        "scope": scope,
+        "previous_scope": previous_scope,
+        "available_scopes": scopes,
+        "resolved_facility_count": len(facility_ids),
+        "message": f"Operating scope set to {scope}.",
         "developer": "BAHATI GAD WANGWE",
     }
