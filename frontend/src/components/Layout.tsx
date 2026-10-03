@@ -189,14 +189,50 @@ export function Layout() {
     }
   }, [allowedWorkspaces, workspace]);
 
-  const workspaceLinks = activeWorkspace.links.filter(([to]) => moduleAccess.isAllowed(to));
+  // Scope is a data boundary, but it must also be reflected in navigation.
+  // The backend remains authoritative; this only prevents the UI from presenting
+  // modules that cannot represent the selected operating context.
+  const scopePolicy: Record<ContextScope, (path: string) => boolean> = {
+    facility: (path) =>
+      !path.startsWith("/national") &&
+      !path.startsWith("/coverage-simulator") &&
+      !path.startsWith("/universal-identity") &&
+      !path.startsWith("/health-exchange") &&
+      !path.startsWith("/provider-network"),
+    network: (path) =>
+      !path.startsWith("/national-command-centre") &&
+      !path.startsWith("/national-intelligence") &&
+      !path.startsWith("/national-identity") &&
+      !path.startsWith("/national-facilities") &&
+      !path.startsWith("/national-staff") &&
+      !path.startsWith("/national-payers") &&
+      !path.startsWith("/national-benefits") &&
+      !path.startsWith("/national-financing") &&
+      !path.startsWith("/national-supply") &&
+      !path.startsWith("/national/") &&
+      !path.startsWith("/coverage-simulator"),
+    county: (path) =>
+      !path.startsWith("/national-identity") &&
+      !path.startsWith("/national-facilities") &&
+      !path.startsWith("/national-staff") &&
+      !path.startsWith("/national-payers") &&
+      !path.startsWith("/national-benefits") &&
+      !path.startsWith("/national-financing") &&
+      !path.startsWith("/universal-identity"),
+    national: () => true,
+  };
+  const pathAllowedByScope = (to: string) => scopePolicy[scope](to.split("?")[0] || "/");
+  const pathAllowed = (to: string) => pathAllowedByScope(to) && moduleAccess.isAllowed(to);
+
+  const workspaceLinks = activeWorkspace.links.filter(([to]) => pathAllowed(to));
   const filteredNavGroups = navGroups
     .map((group) => ({
       ...group,
-      links: group.links.filter(([to]) => moduleAccess.isAllowed(to)),
+      links: group.links.filter(([to]) => pathAllowed(to)),
     }))
     .filter((group) => group.links.length > 0);
 
+  const visibleScopeOptions = SCOPE_OPTIONS.filter((opt) => availableScopes.includes(opt.value));
   const scopeLabel = SCOPE_OPTIONS.find((o) => o.value === scope)?.label || scope;
 
   return (
@@ -263,7 +299,7 @@ export function Layout() {
               cursor: scopeBusy ? "wait" : "pointer",
             }}
           >
-            {SCOPE_OPTIONS.map((opt) => (
+            {visibleScopeOptions.map((opt) => (
               <option key={opt.value} value={opt.value} disabled={!availableScopes.includes(opt.value)}>
                 {opt.label}
                 {!availableScopes.includes(opt.value) ? " — restricted" : ""}
@@ -271,7 +307,7 @@ export function Layout() {
             ))}
           </select>
           <p className="muted small" style={{ margin: "8px 0 0" }}>
-            Lists and aggregates use this scope. Writes stay on your facility.
+            {scopeLabel} scope changes the visible operating menu and the records this workspace can aggregate. Writes stay on your facility.
           </p>
           {scopeError && (
             <div className="error" role="alert" style={{ marginTop: 8, fontSize: 12 }}>
@@ -308,7 +344,7 @@ export function Layout() {
         <nav>
           <div className="nav-group">
             <div className="nav-section">
-              {activeWorkspace.icon} {activeWorkspace.label}
+              {activeWorkspace.icon} {activeWorkspace.label} · {scopeLabel}
             </div>
             {workspaceLinks.map(([to, label]) => (
               <NavLink key={to} to={to} end={to === "/"}>
