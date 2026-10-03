@@ -30,7 +30,7 @@ type OpsSummary = {
 
 export default function WorkspaceHomePage(){
   const auth=useAuth();
-  const {workspace,setWorkspace,scope,setScope}=useWorkspace();
+  const {workspace,setWorkspace,scope,setScope,tenantId,setTenantId}=useWorkspace();
   const navigate=useNavigate();
   const current=WORKSPACES.find(w=>w.id===workspace)!;
   const [availableScopes,setAvailableScopes]=useState<string[]>(["facility"]);
@@ -38,13 +38,23 @@ export default function WorkspaceHomePage(){
   const [permissions,setPermissions]=useState<string[]>([]);
   const [allowedWorkspaces,setAllowedWorkspaces]=useState<string[]>(["operations"]);
   const [allowedPaths,setAllowedPaths]=useState<string[]|null>(null);
+  const [tenants,setTenants]=useState<any[]>([]);
+  const [tenantError,setTenantError]=useState<string|null>(null);
   const [summary,setSummary]=useState<ScopeSummary|null>(null);
   const [ops,setOps]=useState<OpsSummary|null>(null);
   const [summaryError,setSummaryError]=useState<string|null>(null);
   const [summaryLoading,setSummaryLoading]=useState(false);
 
   useEffect(()=>{
-    api.contextOverview(scope).then((v:any)=>{
+    api.tenancyOverview().then((v:any)=>{
+      const list=Array.isArray(v?.organizations)?v.organizations:[];
+      setTenants(list);
+      if(!tenantId && list.length) setTenantId(list[0].id);
+    }).catch(()=>setTenants([]));
+  },[]);
+  
+  useEffect(()=>{
+    api.contextOverview(scope,tenantId).then((v:any)=>{
       setAvailableScopes(Array.isArray(v?.available_scopes)?v.available_scopes:["facility"]);
       setRoles(Array.isArray(v?.roles)?v.roles:[]);
       setPermissions(Array.isArray(v?.permissions)?v.permissions:[]);
@@ -52,15 +62,15 @@ export default function WorkspaceHomePage(){
       const paths = v?.module_actions?.allowed_paths;
       setAllowedPaths(Array.isArray(paths) ? paths : null);
     }).catch(()=>setAvailableScopes(["facility"]));
-  },[scope]);
+  },[scope,tenantId]);
 
   useEffect(()=>{
     let cancelled=false;
     setSummaryLoading(true);
     setSummaryError(null);
     Promise.all([
-      api.contextScopeSummary(scope),
-      api.contextOperationsSummary(scope).catch(()=>null),
+      api.contextScopeSummary(scope,tenantId),
+      api.contextOperationsSummary(scope,undefined,undefined,tenantId).catch(()=>null),
     ]).then(([scopeSummary, opsSummary])=>{
       if(cancelled) return;
       setSummary(scopeSummary||null);
@@ -90,6 +100,21 @@ export default function WorkspaceHomePage(){
       <h1>{auth.facilityName||"Health workspace"}</h1>
       <p className="muted">Choose what you want to work on. Your access remains controlled by your authenticated permissions.</p>
     </div></div>
+
+    <div className="card" style={{marginBottom:18}}>
+      <h2 style={{marginTop:0}}>Organization / tenant</h2>
+      <p className="muted">Choose the authorized organization boundary before selecting a broader operating scope.</p>
+      <select value={tenantId || ""} onChange={async(e)=>{
+        const id=e.target.value || null;
+        setTenantError(null);
+        if(!id){setTenantId(null);return;}
+        try{await api.tenancySelect(id);setTenantId(id);}catch(err:any){setTenantError(err?.message||err?.code||"TENANT_SELECTION_DENIED");}
+      }} style={{padding:"10px 12px",minWidth:320,borderRadius:8,border:"1px solid #cbd5e1",background:"#fff"}}>
+        <option value="">Select authorized organization</option>
+        {tenants.map(t=><option key={t.id} value={t.id}>{t.name} — {t.organization_type} ({t.facility_count})</option>)}
+      </select>
+      {tenantError && <p className="error" role="alert">{tenantError}</p>}
+    </div>
 
     <div className="card" style={{marginBottom:18}}>
       <h2 style={{marginTop:0}}>Operating context</h2>
