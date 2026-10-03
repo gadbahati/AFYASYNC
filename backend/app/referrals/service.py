@@ -123,20 +123,22 @@ def list_referrals_for_facility(
     limit: int = 50,
     offset: int = 0,
     role: str = "all",
+    facility_ids: list[UUID] | None = None,
 ) -> tuple[list[Referral], int]:
-    """List referrals where this facility is source, destination, or either."""
+    """List referrals where authorized facilities are source, destination, or either."""
     limit = min(max(limit, 1), 100)
     offset = max(offset, 0)
+    scope_ids = facility_ids if facility_ids else [facility_id]
 
     if role == "source":
-        filters = [Referral.source_facility_id == facility_id]
+        filters = [Referral.source_facility_id.in_(scope_ids)]
     elif role == "destination":
-        filters = [Referral.destination_facility_id == facility_id]
+        filters = [Referral.destination_facility_id.in_(scope_ids)]
     else:
         filters = [
             or_(
-                Referral.source_facility_id == facility_id,
-                Referral.destination_facility_id == facility_id,
+                Referral.source_facility_id.in_(scope_ids),
+                Referral.destination_facility_id.in_(scope_ids),
             )
         ]
 
@@ -162,8 +164,6 @@ def update_referral_status(db: Session, facility_id: UUID, referral_id: UUID, ne
     if new_status not in REFERRAL_TRANSITIONS.get(referral.status, set()):
         raise ReferralError("INVALID_REFERRAL_TRANSITION")
 
-    # Acceptance/decline and downstream clinical progress belong to the
-    # receiving facility. Cancellation may be requested by either side.
     if new_status in {"ACCEPTED", "DECLINED", "IN_PROGRESS", "COMPLETED"} and facility_id != referral.destination_facility_id:
         raise ReferralError("DESTINATION_FACILITY_ACTION_REQUIRED")
 
@@ -272,19 +272,21 @@ def list_transfers_for_facility(
     limit: int = 50,
     offset: int = 0,
     role: str = "all",
+    facility_ids: list[UUID] | None = None,
 ) -> tuple[list[Transfer], int]:
     limit = min(max(limit, 1), 100)
     offset = max(offset, 0)
+    scope_ids = facility_ids if facility_ids else [facility_id]
 
     if role == "source":
-        filters = [Transfer.source_facility_id == facility_id]
+        filters = [Transfer.source_facility_id.in_(scope_ids)]
     elif role == "destination":
-        filters = [Transfer.destination_facility_id == facility_id]
+        filters = [Transfer.destination_facility_id.in_(scope_ids)]
     else:
         filters = [
             or_(
-                Transfer.source_facility_id == facility_id,
-                Transfer.destination_facility_id == facility_id,
+                Transfer.source_facility_id.in_(scope_ids),
+                Transfer.destination_facility_id.in_(scope_ids),
             )
         ]
 
@@ -310,8 +312,6 @@ def update_transfer_status(db: Session, facility_id: UUID, transfer_id: UUID, ne
     if new_status not in TRANSFER_TRANSITIONS.get(transfer.status, set()):
         raise ReferralError("INVALID_TRANSFER_TRANSITION")
 
-    # The receiving facility accepts/receives the transfer; the sending
-    # facility controls the movement to IN_TRANSIT. Cancellation is shared.
     if new_status == "ACCEPTED" and facility_id != transfer.destination_facility_id:
         raise ReferralError("DESTINATION_FACILITY_ACTION_REQUIRED")
     if new_status == "IN_TRANSIT" and facility_id != transfer.source_facility_id:
