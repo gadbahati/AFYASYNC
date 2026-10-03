@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
+from app.context.service import resolve_facility_ids
 from app.billing.models import Invoice, Service
 from app.billing.permissions import (
     BILLING_CHARGE_WRITE,
@@ -37,15 +38,39 @@ def _error(exc: BillingError) -> HTTPException:
 
 
 @router.get("/services", response_model=list[ServiceResponse])
-def list_services(db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_SERVICE_READ))):
-    _ = user
-    return list(db.scalars(select(Service).where(Service.facility_id == facility_id, Service.status == "ACTIVE").order_by(Service.code)).all())
+def list_services(
+    scope: str = Query(default="facility", description="facility | network | county | national"),
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(BILLING_SERVICE_READ)),
+):
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope=scope)
+    return list(
+        db.scalars(
+            select(Service)
+            .where(Service.facility_id.in_(facility_ids), Service.status == "ACTIVE")
+            .order_by(Service.code)
+        ).all()
+    )
 
 
 @router.get("/invoices", response_model=list[InvoiceResponse])
-def list_invoices(limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission(BILLING_INVOICE_READ))):
-    _ = user
-    return list(db.scalars(select(Invoice).where(Invoice.facility_id == facility_id).order_by(Invoice.created_at.desc()).limit(limit)).all())
+def list_invoices(
+    limit: int = Query(default=50, ge=1, le=100),
+    scope: str = Query(default="facility", description="facility | network | county | national"),
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(BILLING_INVOICE_READ)),
+):
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope=scope)
+    return list(
+        db.scalars(
+            select(Invoice)
+            .where(Invoice.facility_id.in_(facility_ids))
+            .order_by(Invoice.created_at.desc())
+            .limit(limit)
+        ).all()
+    )
 
 
 @router.post("/services", response_model=ServiceResponse, status_code=201)
