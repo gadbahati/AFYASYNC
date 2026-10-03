@@ -1,7 +1,7 @@
-import type { FormEvent } from "react";
-import { api } from "../api/client";
+import { useState, type FormEvent } from "react";
+import { api, ApiError } from "../api/client";
 
-/** Claims list, filters, adjudicate/re-adjudicate, response & reconcile. Phase 112. */
+/** Claims list, adjudicate, line-level adjudication detail. Phase 113. */
 export function ClaimsClaimsTable(props: any) {
   const {
     loading,
@@ -30,6 +30,25 @@ export function ClaimsClaimsTable(props: any) {
     rejections,
     money,
   } = props;
+
+  const [adjDetail, setAdjDetail] = useState<any | null>(null);
+  const [adjLoading, setAdjLoading] = useState(false);
+  const [adjError, setAdjError] = useState("");
+
+  async function loadAdjudicationDetail(claimId: string) {
+    setAdjLoading(true);
+    setAdjError("");
+    setAdjDetail(null);
+    try {
+      const data = await api.getClaimAdjudicationLines(claimId);
+      setAdjDetail(data);
+    } catch (e) {
+      setAdjError(e instanceof ApiError ? e.message || e.code : "ADJUDICATION_LOAD_FAILED");
+    } finally {
+      setAdjLoading(false);
+    }
+  }
+
   if (loading) return <p className="muted">Loading claims…</p>;
   const STATUS_FILTERS = statusFilters;
 
@@ -101,6 +120,7 @@ export function ClaimsClaimsTable(props: any) {
                           onClick={() =>
                             void action(async () => {
                               const r = await api.adjudicateClaim(c.id, false);
+                              void loadAdjudicationDetail(c.id);
                               return {
                                 message: `Adjudicated: ${r.decision} · allowed ${r.allowed_amount} · patient ${r.patient_amount} (${r.reason_code})`,
                               };
@@ -119,6 +139,7 @@ export function ClaimsClaimsTable(props: any) {
                           onClick={() =>
                             void action(async () => {
                               const r = await api.adjudicateClaim(c.id, true);
+                              void loadAdjudicationDetail(c.id);
                               return {
                                 message: `Re-adjudicated: ${r.decision} · allowed ${r.allowed_amount} · patient ${r.patient_amount} (${r.reason_code})`,
                               };
@@ -128,6 +149,14 @@ export function ClaimsClaimsTable(props: any) {
                           Re-adjudicate
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={adjLoading}
+                        onClick={() => void loadAdjudicationDetail(c.id)}
+                      >
+                        Adj. detail
+                      </button>
                       {canSubmit(c.status) && (
                         <button
                           type="button"
@@ -191,6 +220,69 @@ export function ClaimsClaimsTable(props: any) {
           </table>
         </div>
       </article>
+
+      {(adjDetail || adjError || adjLoading) && (
+        <article className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <h2 style={{ margin: 0 }}>Adjudication detail</h2>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setAdjDetail(null);
+                setAdjError("");
+              }}
+            >
+              Close
+            </button>
+          </div>
+          {adjLoading && <p className="muted">Loading line decisions…</p>}
+          {adjError && <div className="error">{adjError}</div>}
+          {adjDetail && !adjDetail.decision && (
+            <p className="muted">No adjudication recorded for this claim yet. Run Adjudicate first.</p>
+          )}
+          {adjDetail && adjDetail.decision && (
+            <>
+              <p className="small" style={{ marginTop: 8 }}>
+                <strong>{adjDetail.decision}</strong>
+                {" · "}
+                submitted {money(adjDetail.submitted_amount)} · allowed {money(adjDetail.allowed_amount)} · patient{" "}
+                {money(adjDetail.patient_amount)}
+                {adjDetail.reason_code ? ` · ${adjDetail.reason_code}` : ""}
+                {adjDetail.adjudicated_at ? ` · ${adjDetail.adjudicated_at}` : ""}
+              </p>
+              <div className="table-wrap" style={{ marginTop: 12 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Line</th>
+                      <th>Submitted</th>
+                      <th>Allowed</th>
+                      <th>Decision</th>
+                      <th>Reason</th>
+                      <th>Service</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(adjDetail.lines || []).map((ln: any) => (
+                      <tr key={ln.id}>
+                        <td className="mono small">{String(ln.claim_item_id).slice(0, 8)}…</td>
+                        <td>{money(ln.submitted_amount)}</td>
+                        <td>{money(ln.allowed_amount)}</td>
+                        <td>
+                          <span className="status-pill">{ln.decision}</span>
+                        </td>
+                        <td>{ln.reason_code}</td>
+                        <td className="muted small">{ln.evidence?.service_code || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </article>
+      )}
 
       {rejections && rejections.length > 0 && (
         <article className="card">
@@ -293,11 +385,7 @@ export function ClaimsClaimsTable(props: any) {
           <form className="form-grid" onSubmit={onReconcile}>
             <label>
               Received amount (KES)
-              <input
-                required
-                value={receivedAmount}
-                onChange={(e) => setReceivedAmount(e.target.value)}
-              />
+              <input required value={receivedAmount} onChange={(e) => setReceivedAmount(e.target.value)} />
             </label>
             <div className="form-actions span-2">
               <button type="button" className="secondary" onClick={() => setReconcileClaim(null)}>
@@ -311,7 +399,7 @@ export function ClaimsClaimsTable(props: any) {
         </article>
       )}
 
-      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 112 adjudication</p>
+      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 113 adjudication detail</p>
     </>
   );
 }
