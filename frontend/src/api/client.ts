@@ -107,6 +107,11 @@ const _apiCore: any = {
     if (end) q.set("end_date", end);
     return request(`/api/v1/context/operations-summary?${q.toString()}`);
   },
+  setOperatingScope: (scope: string, previous_scope?: string) => {
+    const q = new URLSearchParams({ scope });
+    if (previous_scope) q.set("previous_scope", previous_scope);
+    return request(`/api/v1/context/scope?${q.toString()}`, { method: "POST" });
+  },
   login: (username: string, password: string) =>
     request("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
   patientLogin: (identifier: string, password: string) =>
