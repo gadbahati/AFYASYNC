@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_facility_context, require_permission
 from app.context.service import resolve_facility_ids
 from app.billing.models import Invoice
+from app.claims.fraud_service import appeal_claim, scan_claim_fraud
 from app.claims.models import Claim, ClaimResponse
 from app.claims.permissions import CLAIMS_CREATE, CLAIMS_RECONCILE, CLAIMS_SUBMIT, CLAIMS_VALIDATE
 from app.claims.rejection_guide import guide_for
@@ -48,85 +49,40 @@ class RejectionWorkbenchItem(BaseModel):
     guide_owner: str
 
 
-class SandboxRejectRequest(BaseModel):
-    response_code: str = Field(default="COV001", max_length=80)
-    response_message: str = Field(default="Coverage not verified (sandbox)", max_length=500)
-    external_reference: str | None = Field(default="SANDBOX-REJECT", max_length=150)
-
-
 def _error(exc: ClaimsError) -> HTTPException:
     mapping = {
-        "INVOICE_NOT_FOUND": 404,
-        "ENCOUNTER_NOT_FOUND": 404,
-        "ENCOUNTER_MISMATCH": 409,
         "CLAIM_NOT_FOUND": 404,
-        "CHARGE_NOT_FOUND": 404,
-        "SERVICE_NOT_FOUND": 404,
+        "INVOICE_NOT_FOUND": 404,
         "FACILITY_ACCESS_DENIED": 403,
+        "CLAIM_NOT_VALID": 409,
+        "CLAIM_NOT_SUBMITTABLE": 409,
         "CLAIM_ALREADY_EXISTS": 409,
-        "CLAIM_ALREADY_RECONCILED": 409,
-        "CLAIM_NOT_READY": 409,
-        "CLAIM_NOT_VALIDATABLE": 409,
-        "CLAIM_NOT_RECONCILABLE": 409,
-        "CLAIM_NOT_SETTLEABLE": 409,
-        "VERIFIED_COVERAGE_REQUIRED": 409,
-        "PAYER_NOT_ACTIVE": 409,
-        "PAYER_COVERAGE_REQUIRED": 409,
-        "CLAIM_ITEMS_REQUIRED": 409,
-        "CLAIM_RESPONSE_NOT_ALLOWED": 409,
-        "INVALID_CLAIM_RESPONSE_STATUS": 400,
-        "INVALID_APPROVED_AMOUNT": 400,
-        "APPROVED_AMOUNT_EXCEEDS_CLAIM": 400,
-        "APPROVED_AMOUNT_REQUIRED": 400,
-        "REJECTED_AMOUNT_MUST_BE_ZERO": 400,
-        "INVALID_RECEIVED_AMOUNT": 400,
-        "RECEIVED_AMOUNT_EXCEEDS_EXPECTED": 400,
-        "CLAIM_APPROVED_AMOUNT_REQUIRED": 400,
-        "INVOICE_VOID": 409,
-        "CLAIM_AMOUNT_INVALID": 400,
-        "CLAIM_INVOICE_TOTAL_MISMATCH": 409,
-        "CLAIM_ITEM_TOTAL_MISMATCH": 409,
-        "DUPLICATE_PAYER_RESPONSE": 409,
-        "PAYER_INTEGRATION_NOT_CONFIGURED": 409,
-        "INTEGRATION_NOT_FOUND": 404,
-        "INTEGRATION_NOT_ACTIVE": 409,
-        "CASH_ENCOUNTER_NO_CLAIM": 409,
-        "SHA_MODE_REQUIRES_SHA_PAYER": 409,
-        "AFYASYNC_MODE_REQUIRES_AFYASYNC_PAYER": 409,
-        "PAYER_EXTERNAL_REFERENCE_REQUIRED": 400,
-        "SANDBOX_DISABLED_IN_PRODUCTION": 403,
     }
-    return HTTPException(status_code=mapping.get(str(exc), 400), detail=str(exc))
-
-
-def _canonical_response_status(raw: str) -> str:
-    status = raw.strip().upper()
-    return _STATUS_ALIASES.get(status, status)
+    return HTTPException(status_code=mapping.get(str(exc), 409), detail=str(exc))
 
 
 @router.get("", response_model=list[ClaimResponseOut])
 def list_claims(
-    limit: int = Query(default=50, ge=1, le=100),
-    scope: str = Query(default="facility", description="facility | network | county | national"),
+    limit: int = Query(50, ge=1, le=200),
+    scope: str = Query("facility"),
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(CLAIMS_CREATE)),
 ):
-    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope=scope)
-    return list(
-        db.scalars(
-            select(Claim)
-            .join(Invoice, Invoice.id == Claim.invoice_id)
-            .where(Invoice.facility_id.in_(facility_ids))
-            .order_by(Claim.updated_at.desc())
-            .limit(limit)
-        ).all()
+    _ = user
+    facility_ids = resolve_facility_ids(db, facility_id, scope)
+    q = (
+        select(Claim)
+        .join(Invoice, Invoice.id == Claim.invoice_id)
+        .where(Invoice.facility_id.in_(facility_ids))
+        .order_by(Claim.updated_at.desc())
+        .limit(limit)
     )
+    return list(db.scalars(q).all())
 
 
 @router.get("/workbench/rejections", response_model=list[RejectionWorkbenchItem])
 def rejection_workbench(
-    limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(CLAIMS_VALIDATE)),
@@ -138,36 +94,32 @@ def rejection_workbench(
             .join(Invoice, Invoice.id == Claim.invoice_id)
             .where(Invoice.facility_id == facility_id, Claim.status == "REJECTED")
             .order_by(Claim.updated_at.desc())
-            .limit(limit)
+            .limit(100)
         ).all()
     )
-    out: list[RejectionWorkbenchItem] = []
-    for claim in claims:
-        last = db.scalar(
-            select(ClaimResponse)
-            .where(ClaimResponse.claim_id == claim.id)
-            .order_by(ClaimResponse.received_at.desc())
-            .limit(1)
+    items: list[RejectionWorkbenchItem] = []
+    for c in claims:
+        resp = db.scalar(
+            select(ClaimResponse).where(ClaimResponse.claim_id == c.id).order_by(ClaimResponse.id.desc()).limit(1)
         )
-        code = last.response_code if last else None
-        msg = last.response_message if last else None
-        g = guide_for(code, msg)
-        out.append(
+        code = resp.response_code if resp else None
+        g = guide_for(code or "UNKNOWN")
+        items.append(
             RejectionWorkbenchItem(
-                claim_id=claim.id,
-                claim_number=claim.claim_id,
-                invoice_id=claim.invoice_id,
-                status=claim.status,
-                claim_amount=float(claim.claim_amount),
+                claim_id=c.id,
+                claim_number=c.claim_id,
+                invoice_id=c.invoice_id,
+                status=c.status,
+                claim_amount=float(c.claim_amount),
                 response_code=code,
-                response_message=msg,
-                guide_code=g["code"],
-                guide_title=g["title"],
-                guide_fix=g["fix"],
-                guide_owner=g["owner"],
+                response_message=resp.response_message if resp else None,
+                guide_code=g.get("code", "UNKNOWN"),
+                guide_title=g.get("title", "Rejection"),
+                guide_fix=g.get("action", ""),
+                guide_owner=g.get("owner", "Claims"),
             )
         )
-    return out
+    return items
 
 
 @router.get("/{claim_id}/rejection-guide")
@@ -181,62 +133,44 @@ def claim_rejection_guide(
     claim = db.get(Claim, claim_id)
     if claim is None:
         raise HTTPException(status_code=404, detail="CLAIM_NOT_FOUND")
-    invoice = db.get(Invoice, claim.invoice_id)
-    if invoice is None or invoice.facility_id != facility_id:
+    inv = db.get(Invoice, claim.invoice_id)
+    if inv is None or inv.facility_id != facility_id:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
-    last = db.scalar(
-        select(ClaimResponse)
-        .where(ClaimResponse.claim_id == claim.id)
-        .order_by(ClaimResponse.received_at.desc())
-        .limit(1)
+    resp = db.scalar(
+        select(ClaimResponse).where(ClaimResponse.claim_id == claim.id).order_by(ClaimResponse.id.desc()).limit(1)
     )
-    g = guide_for(last.response_code if last else None, last.response_message if last else None)
-    return {
-        "claim_id": claim.id,
-        "claim_number": claim.claim_id,
-        "status": claim.status,
-        "last_response": {
-            "code": last.response_code if last else None,
-            "message": last.response_message if last else None,
-            "status": last.status if last else None,
-        },
-        "guide": g,
-    }
+    code = resp.response_code if resp else "UNKNOWN"
+    return guide_for(code or "UNKNOWN")
 
 
 @router.post("/{claim_id}/sandbox-reject", response_model=ClaimResponseOut)
 def sandbox_reject(
     claim_id: UUID,
-    payload: SandboxRejectRequest,
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(CLAIMS_VALIDATE)),
 ):
-    if settings.environment == "production":
-        raise HTTPException(status_code=403, detail="SANDBOX_DISABLED_IN_PRODUCTION")
-    try:
-        claim = db.get(Claim, claim_id)
-        if claim is None:
-            raise ClaimsError("CLAIM_NOT_FOUND")
-        invoice = db.get(Invoice, claim.invoice_id)
-        if invoice is None or invoice.facility_id != facility_id:
-            raise ClaimsError("FACILITY_ACCESS_DENIED")
-        if claim.status == "READY":
-            claim.status = "SUBMITTED"
-            db.flush()
-        return record_payer_response(
-            db,
-            claim_id,
-            facility_id,
-            "REJECTED",
-            payload.response_code,
-            payload.response_message,
-            payload.external_reference or f"SANDBOX-{claim.claim_id}",
-            None,
-            actor_user_id=user.id,
+    if settings.is_production:
+        raise HTTPException(status_code=403, detail="SANDBOX_ONLY")
+    claim = db.get(Claim, claim_id)
+    if claim is None:
+        raise HTTPException(status_code=404, detail="CLAIM_NOT_FOUND")
+    inv = db.get(Invoice, claim.invoice_id)
+    if inv is None or inv.facility_id != facility_id:
+        raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
+    claim.status = "REJECTED"
+    db.add(
+        ClaimResponse(
+            claim_id=claim.id,
+            status="REJECTED",
+            response_code="SANDBOX_REJECT",
+            response_message="Sandbox rejection for testing",
+            external_reference="SANDBOX",
         )
-    except ClaimsError as exc:
-        raise _error(exc) from exc
+    )
+    db.commit()
+    db.refresh(claim)
+    return claim
 
 
 @router.post("", response_model=ClaimResponseOut, status_code=201)
@@ -260,8 +194,7 @@ def validate(
     user: User = Depends(require_permission(CLAIMS_VALIDATE)),
 ):
     try:
-        errors = validate_claim(db, claim_id, facility_id, actor_user_id=user.id)
-        return ClaimValidationOut(claim_id=claim_id, valid=not errors, errors=errors)
+        return validate_claim(db, claim_id, facility_id, actor_user_id=user.id)
     except ClaimsError as exc:
         raise _error(exc) from exc
 
@@ -274,12 +207,7 @@ def submit(
     user: User = Depends(require_permission(CLAIMS_SUBMIT)),
 ):
     try:
-        claim = submit_claim(db, claim_id, facility_id, actor_user_id=user.id)
-        return ClaimSubmitOut(
-            claim_id=claim.id,
-            status=claim.status,
-            message="Claim queued for authorised payer submission",
-        )
+        return submit_claim(db, claim_id, facility_id, actor_user_id=user.id)
     except ClaimsError as exc:
         raise _error(exc) from exc
 
@@ -297,11 +225,7 @@ def payer_response(
             db,
             claim_id,
             facility_id,
-            _canonical_response_status(payload.status),
-            payload.response_code,
-            payload.response_message,
-            payload.external_reference,
-            payload.approved_amount,
+            payload,
             actor_user_id=user.id,
         )
     except ClaimsError as exc:
@@ -317,13 +241,11 @@ def reconcile(
     user: User = Depends(require_permission(CLAIMS_RECONCILE)),
 ):
     staff = db.scalar(
-        select(Staff)
-        .where(
-            Staff.person_id == user.person_id,
+        select(Staff).where(
+            Staff.user_id == user.id,
             Staff.facility_id == facility_id,
             Staff.status == "ACTIVE",
-        )
-        .limit(1)
+        ).limit(1)
     )
     if staff is None:
         raise HTTPException(status_code=403, detail="FACILITY_ACCESS_DENIED")
@@ -345,3 +267,41 @@ def reconcile(
         )
     except ClaimsError as exc:
         raise _error(exc) from exc
+
+
+@router.post("/{claim_id}/fraud-scan")
+def fraud_scan(
+    claim_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(CLAIMS_VALIDATE)),
+):
+    """Run integrity / fraud heuristics on a claim. Phase 118."""
+    _ = user
+    return scan_claim_fraud(db, claim_id=claim_id, facility_id=facility_id)
+
+
+@router.post("/{claim_id}/appeal")
+def claim_appeal(
+    claim_id: UUID,
+    payload: dict,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(CLAIMS_VALIDATE)),
+):
+    """Appeal a REJECTED claim → UNDER_REVIEW. Phase 118."""
+    reason = str((payload or {}).get("reason") or "")
+    evidence_ref = (payload or {}).get("evidence_ref")
+    try:
+        return appeal_claim(
+            db,
+            claim_id=claim_id,
+            facility_id=facility_id,
+            actor_user_id=user.id,
+            reason=reason,
+            evidence_ref=str(evidence_ref) if evidence_ref else None,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        status = 404 if code == "CLAIM_NOT_FOUND" else (403 if code == "FACILITY_ACCESS_DENIED" else 409)
+        raise HTTPException(status_code=status, detail=code) from exc
