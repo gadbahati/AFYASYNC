@@ -12,6 +12,22 @@ type ScopeSummary = {
   facilities?: { id: string; name: string; county?: string | null }[];
 };
 
+type OpsSummary = {
+  metrics?: {
+    patients?: number;
+    encounters?: number;
+    charges_total?: string;
+    invoices_total?: string;
+    confirmed_payments?: string;
+    claims?: number;
+    claims_amount?: string;
+    claims_approved?: string;
+    claims_paid?: string;
+  };
+  start_date?: string;
+  end_date?: string;
+};
+
 export default function WorkspaceHomePage(){
   const auth=useAuth();
   const {workspace,setWorkspace,scope,setScope}=useWorkspace();
@@ -22,6 +38,7 @@ export default function WorkspaceHomePage(){
   const [permissions,setPermissions]=useState<string[]>([]);
   const [allowedWorkspaces,setAllowedWorkspaces]=useState<string[]>(["operations"]);
   const [summary,setSummary]=useState<ScopeSummary|null>(null);
+  const [ops,setOps]=useState<OpsSummary|null>(null);
   const [summaryError,setSummaryError]=useState<string|null>(null);
   const [summaryLoading,setSummaryLoading]=useState(false);
 
@@ -38,8 +55,13 @@ export default function WorkspaceHomePage(){
     let cancelled=false;
     setSummaryLoading(true);
     setSummaryError(null);
-    api.contextScopeSummary(scope).then((v:any)=>{
-      if(!cancelled) setSummary(v||null);
+    Promise.all([
+      api.contextScopeSummary(scope),
+      api.contextOperationsSummary(scope).catch(()=>null),
+    ]).then(([scopeSummary, opsSummary])=>{
+      if(cancelled) return;
+      setSummary(scopeSummary||null);
+      setOps(opsSummary||null);
     }).catch((err:any)=>{
       if(!cancelled) setSummaryError(err?.message || err?.code || "SCOPE_SUMMARY_FAILED");
     }).finally(()=>{ if(!cancelled) setSummaryLoading(false); });
@@ -47,6 +69,7 @@ export default function WorkspaceHomePage(){
   },[scope]);
 
   const visible=WORKSPACES.filter(w=>allowedWorkspaces.includes(w.id));
+  const m=ops?.metrics;
 
   return <section className="page">
     <div className="page-header"><div>
@@ -82,16 +105,20 @@ export default function WorkspaceHomePage(){
 
     <div className="card" style={{marginBottom:18}}>
       <h2 style={{marginTop:0}}>Data under this scope</h2>
-      <p className="muted">Live counts limited to facilities authorized for <strong>{scope}</strong>.</p>
+      <p className="muted">Live aggregates limited to facilities authorized for <strong>{scope}</strong>{ops?.start_date ? ` · ${ops.start_date} → ${ops.end_date}` : ""}.</p>
       {summaryLoading && <p className="muted">Resolving authorized facilities…</p>}
       {summaryError && <div className="error" role="alert">{summaryError}</div>}
       {summary && !summaryLoading && (
         <>
           <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginTop:12}}>
             <div className="stat-card"><div className="muted small">Facilities</div><div className="stat-value">{summary.facility_count ?? 0}</div></div>
-            <div className="stat-card"><div className="muted small">Patients</div><div className="stat-value">{summary.counts?.patients ?? 0}</div></div>
-            <div className="stat-card"><div className="muted small">Encounters</div><div className="stat-value">{summary.counts?.encounters ?? 0}</div></div>
-            <div className="stat-card"><div className="muted small">Claims</div><div className="stat-value">{summary.counts?.claims ?? 0}</div></div>
+            <div className="stat-card"><div className="muted small">Patients</div><div className="stat-value">{m?.patients ?? summary.counts?.patients ?? 0}</div></div>
+            <div className="stat-card"><div className="muted small">Encounters</div><div className="stat-value">{m?.encounters ?? summary.counts?.encounters ?? 0}</div></div>
+            <div className="stat-card"><div className="muted small">Claims</div><div className="stat-value">{m?.claims ?? summary.counts?.claims ?? 0}</div></div>
+            <div className="stat-card"><div className="muted small">Charges (KES)</div><div className="stat-value">{m?.charges_total ?? "—"}</div></div>
+            <div className="stat-card"><div className="muted small">Invoices (KES)</div><div className="stat-value">{m?.invoices_total ?? "—"}</div></div>
+            <div className="stat-card"><div className="muted small">Payments (KES)</div><div className="stat-value">{m?.confirmed_payments ?? "—"}</div></div>
+            <div className="stat-card"><div className="muted small">Claims paid (KES)</div><div className="stat-value">{m?.claims_paid ?? "—"}</div></div>
           </div>
           {Array.isArray(summary.facilities) && summary.facilities.length > 0 && (
             <div className="table-wrap" style={{marginTop:14}}>
