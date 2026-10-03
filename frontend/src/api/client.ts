@@ -1,61 +1,99 @@
 import { clearSession, getAccessToken, getAccountType, getRefreshToken, setSession } from "../auth/storage";
+import type { ApiErrorBody, TokenResponse } from "./types";
+import { citizenApiMethods } from "./citizenApi";
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const AUTH_EXPIRED_EVENT = "afyasync:auth-expired";
 
 export class ApiError extends Error {
-  code: string;
   status: number;
-  constructor(code: string, message: string, status: number) {
-    super(message);
-    this.code = code;
+  code: string;
+  constructor(status: number, code: string, message?: string) {
+    super(message || code);
     this.status = status;
+    this.code = code;
   }
 }
 
-async function request<T = any>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(init.headers as Record<string, string> | undefined),
-  };
-  if (auth) {
-    const token = getAccessToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
+function parseError(body: ApiErrorBody | null, status: number): { code: string; message?: string } {
+  if (!body) return { code: status >= 500 ? "SERVER_ERROR" : "REQUEST_FAILED" };
+  if (typeof body.detail === "string") return { code: body.detail };
+  if (body.detail) return { code: body.detail.code || "REQUEST_FAILED", message: body.detail.message };
+  const message = typeof body.message === "string" ? body.message : undefined;
+  const requestId = body.data && typeof body.data === "object" && typeof body.data.request_id === "string" ? body.data.request_id : undefined;
+  if (status >= 500) return { code: requestId ? `SERVER_ERROR:${requestId}` : "SERVER_ERROR", message };
+  return { code: message || "REQUEST_FAILED", message };
+}
+
+function notifyAuthExpired(): void {
+  clearSession();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+async function tryRefresh(): Promise<boolean> {
+  const refresh = getRefreshToken();
+  if (!refresh) return false;
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: refresh }) });
+    if (!res.ok) { notifyAuthExpired(); return false; }
+    const data = (await res.json()) as TokenResponse;
+    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, account_type: getAccountType() });
+    return true;
+  } catch { notifyAuthExpired(); return false; }
+}
+
+async function request<T = any>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  if (!API_BASE && import.meta.env.PROD) throw new ApiError(0, "API_NOT_CONFIGURED");
+  const headers = new Headers(init.headers);
+  if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
+  const token = getAccessToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  let res: Response;
+  try { res = await fetch(`${API_BASE}${path}`, { ...init, headers }); }
+  catch { throw new ApiError(0, "API_UNREACHABLE"); }
+  if (res.status === 401 && retry) {
+    if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null; });
+    if (await refreshPromise) return request<T>(path, init, false);
   }
-  const res = await fetch(path.startsWith("http") ? path : path, { ...init, headers });
   if (!res.ok) {
-    let code = "REQUEST_FAILED";
-    let message = res.statusText;
-    try {
-      const body = await res.json();
-      code = body?.detail || body?.code || code;
-      message = body?.message || (typeof body?.detail === "string" ? body.detail : message);
-    } catch {}
-    throw new ApiError(String(code), String(message), res.status);
+    let body: ApiErrorBody | null = null;
+    try { body = (await res.json()) as ApiErrorBody; } catch {}
+    const parsed = parseError(body, res.status);
+    if (res.status === 401 && !path.includes("/auth/login") && !path.includes("/auth/patient") && !path.includes("/auth/refresh") && !path.includes("/auth/logout")) notifyAuthExpired();
+    throw new ApiError(res.status, parsed.code, parsed.message);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
-/** Temporary bootstrap while full client is restored — critical auth + Phase 90 context. */
 const _apiCore: any = {
   contextOverview: (scope?: string) => request("/api/v1/context" + (scope ? `?scope=${encodeURIComponent(scope)}` : "")),
-  contextScopeSummary: (scope: string = "facility") =>
-    request(`/api/v1/context/scope-summary?scope=${encodeURIComponent(scope)}`),
-  login: (username: string, password: string) =>
-    request("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
+  contextScopeSummary: (scope: string = "facility") => request(`/api/v1/context/scope-summary?scope=${encodeURIComponent(scope)}`),
+  login: (username: string, password: string) => request("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
   patientLogin: (identifier: string, password: string) =>
     request("/api/v1/auth/patient/login", { method: "POST", body: JSON.stringify({ identifier, password }) }, false),
+  patientRegister: (payload: {
+    afya_id: string;
+    password: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    email?: string;
+  }) => request("/api/v1/auth/patient/register", { method: "POST", body: JSON.stringify(payload) }, false),
+  patientPasswordResetRequest: (identifier: string, channel: "PHONE" | "EMAIL") =>
+    request("/api/v1/auth/patient/password-reset/request", { method: "POST", body: JSON.stringify({ identifier, channel }) }, false),
+  patientPasswordResetConfirm: (identifier: string, code: string, new_password: string) =>
+    request("/api/v1/auth/patient/password-reset/confirm", { method: "POST", body: JSON.stringify({ identifier, code, new_password }) }, false),
+  selectFacility: (facility_id: string) => request("/api/v1/auth/select-facility", { method: "POST", body: JSON.stringify({ facility_id }) }, false),
+  facilities: () => request("/api/v1/auth/facilities"),
+  facilityDirectory: (search = "", page = 1, pageSize = 30) => request(`/api/v1/facilities/directory?search=${encodeURIComponent(search.trim())}&page=${page}&page_size=${pageSize}`),
   facilityReport: () => request("/api/v1/reports/facility"),
-  listReferrals: (role = "source") => request(`/api/v1/referrals?role=${role}`),
-  listTransfers: (role = "source") => request(`/api/v1/transfers?role=${role}`),
+  listReferrals: (role = "source") => request(`/api/v1/referrals?role=${encodeURIComponent(role)}`),
+  listTransfers: (role = "source") => request(`/api/v1/transfers?role=${encodeURIComponent(role)}`),
+  logout: () => request("/api/v1/auth/logout", { method: "POST" }),
 };
 
-export const api: any = new Proxy(_apiCore, {
-  get(target, prop, receiver) {
-    if (prop in target) return Reflect.get(target, prop, receiver);
-    return (...args: any[]) => {
-      console.warn("api." + String(prop) + " is not in the slim client bootstrap; restore full client.ts");
-      return Promise.reject(new ApiError("API_METHOD_MISSING", String(prop), 501));
-    };
-  },
-});
+export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
 
-export { request };
+export { request, API_BASE, AUTH_EXPIRED_EVENT };
