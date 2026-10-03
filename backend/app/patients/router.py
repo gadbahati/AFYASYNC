@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
+from app.context.service import resolve_facility_ids
 from app.database import get_db
 from app.encounters.schemas import EncounterListResponse
 from app.encounters.service import list_patient_encounters_for_facility
@@ -30,7 +31,6 @@ def _response(patient, afya_id: str | None = None) -> PatientResponse:
 
 
 def _degraded_patient_record(db: Session, patient_id: UUID, facility_id: UUID) -> dict | None:
-    """Return a truthful core record when an optional longitudinal section fails."""
     db.rollback()
     patient = get_patient_for_facility(db, patient_id, facility_id)
     if patient is None:
@@ -83,21 +83,68 @@ def register_patient(payload: PatientCreate, user: User = Depends(require_permis
 
 
 @router.get("", response_model=PatientListResponse)
-def list_patient_records(limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0), enrollment_status: Literal["ACTIVE", "INACTIVE"] | None = Query(default="ACTIVE"), user: User = Depends(require_permission("patients.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> PatientListResponse:
+def list_patient_records(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    enrollment_status: Literal["ACTIVE", "INACTIVE"] | None = Query(default="ACTIVE"),
+    scope: str = Query(default="facility", description="facility | network | county | national"),
+    user: User = Depends(require_permission("patients.record.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> PatientListResponse:
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope=scope)
     try:
-        results, total = list_patients_for_facility(db, facility_id, limit=limit, offset=offset, enrollment_status=enrollment_status)
+        results, total = list_patients_for_facility(
+            db, facility_id, limit=limit, offset=offset, enrollment_status=enrollment_status, facility_ids=facility_ids
+        )
     except ValueError as exc:
         if str(exc) == "INVALID_ENROLLMENT_STATUS":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": "INVALID_ENROLLMENT_STATUS", "message": "Enrollment status must be ACTIVE or INACTIVE."}) from exc
         raise
-    record_audit(db, action="LIST_PATIENT_RECORDS", resource_type="PERSON", resource_id=str(facility_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, metadata={"count": len(results), "total": total, "limit": limit, "offset": offset, "enrollment_status": enrollment_status}, commit=True)
+    record_audit(
+        db,
+        action="LIST_PATIENT_RECORDS",
+        resource_type="PERSON",
+        resource_id=str(facility_id),
+        result="SUCCESS",
+        user_id=user.id,
+        facility_id=facility_id,
+        metadata={
+            "count": len(results),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "enrollment_status": enrollment_status,
+            "scope": scope,
+            "facility_count": len(facility_ids),
+        },
+        commit=True,
+    )
     return PatientListResponse(items=[_response(person, identity.afya_id) for person, identity in results], total=total, limit=limit, offset=offset)
 
 
 @router.get("/search", response_model=list[PatientSearchResult])
-def search_patient_records(q: str = Query(min_length=2, max_length=100), limit: int = Query(default=20, ge=1, le=50), user: User = Depends(require_permission("patients.search")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> list[PatientSearchResult]:
-    results = search_patients(db, q, facility_id, limit)
-    record_audit(db, action="SEARCH_PATIENT_RECORDS", resource_type="PERSON", resource_id=str(facility_id), result="SUCCESS", user_id=user.id, facility_id=facility_id, metadata={"result_count": len(results), "limit": limit}, commit=True)
+def search_patient_records(
+    q: str = Query(min_length=2, max_length=100),
+    limit: int = Query(default=20, ge=1, le=50),
+    scope: str = Query(default="facility", description="facility | network | county | national"),
+    user: User = Depends(require_permission("patients.search")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> list[PatientSearchResult]:
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope=scope)
+    results = search_patients(db, q, facility_id, limit, facility_ids=facility_ids)
+    record_audit(
+        db,
+        action="SEARCH_PATIENT_RECORDS",
+        resource_type="PERSON",
+        resource_id=str(facility_id),
+        result="SUCCESS",
+        user_id=user.id,
+        facility_id=facility_id,
+        metadata={"result_count": len(results), "limit": limit, "scope": scope, "facility_count": len(facility_ids)},
+        commit=True,
+    )
     return [PatientSearchResult(id=person.id, afya_id=identity.afya_id, full_name=" ".join(filter(None, [person.first_name, person.middle_name, person.last_name])), phone=person.phone, status=person.status) for person, identity in results]
 
 
