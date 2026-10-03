@@ -68,6 +68,7 @@ async function request<T = any>(path: string, init: RequestInit = {}, retry = tr
 }
 
 const _apiCore: any = {
+  contextOverview: () => request("/api/v1/context"),
   login: (username: string, password: string) => request("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
   patientLogin: (identifier: string, password: string) =>
     request("/api/v1/auth/patient/login", { method: "POST", body: JSON.stringify({ identifier, password }) }, false),
