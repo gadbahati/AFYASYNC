@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 import { api } from "../api/client";
 
-/** Claims list, filters, actions, adjudication, response & reconcile. Phase 111. */
+/** Claims list, filters, adjudicate/re-adjudicate, response & reconcile. Phase 112. */
 export function ClaimsClaimsTable(props: any) {
   const {
     loading,
@@ -93,9 +93,7 @@ export function ClaimsClaimsTable(props: any) {
                           Validate
                         </button>
                       )}
-                      {["DRAFT", "READY", "SUBMITTED", "UNDER_REVIEW", "REJECTED", "ACCEPTED"].includes(
-                        c.status,
-                      ) && (
+                      {["DRAFT", "READY", "SUBMITTED", "UNDER_REVIEW", "REJECTED"].includes(c.status) && (
                         <button
                           type="button"
                           className="secondary"
@@ -110,6 +108,24 @@ export function ClaimsClaimsTable(props: any) {
                           }
                         >
                           Adjudicate
+                        </button>
+                      )}
+                      {["ACCEPTED", "REJECTED"].includes(c.status) && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          title="Force re-run benefit adjudication"
+                          onClick={() =>
+                            void action(async () => {
+                              const r = await api.adjudicateClaim(c.id, true);
+                              return {
+                                message: `Re-adjudicated: ${r.decision} · allowed ${r.allowed_amount} · patient ${r.patient_amount} (${r.reason_code})`,
+                              };
+                            }, "Claim re-adjudicated.")
+                          }
+                        >
+                          Re-adjudicate
                         </button>
                       )}
                       {canSubmit(c.status) && (
@@ -295,7 +311,7 @@ export function ClaimsClaimsTable(props: any) {
         </article>
       )}
 
-      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 111 adjudication</p>
+      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 112 adjudication</p>
     </>
   );
 }
