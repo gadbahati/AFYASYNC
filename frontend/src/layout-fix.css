@@ -328,3 +328,142 @@ button:hover:not(:disabled),
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ---- Responsive application hardening ---- */
+img, svg, video, canvas { max-width: 100%; }
+button, .button, input, select, textarea { max-width: 100%; }
+button, .button { min-height: 40px; }
+pre, code { max-width: 100%; overflow-x: auto; }
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 100%;
+    max-height: 70dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .sidebar nav {
+    display: block !important;
+    max-height: 34dvh;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .sidebar nav .nav-group {
+    display: block;
+  }
+  .sidebar nav a {
+    display: flex !important;
+    width: 100%;
+    min-height: 40px;
+  }
+  .scope-switcher,
+  .workspace-switcher {
+    width: 100%;
+  }
+  .scope-switcher select,
+  .workspace-switcher select {
+    min-height: 42px;
+  }
+  .topbar {
+    flex-wrap: wrap;
+    align-items: flex-start !important;
+  }
+  .topbar-brand,
+  .topbar-context {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .topbar-context {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .content-inner {
+    overflow-x: hidden;
+  }
+  .page-heading > *,
+  .page-header > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .card {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 600px) {
+  .sidebar {
+    max-height: none;
+  }
+  .sidebar nav {
+    max-height: 40vh;
+  }
+  .brand-row {
+    align-items: flex-start;
+  }
+  .content-inner {
+    padding: 14px 12px 28px !important;
+  }
+  .topbar {
+    padding: 10px 12px !important;
+    gap: 8px;
+  }
+  .topbar-kicker {
+    display: block;
+    font-size: 8px;
+    line-height: 1.35;
+  }
+  .topbar-title {
+    font-size: 14px;
+  }
+  .topbar-context {
+    gap: 7px !important;
+    font-size: 12px;
+  }
+  .topbar-context .status-pill {
+    font-size: 10px !important;
+    padding: 3px 7px !important;
+  }
+  .page-heading h1,
+  .page-header h1 {
+    font-size: 19px;
+  }
+  .card {
+    padding: 14px;
+  }
+  .form-actions,
+  .actions {
+    width: 100%;
+  }
+  .form-actions > *,
+  .actions > * {
+    flex: 1 1 100%;
+  }
+  .table-wrap {
+    border-radius: 6px;
+  }
+  th, td {
+    white-space: nowrap;
+    padding: 9px 10px;
+  }
+  .site-footer {
+    padding: 18px 12px 14px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .kenya-crest.topbar-crest {
+    width: 30px;
+    height: 30px;
+  }
+  .brand-row strong {
+    font-size: 15px;
+  }
+  .brand-row .muted,
+  .brand-row span {
+    font-size: 10px;
+  }
+  .nav-section {
+    font-size: 10px;
+  }
+}
