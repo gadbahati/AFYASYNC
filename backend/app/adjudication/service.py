@@ -24,7 +24,7 @@ def adjudicate(db: Session, *, claim_id, facility_id, actor_user_id, force=False
     invoice = db.get(Invoice, claim.invoice_id)
     if invoice is None or invoice.facility_id != facility_id:
         raise AdjudicationError("FACILITY_ACCESS_DENIED")
-    if claim.status not in {"DRAFT", "READY", "SUBMITTED", "UNDER_REVIEW", "REJECTED"}:
+    if claim.status not in {"DRAFT", "READY", "SUBMITTED", "UNDER_REVIEW", "REJECTED", "ACCEPTED"}:
         raise AdjudicationError("CLAIM_NOT_ADJUDICABLE")
     existing = db.scalar(select(ClaimAdjudication).where(ClaimAdjudication.claim_id == claim.id))
     if existing and not force:
@@ -72,7 +72,6 @@ def adjudicate(db: Session, *, claim_id, facility_id, actor_user_id, force=False
         elif getattr(rule, "excluded", False):
             line_allowed, decision, reason = Decimal("0"), "DENIED", "SERVICE_EXCLUDED"
         else:
-            # Preauth gate for conditional rules
             needs_preauth = bool(getattr(rule, "requires_preauth", False))
             if needs_preauth:
                 auth = db.scalar(
@@ -126,6 +125,7 @@ def adjudicate(db: Session, *, claim_id, facility_id, actor_user_id, force=False
             "payer_id": str(claim.payer_id),
             "coverage_id": str(coverage.id),
             "line_count": len(items),
+            "force": force,
         },
         adjudicated_by=actor_user_id,
     )
@@ -160,13 +160,13 @@ def adjudicate(db: Session, *, claim_id, facility_id, actor_user_id, force=False
             "allowed": str(allowed),
             "patient": str(patient),
             "reason": reason,
+            "force": force,
         },
         commit=False,
     )
     db.commit()
     db.refresh(row)
 
-    # Phase 109 — auto settlement obligation when claim is payable
     if overall in {"APPROVED", "PARTIALLY_APPROVED"} and allowed > 0:
         try:
             from app.settlement.service import SettlementError, generate_obligation
