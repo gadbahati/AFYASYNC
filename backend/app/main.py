@@ -29,6 +29,7 @@ from app.claims.preflight_router import router as claim_preflight_router
 from app.clinical import models as clinical_models
 from app.clinical.router import router as clinical_router
 from app.config import settings
+from app.context.router import router as context_router
 from app.consent import models as consent_models
 from app.consent.router import router as consent_router
 from app.coverage import models as coverage_models
@@ -408,6 +409,7 @@ def initialize_database():
 
 
 app.include_router(auth_router.router)
+app.include_router(context_router)
 app.include_router(patient_auth_router)
 app.include_router(patients_router)
 app.include_router(patient_timeline_router)
