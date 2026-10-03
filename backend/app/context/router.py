@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_facility_context
 from app.database import get_db
-from app.rbac.models import User
+from app.rbac.models import User, Staff, StaffRole, Role
 
 router = APIRouter(prefix="/api/v1/context", tags=["context"])
 
@@ -16,12 +16,15 @@ def context_overview(
 ):
     from app.auth.dependencies import _is_system_administrator
     is_admin = _is_system_administrator(db, user)
+    roles = db.scalars(select(Role.name).join(StaffRole, StaffRole.role_id == Role.id).join(Staff, Staff.id == StaffRole.staff_id).where(Staff.person_id == user.person_id, Staff.status == "ACTIVE").distinct()).all()
     scopes = ["facility"]
     if is_admin:
         scopes = ["facility", "network", "county", "national"]
     return {
         "current": {"scope": "facility", "facility_id": str(facility_id)},
         "available_scopes": scopes,
+        "roles": list(roles),
+        "authorization": {"facility_context_required_for_operational_modules": True, "system_administrator": is_admin},
         "context_model": {
             "facility": "Operational scope for one authorized facility.",
             "network": "Aggregated scope for an authorized provider network.",
