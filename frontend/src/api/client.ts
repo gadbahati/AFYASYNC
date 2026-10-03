@@ -144,9 +144,10 @@ const _apiCore: any = {
   runEndToEndSimulation: () => request("/api/v1/end-to-end-simulation/run", { method: "POST" }),
   businessContinuityRecordTest: (planId: string, payload: any) =>
     request(`/api/v1/business-continuity/plans/${planId}/tests`, { method: "POST", body: JSON.stringify(payload) }),
-  setOperatingScope: (scope: string, previous_scope?: string) => {
+  setOperatingScope: (scope: string, previous_scope?: string, tenant_id?: string | null) => {
     const q = new URLSearchParams({ scope });
     if (previous_scope) q.set("previous_scope", previous_scope);
+    if (tenant_id) q.set("tenant_id", tenant_id);
     return request(`/api/v1/context/scope?${q.toString()}`, { method: "POST" });
   },
   login: (username: string, password: string) =>
