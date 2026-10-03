@@ -129,6 +129,14 @@ const _apiCore: any = {
     request(`/api/v1/tenancy/organizations/${organizationId}/users/${userId}?access_level=${encodeURIComponent(accessLevel)}`, { method: "POST" }),
   tenancySelect: (organizationId: string) =>
     request(`/api/v1/tenancy/select?organization_id=${encodeURIComponent(organizationId)}`, { method: "POST" }),
+  downloadWarehouseCsv: async (days = 30) => {
+    const token = getAccessToken();
+    const headers = new Headers();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const res = await fetch(`${API_BASE}/api/v1/warehouse/export/county-facts.csv?days=${days}`, { headers });
+    if (!res.ok) throw new ApiError(res.status, "WAREHOUSE_EXPORT_FAILED");
+    return res.text();
+  },
   businessContinuityOverview: () => request("/api/v1/business-continuity"),
   businessContinuityCreatePlan: (payload: any) =>
     request("/api/v1/business-continuity/plans", { method: "POST", body: JSON.stringify(payload) }),
