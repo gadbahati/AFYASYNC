@@ -3,8 +3,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
+from app.context.service import resolve_facility_ids
+from app.audit.service import record_audit
 from app.database import get_db
 from app.encounters.schemas import EncounterCreate, EncounterListResponse, EncounterResponse
 from app.encounters.service import close_encounter, create_encounter, get_encounter_for_facility, list_encounters_for_facility
@@ -16,15 +17,19 @@ router = APIRouter(prefix="/api/v1/encounters", tags=["Encounters"])
 def _error(exc: ValueError) -> HTTPException:
     code = str(exc)
     mapping = {
-        "PATIENT_NOT_FOUND": 404,
-        "FACILITY_NOT_FOUND": 404,
-        "DEPARTMENT_NOT_FOUND": 404,
-        "ENCOUNTER_NOT_FOUND": 404,
-        "PATIENT_NOT_IN_FACILITY": 404,
-        "FACILITY_ACCESS_DENIED": 403,
-        "ENCOUNTER_CLOSED": 409,
+        "PATIENT_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "FACILITY_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "DEPARTMENT_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "PATIENT_NOT_IN_FACILITY": status.HTTP_403_FORBIDDEN,
+        "ENCOUNTER_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "FACILITY_ACCESS_DENIED": status.HTTP_403_FORBIDDEN,
+        "ENCOUNTER_CLOSED": status.HTTP_409_CONFLICT,
+        "INVALID_COVERAGE_MODE": status.HTTP_400_BAD_REQUEST,
+        "COVERAGE_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "COVERAGE_PATIENT_MISMATCH": status.HTTP_400_BAD_REQUEST,
+        "PAYER_NOT_FOUND": status.HTTP_404_NOT_FOUND,
     }
-    return HTTPException(status_code=mapping.get(code, 400), detail=code)
+    return HTTPException(status_code=mapping.get(code, status.HTTP_400_BAD_REQUEST), detail=code)
 
 
 @router.post("", response_model=EncounterResponse, status_code=status.HTTP_201_CREATED)
@@ -32,14 +37,24 @@ def create(payload: EncounterCreate, user: User = Depends(require_permission("en
     data = payload.model_dump()
     data["facility_id"] = facility_id
     try:
-        return create_encounter(db, data, user.id, actor_user_id=user.id)
+        return create_encounter(db, data, created_by=user.id, actor_user_id=user.id)
     except ValueError as exc:
         raise _error(exc) from exc
 
 
 @router.get("", response_model=EncounterListResponse)
-def list_all(limit: int = Query(default=100, ge=1, le=100), offset: int = Query(default=0, ge=0), user: User = Depends(require_permission("encounters.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
-    items, total = list_encounters_for_facility(db, facility_id, limit=limit, offset=offset)
+def list_all(
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    scope: str = Query(default="facility", description="facility | network | county | national"),
+    user: User = Depends(require_permission("encounters.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+):
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope=scope)
+    items, total = list_encounters_for_facility(
+        db, facility_id, limit=limit, offset=offset, facility_ids=facility_ids
+    )
     return EncounterListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
