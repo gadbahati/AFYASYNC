@@ -54,6 +54,7 @@ def operating_scope_summary(
 def set_operating_scope(
     scope: str = Query(..., description="facility | network | county | national"),
     previous_scope: str | None = Query(default=None),
+    tenant_id: UUID | None = Query(default=None),
     user: User = Depends(get_current_user),
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
@@ -65,6 +66,7 @@ def set_operating_scope(
         facility_id=facility_id,
         scope=scope,
         previous_scope=previous_scope,
+        tenant_id=tenant_id,
     )
 
 
