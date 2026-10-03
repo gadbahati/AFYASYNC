@@ -12,17 +12,32 @@ export function normalizePath(path: string): string {
   return raw.endsWith("/") ? raw.slice(0, -1) : raw;
 }
 
+function matchesPrefix(path: string, prefix: string): boolean {
+  const p = normalizePath(prefix);
+  if (p === "/") return path === "/";
+  return path === p || path.startsWith(p + "/");
+}
+
 /**
- * Match a location against allowed path prefixes from GET /context module_actions.
- * If allowedPaths is null (not loaded), treat as allowed so we do not flash denials.
+ * Match a location against module_actions from GET /context.
+ * - allowedPaths === null → still loading → allow (avoid denial flash)
+ * - path always-allowed → allow
+ * - if catalogPaths provided and path is not in catalog → allow (uncatalogued)
+ * - otherwise path must match an allowed prefix
  */
-export function isPathAllowed(pathname: string, allowedPaths: string[] | null): boolean {
+export function isPathAllowed(
+  pathname: string,
+  allowedPaths: string[] | null,
+  catalogPaths?: string[] | null,
+): boolean {
   if (allowedPaths === null) return true;
   const path = normalizePath(pathname);
   if ((ALWAYS_ALLOWED_PATHS as readonly string[]).includes(path)) return true;
-  return allowedPaths.some((p) => {
-    const prefix = normalizePath(p);
-    if (prefix === "/") return path === "/";
-    return path === prefix || path.startsWith(prefix + "/");
-  });
+
+  if (Array.isArray(catalogPaths) && catalogPaths.length > 0) {
+    const governed = catalogPaths.some((c) => matchesPrefix(path, c));
+    if (!governed) return true;
+  }
+
+  return allowedPaths.some((p) => matchesPrefix(path, p));
 }
