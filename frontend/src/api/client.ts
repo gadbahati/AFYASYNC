@@ -189,6 +189,26 @@ const _apiCore: any = {
   listBenefitPackages: () => request("/api/v1/benefits/packages"),
   repriceInvoiceBenefits: (invoiceId: string) =>
     request(`/api/v1/billing/invoices/${invoiceId}/reprice-benefits`, { method: "POST" }),
+  settlementCreateObligation: (claimId: string) =>
+    request("/api/v1/settlements/obligations", { method: "POST", body: JSON.stringify({ claim_id: claimId }) }),
+  settlementCreateBatch: (payerId: string) =>
+    request("/api/v1/settlements/batches", { method: "POST", body: JSON.stringify({ payer_id: payerId }) }),
+  settlementRecordPayment: (
+    batchId: string,
+    payload: { obligation_id: string; amount: number; method?: string },
+  ) =>
+    request(`/api/v1/settlements/batches/${batchId}/payments`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  settlementReconcile: (payload: { batch_id: string; received_amount: number }) =>
+    request(`/api/v1/settlements/batches/${payload.batch_id}/reconcile`, {
+      method: "POST",
+      body: JSON.stringify({ received_amount: payload.received_amount }),
+    }),
+  settlementListBatches: () => request("/api/v1/settlements/batches"),
+  settlementOverview: () => request("/api/v1/settlements/overview"),
+  claimPreflight: (invoiceId: string) => request(`/api/v1/claims/invoices/${invoiceId}/preflight`),
   financingPreauthCreate: (payload: any) =>
     request("/api/v1/financing-preauthorizations", { method: "POST", body: JSON.stringify(payload) }),
   financingPreauthDecide: (id: string, payload: any) =>
