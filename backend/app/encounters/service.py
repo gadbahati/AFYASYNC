@@ -88,12 +88,28 @@ def get_encounter_for_facility(db: Session, encounter_id: UUID, facility_id: UUI
     return encounter
 
 
-def list_encounters_for_facility(db: Session, facility_id: UUID, *, limit: int = 100, offset: int = 0) -> tuple[list[Encounter], int]:
+def list_encounters_for_facility(
+    db: Session,
+    facility_id: UUID,
+    *,
+    limit: int = 100,
+    offset: int = 0,
+    facility_ids: list[UUID] | None = None,
+) -> tuple[list[Encounter], int]:
     limit = min(max(limit, 1), 100)
     offset = max(offset, 0)
-    filters = [Encounter.facility_id == facility_id]
+    scope_ids = facility_ids if facility_ids else [facility_id]
+    filters = [Encounter.facility_id.in_(scope_ids)]
     total = int(db.scalar(select(func.count()).select_from(Encounter).where(*filters)) or 0)
-    items = list(db.scalars(select(Encounter).where(*filters).order_by(Encounter.started_at.desc(), Encounter.id.desc()).offset(offset).limit(limit)))
+    items = list(
+        db.scalars(
+            select(Encounter)
+            .where(*filters)
+            .order_by(Encounter.started_at.desc(), Encounter.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    )
     return items, total
 
 
