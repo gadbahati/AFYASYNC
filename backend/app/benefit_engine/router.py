@@ -1,6 +1,7 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,11 @@ from app.rbac.models import User
 router = APIRouter(prefix="/api/v1/benefit-engine", tags=["Universal Benefits & Tariffs"])
 
 
+class BenefitRuleBulkImport(BaseModel):
+    rules: list[BenefitRuleVersionCreate] = Field(min_length=1, max_length=500)
+    stop_on_error: bool = False
+
+
 @router.post("/rules", response_model=BenefitRuleVersionOut, status_code=201)
 def create_rule(
     payload: BenefitRuleVersionCreate,
@@ -34,6 +40,52 @@ def create_rule(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.post("/rules/import")
+def import_rules(
+    payload: BenefitRuleBulkImport,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission(COVERAGE_BENEFIT_WRITE)),
+):
+    """Bulk-create benefit rule versions (tariff pack). Phase 114."""
+    _ = facility_id, user
+    created: list[dict] = []
+    errors: list[dict] = []
+    for idx, rule in enumerate(payload.rules):
+        try:
+            row = BenefitRuleVersion(**rule.model_dump())
+            db.add(row)
+            db.flush()
+            created.append(
+                {
+                    "index": idx,
+                    "id": str(row.id),
+                    "name": row.name,
+                    "service_code": row.service_code,
+                    "status": row.status,
+                }
+            )
+        except Exception as exc:
+            errors.append({"index": idx, "error": str(exc), "name": getattr(rule, "name", None)})
+            if payload.stop_on_error:
+                db.rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "BULK_IMPORT_FAILED", "index": idx, "error": str(exc)},
+                ) from exc
+    if created:
+        db.commit()
+    else:
+        db.rollback()
+    return {
+        "created_count": len(created),
+        "error_count": len(errors),
+        "created": created,
+        "errors": errors,
+        "developer": "BAHATI GAD WANGWE",
+    }
 
 
 @router.get("/rules", response_model=list[BenefitRuleVersionOut])
@@ -78,7 +130,6 @@ def benefit_quote_batch(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission(COVERAGE_READ)),
 ):
-    """Phase 103 — multi-line quote for claims/invoice adjudication input."""
     _ = facility_id, user
     return quote_lines(
         db,
@@ -86,5 +137,5 @@ def benefit_quote_batch(
         payer_plan_id=payload.payer_plan_id,
         package_id=payload.benefit_package_id,
         as_of=payload.as_of,
-        lines=[line.model_dump() for line in payload.lines],
+        lines=[ln.model_dump() for ln in payload.lines],
     )
