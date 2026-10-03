@@ -30,6 +30,10 @@ from app.clinical import models as clinical_models
 from app.clinical.router import router as clinical_router
 from app.config import settings
 from app.context.router import router as context_router
+from app.national_audit.router import router as national_audit_router
+from app.end_to_end_simulation.router import router as end_to_end_simulation_router
+from app.production_hardening.router import router as production_hardening_router
+from app.product_readiness.router import router as product_readiness_router
 from app.business_continuity.router import router as business_continuity_router
 from app.business_continuity import models as business_continuity_models  # noqa: F401
 from app.tenancy.router import router as tenancy_router
@@ -420,6 +424,10 @@ def initialize_database():
 app.include_router(auth_router.router)
 app.include_router(context_router)
 app.include_router(business_continuity_router)
+app.include_router(national_audit_router)
+app.include_router(end_to_end_simulation_router)
+app.include_router(production_hardening_router)
+app.include_router(product_readiness_router)
 app.include_router(tenancy_router)
 app.include_router(patient_auth_router)
 app.include_router(patients_router)
