@@ -208,6 +208,9 @@ const _apiCore: any = {
       method: "POST",
       body: JSON.stringify({ claim_id: claimId, force }),
     }),
+  getClaimAdjudication: (claimId: string) => request(`/api/v1/adjudication/claims/${claimId}`),
+  getClaimAdjudicationLines: (claimId: string) =>
+    request(`/api/v1/adjudication/claims/${claimId}/lines`),
   createClaim: (invoiceId: string) =>
     request("/api/v1/claims", { method: "POST", body: JSON.stringify({ invoice_id: invoiceId }) }),
   validateClaim: (claimId: string) =>
