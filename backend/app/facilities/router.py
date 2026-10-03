@@ -233,6 +233,14 @@ def register_department(facility_id: UUID, payload: DepartmentCreate, user: User
         code = str(exc)
         raise HTTPException(status_code={"FACILITY_NOT_FOUND": 404, "DEPARTMENT_CODE_EXISTS": 409}.get(code, 400), detail=code) from exc
 
+@router.get("/me/departments", response_model=list[DepartmentResponse])
+def get_current_facility_departments(
+    _: User = Depends(require_permission("appointments.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> list[DepartmentResponse]:
+    return list_departments(db, facility_id)
+
 @router.get("/{facility_id}/departments", response_model=list[DepartmentResponse])
 def get_departments(facility_id: UUID, _: User = Depends(require_permission("facilities.department.read")), context_facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> list[DepartmentResponse]:
     if facility_id != context_facility_id:
