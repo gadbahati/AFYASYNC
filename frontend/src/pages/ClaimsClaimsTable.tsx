@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 
-/** Claims workbench — adjudicate, obligation, settlement nav, risk flags. Phase 117. */
+/** Claims workbench — fraud scan, appeals, adjudication, settlement. Phase 118. */
 export function ClaimsClaimsTable(props: any) {
   const {
     loading,
@@ -201,6 +201,42 @@ export function ClaimsClaimsTable(props: any) {
                       >
                         Settle
                       </Link>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={busy}
+                        onClick={() =>
+                          void action(async () => {
+                            const r = await api.fraudScanClaim(c.id);
+                            return {
+                              message: `Fraud scan: ${r.band} (${r.score}/100)${(r.flags || [])
+                                .map((f: any) => ` · ${f.code}`)
+                                .join("")}`,
+                            };
+                          }, "Fraud scan complete.")
+                        }
+                      >
+                        Fraud scan
+                      </button>
+                      {c.status === "REJECTED" && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => {
+                            const reason = window.prompt(
+                              "Appeal reason (min 10 characters — clinical justification):",
+                            );
+                            if (!reason || reason.trim().length < 10) return;
+                            void action(
+                              () => api.appealClaim(c.id, { reason: reason.trim() }),
+                              "Appeal submitted — claim under review.",
+                            );
+                          }}
+                        >
+                          Appeal
+                        </button>
+                      )}
                       {canSubmit(c.status) && (
                         <button
                           type="button"
@@ -489,7 +525,7 @@ export function ClaimsClaimsTable(props: any) {
         </article>
       )}
 
-      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 117</p>
+      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 118</p>
     </>
   );
 }
