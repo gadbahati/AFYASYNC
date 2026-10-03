@@ -20,12 +20,13 @@ def context_overview(
         default=None,
         description="Optional operating scope: facility | network | county | national",
     ),
+    tenant_id: UUID | None = Query(default=None),
     user: User = Depends(get_current_user),
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
 ):
     """Authorization profile + allowed workspaces + active data scope."""
-    return context_payload(db, user=user, facility_id=facility_id, scope=scope)
+    return context_payload(db, user=user, facility_id=facility_id, scope=scope, tenant_id=tenant_id)
 
 
 @router.get("/scoped-surface")
@@ -40,12 +41,13 @@ def scoped_surface(
 @router.get("/scope-summary")
 def operating_scope_summary(
     scope: str = Query(default="facility", description="facility | network | county | national"),
+    tenant_id: UUID | None = Query(default=None),
     user: User = Depends(get_current_user),
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
 ):
     """Facility set + basic counts for the selected operating scope."""
-    return scope_data_summary(db, user=user, token_facility_id=facility_id, scope=scope)
+    return scope_data_summary(db, user=user, token_facility_id=facility_id, scope=scope, tenant_id=tenant_id)
 
 
 @router.post("/scope")
@@ -71,6 +73,7 @@ def scoped_operations_summary(
     scope: str = Query(default="facility", description="facility | network | county | national"),
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    tenant_id: UUID | None = Query(default=None),
     user: User = Depends(require_permission("reports.read")),
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
@@ -82,6 +85,7 @@ def scoped_operations_summary(
             user=user,
             token_facility_id=facility_id,
             scope=scope,
+            tenant_id=tenant_id,
             start_date=start_date,
             end_date=end_date,
         )
