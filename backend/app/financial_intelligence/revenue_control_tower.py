@@ -5,7 +5,7 @@ from app.claim_clearinghouse.models import ClearinghouseCase
 from app.financial_intelligence.guardrail_models import ContractComplianceGuardrail
 from app.settlement.recovery import RevenueRecoveryCase
 from app.financial_intelligence.resolution_models import RevenueResolutionCase
-from app.collection_work.work_queue import CollectionWorkItem
+from app.financial_intelligence.work_queue import CollectionWorkItem
 
 def revenue_control_tower(db:Session,facility_id,days:int=30):
     since=datetime.now(timezone.utc)-timedelta(days=days)
