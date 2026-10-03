@@ -187,6 +187,8 @@ const _apiCore: any = {
   createBenefitRule: (payload: any) =>
     request("/api/v1/benefit-engine/rules", { method: "POST", body: JSON.stringify(payload) }),
   listBenefitPackages: () => request("/api/v1/benefits/packages"),
+  repriceInvoiceBenefits: (invoiceId: string) =>
+    request(`/api/v1/billing/invoices/${invoiceId}/reprice-benefits`, { method: "POST" }),
   me: () => request("/api/v1/auth/me"),
   logout: (refresh_token?: string) =>
     request("/api/v1/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token }) }, false),
