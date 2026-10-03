@@ -68,3 +68,15 @@ def cash_closure_command(db:Session,facility_id:UUID,limit:int=100):
         "status":"ATTENTION" if exposure>0 or open_work>0 else "CLEAR",
         "note":"Combined operational exposure can overlap across guardrails, recovery, resolution, and work items. It is not an accounting loss or a cash-recovery total."
     }
+
+
+def revenue_cash_assurance(db:Session,facility_id:UUID):
+    base=cash_closure_command(db,facility_id,200)
+    categories=[
+        {"key":"GUARDRAIL","exposure":base["guardrail_exposure"],"open":base["open_guardrails"]},
+        {"key":"RECOVERY","exposure":base["recovery_outstanding"],"open":base["open_recoveries"]},
+        {"key":"RESOLUTION","exposure":base["resolution_exposure"],"open":base["open_resolutions"]},
+        {"key":"WORK_QUEUE","exposure":base["work_exposure"],"open":base["open_work"]},
+    ]
+    actionable=[x for x in categories if x["open"]>0 or x["exposure"]>0]
+    return {"status":base["status"],"assurance":"REQUIRES_ACTION" if actionable else "ASSURED","categories":categories,"terminal":{"guardrails":base["terminal_guardrails"],"recoveries":base["terminal_recoveries"],"resolutions":base["terminal_resolutions"]},"exceptions":base["exceptions"],"operational_exposure":base["combined_operational_exposure"],"actions":[{"action":"REVIEW_GUARDRAILS","count":base["open_guardrails"]},{"action":"FOLLOW_UP_RECOVERY","count":base["open_recoveries"]},{"action":"ESCALATE_RESOLUTION","count":base["open_resolutions"]},{"action":"CLEAR_WORK_QUEUE","count":base["open_work"]}],"note":"Assurance is an operational control state. Operational exposure categories may overlap and are not accounting loss or recovered cash."}
