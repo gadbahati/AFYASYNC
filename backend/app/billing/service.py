@@ -79,8 +79,18 @@ def create_invoice(db: Session, facility_id: UUID, encounter_id: UUID, *, actor_
                 payer_amount, patient_amount, rule_id = calculate_charge_responsibility(db, coverage, amount=amount, service_code=service.code, service_type=service.service_type)
             except ValueError as exc:
                 if str(exc) == "COVERAGE_RULE_NOT_CONFIGURED":
-                    raise BillingError("COVERAGE_RULE_NOT_CONFIGURED") from exc
-                raise
+                    from app.billing.benefit_reprice import responsibility_from_benefit_engine
+                    payer_amount, patient_amount, _engine_rule = responsibility_from_benefit_engine(
+                        db,
+                        payer_id=coverage.payer_id,
+                        payer_plan_id=getattr(coverage, "payer_plan_id", None),
+                        amount=amount,
+                        service_code=service.code,
+                        service_type=service.service_type,
+                    )
+                    rule_id = None
+                else:
+                    raise
         subtotal += amount
         payer_total += payer_amount
         patient_total += patient_amount
@@ -210,3 +220,10 @@ def process_payment_callback(db: Session, facility_id: UUID, integration_id: UUI
     record_audit(db, action="CONFIRM_PAYMENT_CALLBACK", resource_type="PAYMENT", resource_id=str(payment.id), result="SUCCESS", user_id=None, facility_id=facility_id, patient_id=payment.patient_id, metadata={"transaction_id": payment.transaction_id, "external_reference": external_reference, "response_code": response_code}, commit=False)
     db.commit()
     return payment
+
+
+# Phase 105 — re-export reprice helpers for router imports
+from app.billing.benefit_reprice import (  # noqa: E402
+    reprice_invoice_with_benefit_engine,
+    responsibility_from_benefit_engine,
+)
