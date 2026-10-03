@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.financial_intelligence.work_queue import CollectionWorkItem
-from app.financial_intelligence.revenue_workflow_service import automate_revenue_actions
 
 LEVELS=["LOW","MEDIUM","HIGH","CRITICAL"]
 
