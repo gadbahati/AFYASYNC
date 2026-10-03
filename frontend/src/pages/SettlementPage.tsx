@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 
 export default function SettlementPage() {
-  const [claimId, setClaimId] = useState("");
+  const [searchParams] = useSearchParams();
+  const [claimId, setClaimId] = useState(() => searchParams.get("claim_id") || "");
   const [payerId, setPayerId] = useState("");
   const [batchId, setBatchId] = useState("");
   const [obligationId, setObligationId] = useState("");
@@ -11,6 +13,8 @@ export default function SettlementPage() {
   const [method, setMethod] = useState("BANK_TRANSFER");
   const [message, setMessage] = useState("");
   const [batches, setBatches] = useState<any[]>([]);
+  const [obligations, setObligations] = useState<any[]>([]);
+  const [overview, setOverview] = useState<any>(null);
   const [busy, setBusy] = useState(false);
 
   const loadBatches = useCallback(async () => {
@@ -22,9 +26,36 @@ export default function SettlementPage() {
     }
   }, []);
 
+  const loadObligations = useCallback(async () => {
+    try {
+      const rows = await api.settlementListObligations({ status: "READY", limit: 50 });
+      setObligations(Array.isArray(rows) ? rows : []);
+    } catch {
+      setObligations([]);
+    }
+  }, []);
+
+  const loadOverview = useCallback(async () => {
+    try {
+      setOverview(await api.settlementOverview());
+    } catch {
+      setOverview(null);
+    }
+  }, []);
+
   useEffect(() => {
     void loadBatches();
-  }, [loadBatches]);
+    void loadObligations();
+    void loadOverview();
+  }, [loadBatches, loadObligations, loadOverview]);
+
+  function selectObligation(o: any) {
+    setObligationId(o.id);
+    setClaimId(o.claim_id || "");
+    setPayerId(o.payer_id || "");
+    setAmount(String(o.payable_amount ?? ""));
+    setMessage(`Selected obligation ${o.obligation_number} (${o.status})`);
+  }
 
   async function run(fn: () => Promise<any>, okMsg?: string) {
     setBusy(true);
@@ -33,6 +64,8 @@ export default function SettlementPage() {
       const r = await fn();
       setMessage(okMsg ? `${okMsg}\n${JSON.stringify(r, null, 2)}` : JSON.stringify(r, null, 2));
       await loadBatches();
+      await loadObligations();
+      await loadOverview();
     } catch (e) {
       setMessage(e instanceof ApiError ? e.message || e.code : e instanceof Error ? e.message : String(e));
     } finally {
@@ -44,17 +77,75 @@ export default function SettlementPage() {
     <section className="page-stack">
       <header className="page-heading">
         <div>
-          <p className="eyebrow">Phase 108 · Provider settlement</p>
+          <p className="eyebrow">Phase 116 · Provider settlement</p>
           <h1>Settlement & provider payments</h1>
           <p className="muted">
-            After adjudication, generate payer obligations, batch them, record payments, and reconcile.
+            Select a READY obligation to auto-fill claim, payer, and amount — then batch, pay, and reconcile.
           </p>
         </div>
       </header>
 
+      {overview && (
+        <div className="stats-row">
+          <div className="stat-card">
+            <span className="muted small">READY</span>
+            <strong>{overview.ready_obligations}</strong>
+          </div>
+          <div className="stat-card">
+            <span className="muted small">In batch</span>
+            <strong>{overview.in_batch_obligations}</strong>
+          </div>
+          <div className="stat-card">
+            <span className="muted small">Payments recorded</span>
+            <strong>{Number(overview.provider_payments_recorded || 0).toLocaleString()}</strong>
+          </div>
+        </div>
+      )}
+
+      <article className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0 }}>READY obligations</h2>
+          <button type="button" className="secondary" onClick={() => void loadObligations()}>
+            Refresh
+          </button>
+        </div>
+        {obligations.length === 0 && (
+          <p className="muted">No READY obligations. Adjudicate a payable claim first.</p>
+        )}
+        {obligations.length > 0 && (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Number</th>
+                  <th>Payable</th>
+                  <th>Patient</th>
+                  <th>Claim</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {obligations.map((o) => (
+                  <tr key={o.id}>
+                    <td>{o.obligation_number}</td>
+                    <td>{o.payable_amount}</td>
+                    <td>{o.patient_amount}</td>
+                    <td className="mono small">{String(o.claim_id).slice(0, 8)}…</td>
+                    <td>
+                      <button type="button" className="secondary" onClick={() => selectObligation(o)}>
+                        Use
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
+
       <article className="card">
         <h2>1. Settlement obligation</h2>
-        <p className="muted small">Requires an adjudicated claim with allowed amount &gt; 0.</p>
         <div className="form-grid">
           <label>
             Claim ID
@@ -75,7 +166,7 @@ export default function SettlementPage() {
       </article>
 
       <article className="card">
-        <h2>2. Settlement batch</h2>
+        <h2>2. Create batch</h2>
         <div className="form-grid">
           <label>
             Payer ID
@@ -88,32 +179,31 @@ export default function SettlementPage() {
             disabled={busy || !payerId}
             onClick={() => void run(() => api.settlementCreateBatch(payerId.trim()), "Batch created.")}
           >
-            Create batch from READY obligations
+            Create batch
           </button>
         </div>
       </article>
 
       <article className="card">
-        <h2>3. Provider payment</h2>
-        <p className="muted small">Requires batch ID (step 2) and obligation ID from the obligation response.</p>
+        <h2>3. Record payment</h2>
         <div className="form-grid">
           <label>
             Batch ID
-            <input value={batchId} onChange={(e) => setBatchId(e.target.value)} placeholder="UUID" />
+            <input value={batchId} onChange={(e) => setBatchId(e.target.value)} />
           </label>
           <label>
             Obligation ID
-            <input value={obligationId} onChange={(e) => setObligationId(e.target.value)} placeholder="UUID" />
+            <input value={obligationId} onChange={(e) => setObligationId(e.target.value)} />
           </label>
           <label>
-            Amount (KES)
+            Amount
             <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
           <label>
             Method
             <select value={method} onChange={(e) => setMethod(e.target.value)}>
               <option value="BANK_TRANSFER">BANK_TRANSFER</option>
-              <option value="MOBILE_MONEY">MOBILE_MONEY</option>
+              <option value="MPESA">MPESA</option>
               <option value="CHEQUE">CHEQUE</option>
             </select>
           </label>
@@ -144,11 +234,17 @@ export default function SettlementPage() {
         <div className="form-grid">
           <label>
             Batch ID
-            <input value={batchId} onChange={(e) => setBatchId(e.target.value)} placeholder="UUID" />
+            <input value={batchId} onChange={(e) => setBatchId(e.target.value)} />
           </label>
           <label>
             Received amount
-            <input type="number" min="0" step="0.01" value={received} onChange={(e) => setReceived(e.target.value)} />
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={received}
+              onChange={(e) => setReceived(e.target.value)}
+            />
           </label>
         </div>
         <div className="form-actions">
@@ -187,7 +283,7 @@ export default function SettlementPage() {
                   <th>Batch</th>
                   <th>Status</th>
                   <th>Payer</th>
-                  <th>ID</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -197,7 +293,7 @@ export default function SettlementPage() {
                     <td>{b.status}</td>
                     <td className="muted small">{String(b.payer_id || "").slice(0, 8)}…</td>
                     <td>
-                      <button type="button" className="linkish" onClick={() => setBatchId(b.id)}>
+                      <button type="button" className="secondary" onClick={() => setBatchId(b.id)}>
                         Use
                       </button>
                     </td>
@@ -214,7 +310,7 @@ export default function SettlementPage() {
         <pre className="muted small" style={{ whiteSpace: "pre-wrap" }}>
           {message || "No operation run yet."}
         </pre>
-        <p className="muted small">Developed by BAHATI GAD WANGWE</p>
+        <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 116</p>
       </article>
     </section>
   );
