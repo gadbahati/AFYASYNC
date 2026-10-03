@@ -186,6 +186,7 @@ const _apiCore: any = {
     if (appointment_date) q.set("appointment_date", appointment_date);
     return request(`/api/v1/appointments?${q.toString()}`);
   },
+  listDepartments: () => request("/api/v1/facilities/me/departments"),
   listBillingServices: (scope = "facility") =>
     request(`/api/v1/billing/services?scope=${encodeURIComponent(scope)}`),
   listInvoices: (limit = 50, scope = "facility") =>
