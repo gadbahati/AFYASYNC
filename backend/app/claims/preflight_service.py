@@ -34,6 +34,8 @@ def preflight_claim(
 
     errors: list[str] = []
     warnings: list[str] = []
+    benefit_summary: dict | None = None
+    today = date.today()
     payer_id = invoice.payer_id
     coverage_id = invoice.coverage_id
 
@@ -65,7 +67,6 @@ def preflight_claim(
         if coverage_id is not None:
             errors.append("COVERAGE_NOT_FOUND")
     else:
-        today = date.today()
         if coverage.person_id != invoice.patient_id or coverage.payer_id != payer_id:
             errors.append("COVERAGE_INVOICE_MISMATCH")
         if coverage.status != "ACTIVE" or coverage.verification_status != "VERIFIED":
@@ -136,15 +137,69 @@ def preflight_claim(
     if payer is not None and payer.integration_status != "CONFIGURED":
         warnings.append("PAYER_INTEGRATION_NOT_CONFIGURED")
 
+    # Phase 104 — Universal Benefits & Tariff Engine cross-check
+    if payer_id is not None and items and "PAYER_COVERAGE_REQUIRED" not in errors:
+        try:
+            from app.benefit_engine.service import quote_lines
+
+            lines = []
+            for item in items:
+                charge = db.get(Charge, item.charge_id)
+                service = db.get(Service, charge.service_id) if charge else None
+                if not service:
+                    continue
+                lines.append(
+                    {
+                        "line_id": str(item.id),
+                        "service_code": service.code,
+                        "service_type": getattr(service, "service_type", None),
+                        "gross_amount": float(item.amount),
+                    }
+                )
+            if lines:
+                plan_id = getattr(coverage, "payer_plan_id", None) if coverage is not None else None
+                benefit_summary = quote_lines(
+                    db,
+                    payer_id=payer_id,
+                    payer_plan_id=plan_id,
+                    package_id=None,
+                    as_of=today,
+                    lines=lines,
+                )
+                for line in benefit_summary.get("lines") or []:
+                    code = line.get("service_code") or line.get("line_id") or "LINE"
+                    decision = line.get("decision")
+                    reason = line.get("reason_code")
+                    if decision == "INELIGIBLE":
+                        errors.append(f"BENEFIT_EXCLUDED:{code}")
+                    elif decision == "UNKNOWN" or reason == "NO_ACTIVE_BENEFIT_RULE":
+                        warnings.append(f"BENEFIT_RULE_MISSING:{code}")
+                    elif decision == "CONDITIONAL" or line.get("requires_preauth"):
+                        warnings.append(f"BENEFIT_PREAUTH_REQUIRED:{code}")
+                # Soft variance: invoice payer total vs engine payer total (>5% and >50 KES)
+                engine_payer = Decimal(str(benefit_summary.get("payer_total") or 0)).quantize(Decimal("0.01"))
+                if payer_total > 0 and engine_payer >= 0:
+                    delta = abs(payer_total - engine_payer)
+                    if delta > Decimal("50.00") and (delta / payer_total) > Decimal("0.05"):
+                        warnings.append(
+                            f"BENEFIT_AMOUNT_VARIANCE:invoice_payer={payer_total},engine_payer={engine_payer}"
+                        )
+        except Exception:
+            warnings.append("BENEFIT_ENGINE_UNAVAILABLE")
+
     if payer is not None and not errors:
         try:
-            gate_codes=[]; gate_amounts=[]; gate_quantities=[]
+            gate_codes = []
+            gate_amounts = []
+            gate_quantities = []
             for item in items:
-                charge=db.get(Charge,item.charge_id)
-                service=db.get(Service,charge.service_id) if charge else None
+                charge = db.get(Charge, item.charge_id)
+                service = db.get(Service, charge.service_id) if charge else None
                 if service:
-                    gate_codes.append(service.code); gate_amounts.append(Decimal(str(item.payer_amount))); gate_quantities.append(Decimal(str(charge.quantity)))
-            _contract_operational_gate(db,facility_id,payer,gate_codes,gate_amounts,gate_quantities)
+                    gate_codes.append(service.code)
+                    gate_amounts.append(Decimal(str(item.payer_amount)))
+                    gate_quantities.append(Decimal(str(charge.quantity)))
+            _contract_operational_gate(db, facility_id, payer, gate_codes, gate_amounts, gate_quantities)
         except ClaimsError as exc:
             errors.append(str(exc))
 
@@ -177,6 +232,10 @@ def preflight_claim(
             "risk_score": risk.score,
             "risk_band": risk.band,
             "block_submit": risk.block_submit,
+            "benefit_unknown_rules": (benefit_summary or {}).get("unknown_rules"),
+            "benefit_preauth_lines": (benefit_summary or {}).get("preauth_required_lines"),
+            "benefit_ineligible_lines": (benefit_summary or {}).get("ineligible_lines"),
+            "benefit_engine_payer_total": (benefit_summary or {}).get("payer_total"),
         },
         commit=True,
     )
@@ -205,4 +264,9 @@ def preflight_claim(
             )
             for f in risk.factors
         ],
+        benefit_unknown_rules=int((benefit_summary or {}).get("unknown_rules") or 0),
+        benefit_preauth_lines=int((benefit_summary or {}).get("preauth_required_lines") or 0),
+        benefit_ineligible_lines=int((benefit_summary or {}).get("ineligible_lines") or 0),
+        benefit_engine_payer_total=float((benefit_summary or {}).get("payer_total") or 0),
+        benefit_engine_patient_total=float((benefit_summary or {}).get("patient_total") or 0),
     )
