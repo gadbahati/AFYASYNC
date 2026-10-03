@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import { useWorkspace } from "../workspaces/WorkspaceContext";
 import { ClaimsClaimsTable } from "./ClaimsClaimsTable";
+import { ClaimsKesRiskPanel } from "./ClaimsKesRiskPanel";
 
 type Claim = {
   id: string;
@@ -291,7 +292,7 @@ export function ClaimsPage() {
     <section className="page-stack">
       <header className="page-heading">
         <div>
-          <p className="eyebrow">Revenue & financing · Phase 110</p>
+          <p className="eyebrow">Revenue & financing · Phase 116</p>
           <h1>Claims & rework</h1>
           <p className="muted">
             Claims under <strong>{scope}</strong> scope — preflight, validate, submit, response, and reconciliation.
@@ -334,7 +335,15 @@ export function ClaimsPage() {
           <span className="muted small">Paid</span>
           <strong>{money(stats.totalPaid)}</strong>
         </div>
+        {kesRisk && (
+          <div className="stat-card">
+            <span className="muted small">KES at risk ({kesRisk.window_days}d)</span>
+            <strong>{money(kesRisk.kes_at_risk)}</strong>
+          </div>
+        )}
       </div>
+
+      <ClaimsKesRiskPanel kesRisk={kesRisk} money={money} />
 
       <article className="card">
         <h2>Create claim from invoice</h2>
