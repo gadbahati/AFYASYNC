@@ -173,7 +173,7 @@ function KenyaCrest({ className = "" }: { className?: string }) {
 
 export function Layout() {
   const auth = useAuth();
-  const { workspace, setWorkspace, scope, setScope } = useWorkspace();
+  const { workspace, setWorkspace, scope, setScope, tenantId } = useWorkspace();
   const moduleAccess = useModuleAccess();
   const navigate = useNavigate();
   const [availableScopes, setAvailableScopes] = useState<ContextScope[]>(["facility"]);
@@ -203,7 +203,7 @@ export function Layout() {
   useEffect(() => {
     let cancelled = false;
     api
-      .contextOverview()
+      .contextOverview(undefined, tenantId)
       .then((v: { available_scopes?: string[]; allowed_workspaces?: string[] }) => {
         if (cancelled) return;
         const scopes = (Array.isArray(v?.available_scopes) ? v.available_scopes : ["facility"]).filter(
@@ -224,7 +224,7 @@ export function Layout() {
     return () => {
       cancelled = true;
     };
-  }, [auth.facilityId]);
+  }, [auth.facilityId, tenantId]);
 
   useEffect(() => {
     if (!visibleWorkspaces.some((w) => w.id === workspace) && visibleWorkspaces[0]) {
@@ -273,7 +273,7 @@ export function Layout() {
               setScopeBusy(true);
               setScopeError(null);
               api
-                .setOperatingScope(next, prev)
+                .setOperatingScope(next, prev, tenantId)
                 .then(() => {
                   setScope(next);
                   navigate("/workspace");
