@@ -48,7 +48,6 @@ def create_patient(
     if facility_id is None:
         raise ValueError("FACILITY_CONTEXT_REQUIRED")
 
-    # National Phase 1: Identity Confidence Engine before any create
     from app.identity.confidence_service import assert_clear_to_create
     from app.identity.schemas import IdentityProbe
 
@@ -143,17 +142,26 @@ def list_patients_for_facility(
     limit: int = 50,
     offset: int = 0,
     enrollment_status: str | None = "ACTIVE",
+    facility_ids: list[UUID] | None = None,
 ) -> tuple[list[tuple[Person, AfyaIdentity]], int]:
-    if facility_id is None:
+    if facility_id is None and not facility_ids:
         raise ValueError("FACILITY_CONTEXT_REQUIRED")
     limit = min(max(limit, 1), 100)
     offset = max(offset, 0)
-    base_filters = [PatientFacility.facility_id == facility_id]
+    scope_ids = facility_ids if facility_ids else [facility_id]
+    base_filters = [PatientFacility.facility_id.in_(scope_ids)]
     if enrollment_status is not None:
         if enrollment_status not in _ALLOWED_PATIENT_STATUSES:
             raise ValueError("INVALID_ENROLLMENT_STATUS")
         base_filters.append(PatientFacility.status == enrollment_status)
-    total = int(db.scalar(select(func.count()).select_from(PatientFacility).where(*base_filters)) or 0)
+    total = int(
+        db.scalar(
+            select(func.count(func.distinct(PatientFacility.patient_id)))
+            .select_from(PatientFacility)
+            .where(*base_filters)
+        )
+        or 0
+    )
     statement = (
         select(Person, AfyaIdentity)
         .join(AfyaIdentity, AfyaIdentity.person_id == Person.id)
@@ -340,15 +348,21 @@ def update_patient_facility_status(
 
 
 def search_patients(
-    db: Session, query: str, facility_id: UUID, limit: int = 20
+    db: Session,
+    query: str,
+    facility_id: UUID,
+    limit: int = 20,
+    *,
+    facility_ids: list[UUID] | None = None,
 ) -> list[tuple[Person, AfyaIdentity]]:
     term = f"%{query.strip()}%"
+    scope_ids = facility_ids if facility_ids else [facility_id]
     statement = (
         select(Person, AfyaIdentity)
         .join(AfyaIdentity, AfyaIdentity.person_id == Person.id)
         .join(PatientFacility, PatientFacility.patient_id == Person.id)
         .where(
-            PatientFacility.facility_id == facility_id,
+            PatientFacility.facility_id.in_(scope_ids),
             PatientFacility.status == "ACTIVE",
             or_(
                 AfyaIdentity.afya_id.ilike(term),
