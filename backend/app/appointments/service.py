@@ -84,8 +84,15 @@ def create_appointment(db: Session, data: dict, actor_user_id: UUID | None = Non
     return appointment
 
 
-def list_appointments(db: Session, facility_id: UUID, appointment_date: datetime | None = None) -> list[Appointment]:
-    stmt = select(Appointment).where(Appointment.facility_id == facility_id)
+def list_appointments(
+    db: Session,
+    facility_id: UUID,
+    appointment_date: datetime | None = None,
+    *,
+    facility_ids: list[UUID] | None = None,
+) -> list[Appointment]:
+    scope_ids = facility_ids if facility_ids else [facility_id]
+    stmt = select(Appointment).where(Appointment.facility_id.in_(scope_ids))
     if appointment_date:
         start = appointment_date.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
