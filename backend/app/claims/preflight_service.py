@@ -21,8 +21,6 @@ def preflight_claim(
     facility_id: UUID,
     actor_user_id: UUID,
 ):
-    # Scope the initial lookup to the caller's facility. This prevents invoice-ID
-    # probing from distinguishing another facility's records.
     invoice = db.scalar(
         select(Invoice).where(
             Invoice.id == invoice_id,
@@ -137,7 +135,7 @@ def preflight_claim(
     if payer is not None and payer.integration_status != "CONFIGURED":
         warnings.append("PAYER_INTEGRATION_NOT_CONFIGURED")
 
-    # Phase 104 — Universal Benefits & Tariff Engine cross-check
+    # Phase 104/106 — benefit engine + preauth gate
     if payer_id is not None and items and "PAYER_COVERAGE_REQUIRED" not in errors:
         try:
             from app.benefit_engine.service import quote_lines
@@ -176,7 +174,24 @@ def preflight_claim(
                         warnings.append(f"BENEFIT_RULE_MISSING:{code}")
                     elif decision == "CONDITIONAL" or line.get("requires_preauth"):
                         warnings.append(f"BENEFIT_PREAUTH_REQUIRED:{code}")
-                # Soft variance: invoice payer total vs engine payer total (>5% and >50 KES)
+                        try:
+                            from app.financing_preauthorization.service import find_active_authorization
+
+                            auth = find_active_authorization(
+                                db,
+                                facility_id=facility_id,
+                                person_id=invoice.patient_id,
+                                payer_id=payer_id,
+                                service_code=code if code != "LINE" else None,
+                            )
+                            if auth is None:
+                                errors.append(f"PREAUTH_REQUIRED:{code}")
+                            else:
+                                warnings.append(
+                                    f"PREAUTH_OK:{code}:{auth.authorization_number}:{auth.status}"
+                                )
+                        except Exception:
+                            errors.append(f"PREAUTH_REQUIRED:{code}")
                 engine_payer = Decimal(str(benefit_summary.get("payer_total") or 0)).quantize(Decimal("0.01"))
                 if payer_total > 0 and engine_payer >= 0:
                     delta = abs(payer_total - engine_payer)
