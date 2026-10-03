@@ -230,7 +230,7 @@ export function Layout() {
     if (!visibleWorkspaces.some((w) => w.id === workspace) && visibleWorkspaces[0]) {
       setWorkspace(visibleWorkspaces[0].id);
     }
-  }, [allowedWorkspaces, workspace]);
+  }, [allowedWorkspaces, workspace, scope]);
 
 
 
