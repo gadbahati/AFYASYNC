@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_facility_context, require_permission
 from app.context.scoped_reports import build_scoped_operations_summary
-from app.context.service import context_payload, scope_data_summary
+from app.context.service import context_payload, record_scope_selection, scope_data_summary
 from app.database import get_db
 from app.rbac.models import User
 
@@ -38,6 +38,24 @@ def operating_scope_summary(
     return scope_data_summary(db, user=user, token_facility_id=facility_id, scope=scope)
 
 
+@router.post("/scope")
+def set_operating_scope(
+    scope: str = Query(..., description="facility | network | county | national"),
+    previous_scope: str | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+):
+    """Phase 95 — auditable operating-scope change."""
+    return record_scope_selection(
+        db,
+        user=user,
+        facility_id=facility_id,
+        scope=scope,
+        previous_scope=previous_scope,
+    )
+
+
 @router.get("/operations-summary")
 def scoped_operations_summary(
     scope: str = Query(default="facility", description="facility | network | county | national"),
@@ -47,11 +65,7 @@ def scoped_operations_summary(
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
 ):
-    """Phase 91 — multi-facility operational aggregates under authorized scope.
-
-    Requires reports.read. Scope expansion is still constrained by RBAC:
-    ordinary staff get facility/network only; county/national need admin.
-    """
+    """Phase 91 — multi-facility operational aggregates under authorized scope."""
     try:
         return build_scoped_operations_summary(
             db,
