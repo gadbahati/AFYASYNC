@@ -13,6 +13,7 @@ VALID_OPERATING_SCOPES: tuple[str, ...] = ("facility", "network", "county", "nat
 # (method, path, notes)
 SCOPED_READ_ENDPOINTS: list[tuple[str, str, str]] = [
     ("GET", "/api/v1/context", "Overview includes scope summary"),
+    ("GET", "/api/v1/context/scoped-surface", "Machine-readable inventory of scope-aware reads"),
     ("GET", "/api/v1/context/scope-summary", "Facility counts for active scope"),
     ("GET", "/api/v1/context/operations-summary", "Aggregates filtered by resolve_facility_ids"),
     ("POST", "/api/v1/context/scope", "Records scope selection; audits denial"),
