@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_facility_context, require_permission
 from app.context.scoped_reports import build_scoped_operations_summary
+from app.context.scoped_surface import scoped_surface_manifest
 from app.context.service import context_payload, record_scope_selection, scope_data_summary
 from app.database import get_db
 from app.rbac.models import User
@@ -25,6 +26,15 @@ def context_overview(
 ):
     """Authorization profile + allowed workspaces + active data scope."""
     return context_payload(db, user=user, facility_id=facility_id, scope=scope)
+
+
+@router.get("/scoped-surface")
+def scoped_surface(
+    user: User = Depends(get_current_user),
+):
+    """Phase 98 — inventory of scope-aware reads for ops/DHA evidence (auth required)."""
+    _ = user
+    return scoped_surface_manifest()
 
 
 @router.get("/scope-summary")
