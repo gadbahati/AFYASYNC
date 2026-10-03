@@ -203,6 +203,14 @@ const _apiCore: any = {
       body: JSON.stringify({ received_amount: payload.received_amount }),
     }),
   settlementListBatches: () => request("/api/v1/settlements/batches"),
+  settlementListObligations: (params: { claim_id?: string; status?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.claim_id) q.set("claim_id", params.claim_id);
+    if (params.status) q.set("status", params.status);
+    if (params.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request(`/api/v1/settlements/obligations${qs ? `?${qs}` : ""}`);
+  },
   settlementOverview: () => request("/api/v1/settlements/overview"),
   claimPreflight: (invoiceId: string) => request(`/api/v1/claims/invoices/${invoiceId}/preflight`),
   adjudicateClaim: (claimId: string, force = false) =>
