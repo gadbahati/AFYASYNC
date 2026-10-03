@@ -164,7 +164,7 @@ export default function WorkspaceHomePage(){
         setScopeBusy(true);
         setScopeError(null);
         try {
-          await api.setOperatingScope(next,scope);
+          await api.setOperatingScope(next,scope,tenantId);
           setScope(next);
           navigate("/workspace");
         } catch(err:any) {
