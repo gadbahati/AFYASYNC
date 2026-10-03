@@ -1,4 +1,4 @@
-import {FormEvent, useEffect, useState} from "react";
+import {useEffect, useState, type FormEvent} from "react";
 import {api} from "../api/client";
 
 type Tenant={id:string;code:string;name:string;organization_type:string;parent_id?:string|null;facility_count:number;status:string};
