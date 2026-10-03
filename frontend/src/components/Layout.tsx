@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useWorkspace, type ContextScope } from "../workspaces/WorkspaceContext";
 import { WORKSPACES } from "../workspaces/workspaces";
@@ -145,6 +145,8 @@ export function Layout() {
   const { workspace, setWorkspace, scope, setScope } = useWorkspace();
   const activeWorkspace = WORKSPACES.find((item) => item.id === workspace) || WORKSPACES[0];
   const [availableScopes, setAvailableScopes] = useState<ContextScope[]>(["facility"]);
+  const [scopeError, setScopeError] = useState<string | null>(null);
+  const [scopeBusy, setScopeBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -201,15 +203,35 @@ export function Layout() {
           </div>
           <select
             aria-label="Choose operating scope"
+            disabled={scopeBusy}
             value={scope}
-            onChange={(e) => setScope(e.target.value as ContextScope)}
+            onChange={(e) => {
+              const next = e.target.value as ContextScope;
+              const prev = scope;
+              if (next === prev || scopeBusy) return;
+              setScopeBusy(true);
+              setScopeError(null);
+              api
+                .setOperatingScope(next, prev)
+                .then(() => setScope(next))
+                .catch((err: unknown) => {
+                  const msg =
+                    err instanceof ApiError ? err.message || err.code : "SCOPE_NOT_AUTHORIZED";
+                  setScopeError(
+                    String(msg).includes("SCOPE_NOT_AUTHORIZED")
+                      ? "Your role cannot use that operating scope."
+                      : String(msg),
+                  );
+                })
+                .finally(() => setScopeBusy(false));
+            }}
             style={{
               width: "100%",
               padding: "9px 10px",
               borderRadius: 9,
               border: "1px solid #cbd5e1",
               background: "#fff",
-              cursor: "pointer",
+              cursor: scopeBusy ? "wait" : "pointer",
             }}
           >
             {SCOPE_OPTIONS.map((opt) => (
@@ -222,6 +244,11 @@ export function Layout() {
           <p className="muted small" style={{ margin: "8px 0 0" }}>
             Lists and aggregates use this scope. Writes stay on your facility.
           </p>
+          {scopeError && (
+            <div className="error" role="alert" style={{ marginTop: 8, fontSize: 12 }}>
+              {scopeError}
+            </div>
+          )}
         </div>
 
         <div
