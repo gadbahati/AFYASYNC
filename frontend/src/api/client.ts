@@ -304,3 +304,13 @@ const _apiCore: any = {
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
 
 export { request, API_BASE, AUTH_EXPIRED_EVENT };
+
+
+export async function downloadWarehouseCsv(days = 30): Promise<string> {
+  const token = getAccessToken();
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(`${API_BASE}/api/v1/warehouse/export/county-facts.csv?days=${days}`, { headers });
+  if (!res.ok) throw new ApiError(res.status, "WAREHOUSE_EXPORT_FAILED");
+  return res.text();
+}
