@@ -30,6 +30,8 @@ from app.clinical import models as clinical_models
 from app.clinical.router import router as clinical_router
 from app.config import settings
 from app.context.router import router as context_router
+from app.business_continuity.router import router as business_continuity_router
+from app.business_continuity import models as business_continuity_models  # noqa: F401
 from app.tenancy.router import router as tenancy_router
 from app.tenancy import models as tenancy_models  # noqa: F401
 from app.consent import models as consent_models
@@ -304,6 +306,8 @@ _REQUIRED_PROD_TABLES = (
     "organizations",
     "organization_facilities",
     "organization_users",
+    "business_continuity_plans",
+    "business_continuity_events",
     "contract_compliance_guardrail_events",
 )
 
@@ -415,6 +419,7 @@ def initialize_database():
 
 app.include_router(auth_router.router)
 app.include_router(context_router)
+app.include_router(business_continuity_router)
 app.include_router(tenancy_router)
 app.include_router(patient_auth_router)
 app.include_router(patients_router)
