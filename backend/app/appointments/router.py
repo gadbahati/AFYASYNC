@@ -2,13 +2,13 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.appointments.models import Queue, QueueEntry
 from app.appointments.schemas import AppointmentCreate, AppointmentResponse, PatientHandoffCreate, QueueCreate, QueueEntryCreate, QueueEntryResponse, QueueResponse
 from app.appointments.service import add_to_queue, create_appointment, create_queue, handoff_patient, list_appointments, list_queue_entries, list_queues, update_queue_status
 from app.auth.dependencies import get_facility_context, require_permission
+from app.context.service import resolve_facility_ids
 from app.database import get_db
 from app.encounters.models import Encounter
 from app.rbac.models import User
@@ -52,8 +52,15 @@ def create(payload: AppointmentCreate, user: User = Depends(require_permission("
 
 
 @router.get("", response_model=list[AppointmentResponse])
-def list_for_facility(appointment_date: datetime | None = Query(default=None), _: User = Depends(require_permission("appointments.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
-    return list_appointments(db, facility_id, appointment_date)
+def list_for_facility(
+    appointment_date: datetime | None = Query(default=None),
+    scope: str = Query(default="facility", description="facility | network | county | national"),
+    user: User = Depends(require_permission("appointments.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+):
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope=scope)
+    return list_appointments(db, facility_id, appointment_date, facility_ids=facility_ids)
 
 
 @router.post("/queues", response_model=QueueResponse, status_code=status.HTTP_201_CREATED)
@@ -109,11 +116,8 @@ def capacity_slots(
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
 ):
-    """List slot availability for a department day."""
     from datetime import date as date_cls
-
     from app.appointments.capacity_service import list_day_slots
-
     try:
         d = date_cls.fromisoformat(day)
     except ValueError as exc:
@@ -128,9 +132,7 @@ def capacity_pending_fair(
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
 ):
-    """FIFO pending requests with fairness advisory."""
     from app.appointments.capacity_service import list_pending_fair
-
     return list_pending_fair(db, facility_id, limit=limit)
 
 
