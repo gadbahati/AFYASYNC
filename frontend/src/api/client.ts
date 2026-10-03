@@ -101,16 +101,34 @@ async function request<T = any>(path: string, init: RequestInit = {}, retry = tr
 }
 
 const _apiCore: any = {
-  contextOverview: (scope?: string) =>
-    request("/api/v1/context" + (scope ? `?scope=${encodeURIComponent(scope)}` : "")),
-  contextScopeSummary: (scope: string = "facility") =>
-    request(`/api/v1/context/scope-summary?scope=${encodeURIComponent(scope)}`),
-  contextOperationsSummary: (scope: string = "facility", start?: string, end?: string) => {
+  contextOverview: (scope?: string, tenantId?: string | null) => {
+    const q = new URLSearchParams();
+    if (scope) q.set("scope", scope);
+    if (tenantId) q.set("tenant_id", tenantId);
+    const qs = q.toString();
+    return request("/api/v1/context" + (qs ? `?${qs}` : ""));
+  },
+  contextScopeSummary: (scope: string = "facility", tenantId?: string | null) => {
     const q = new URLSearchParams({ scope });
+    if (tenantId) q.set("tenant_id", tenantId);
+    return request(`/api/v1/context/scope-summary?${q.toString()}`);
+  },
+  contextOperationsSummary: (scope: string = "facility", start?: string, end?: string, tenantId?: string | null) => {
+    const q = new URLSearchParams({ scope });
+    if (tenantId) q.set("tenant_id", tenantId);
     if (start) q.set("start_date", start);
     if (end) q.set("end_date", end);
     return request(`/api/v1/context/operations-summary?${q.toString()}`);
   },
+  tenancyOverview: () => request("/api/v1/tenancy"),
+  tenancyCreateOrganization: (payload: any) =>
+    request("/api/v1/tenancy/organizations", { method: "POST", body: JSON.stringify(payload) }),
+  tenancyAttachFacility: (organizationId: string, facilityId: string) =>
+    request(`/api/v1/tenancy/organizations/${organizationId}/facilities/${facilityId}`, { method: "POST" }),
+  tenancyAttachUser: (organizationId: string, userId: string, accessLevel = "MEMBER") =>
+    request(`/api/v1/tenancy/organizations/${organizationId}/users/${userId}?access_level=${encodeURIComponent(accessLevel)}`, { method: "POST" }),
+  tenancySelect: (organizationId: string) =>
+    request(`/api/v1/tenancy/select?organization_id=${encodeURIComponent(organizationId)}`, { method: "POST" }),
   setOperatingScope: (scope: string, previous_scope?: string) => {
     const q = new URLSearchParams({ scope });
     if (previous_scope) q.set("previous_scope", previous_scope);
