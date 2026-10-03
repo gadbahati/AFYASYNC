@@ -1,6 +1,52 @@
 from datetime import datetime,timedelta,timezone
 from uuid import UUID
 from sqlalchemy import select
+
+from datetime import datetime,timezone
+from uuid import UUID
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from app.audit.service import record_audit
+from app.financial_intelligence.work_queue import CollectionWorkItem
+from app.financial_intelligence.revenue_workflow_service import automate_revenue_actions
+
+LEVELS=["LOW","MEDIUM","HIGH","CRITICAL"]
+
+def _next_priority(value:str):
+    try:i=LEVELS.index(value)
+    except ValueError:i=0
+    return LEVELS[min(i+1,len(LEVELS)-1)]
+
+def orchestrate_revenue_workflow(db:Session,facility_id:UUID,actor_id:UUID,limit:int=50):
+    sync=automate_revenue_actions(db,facility_id,actor_id,limit)
+    now=datetime.now(timezone.utc)
+    overdue=list(db.scalars(select(CollectionWorkItem).where(
+        CollectionWorkItem.facility_id==facility_id,
+        CollectionWorkItem.status.in_(["OPEN","IN_PROGRESS","SNOOZED"]),
+        CollectionWorkItem.due_at.is_not(None),
+        CollectionWorkItem.due_at<now,
+    )).all())
+    escalated=0
+    assigned=0
+    for item in overdue:
+        old_priority=item.priority
+        item.priority=_next_priority(item.priority)
+        if item.status=="OPEN":
+            item.status="IN_PROGRESS"
+        if item.assigned_to is None:
+            item.assigned_to=actor_id
+            assigned+=1
+        item.note=(item.note or "")+f" Overdue orchestration escalation at {now.isoformat()}."
+        escalated+=1
+    db.flush()
+    record_audit(db,actor_id,"ORCHESTRATE_REVENUE_WORKFLOW","collection_work_items",str(facility_id),{
+        "sync_created":sync["created"],"sync_updated":sync["updated"],
+        "overdue_escalated":escalated,"auto_assigned":assigned
+    })
+    db.commit()
+    return {"sync":sync,"overdue_escalated":escalated,"auto_assigned":assigned,
+            "note":"Workflow orchestration refreshes prioritized actions and escalates overdue active work without creating duplicate records."}
+
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.financial_intelligence.revenue_action_priorities import revenue_action_priorities
