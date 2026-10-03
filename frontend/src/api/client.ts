@@ -172,6 +172,21 @@ const _apiCore: any = {
     request(`/api/v1/claims?limit=${limit}&scope=${encodeURIComponent(scope)}`),
   getPatient: (id: string) => request(`/api/v1/patients/${id}`),
   createPatient: (payload: any) => request("/api/v1/patients", { method: "POST", body: JSON.stringify(payload) }),
+  benefitQuote: (payload: any) =>
+    request("/api/v1/benefit-engine/quote", { method: "POST", body: JSON.stringify(payload) }),
+  benefitQuoteBatch: (payload: any) =>
+    request("/api/v1/benefit-engine/quote-batch", { method: "POST", body: JSON.stringify(payload) }),
+  benefitRules: (params: { payer_id?: string; payer_plan_id?: string; status?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (params.payer_id) q.set("payer_id", params.payer_id);
+    if (params.payer_plan_id) q.set("payer_plan_id", params.payer_plan_id);
+    if (params.status) q.set("status", params.status);
+    const qs = q.toString();
+    return request(`/api/v1/benefit-engine/rules${qs ? `?${qs}` : ""}`);
+  },
+  createBenefitRule: (payload: any) =>
+    request("/api/v1/benefit-engine/rules", { method: "POST", body: JSON.stringify(payload) }),
+  listBenefitPackages: () => request("/api/v1/benefits/packages"),
   me: () => request("/api/v1/auth/me"),
   logout: (refresh_token?: string) =>
     request("/api/v1/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token }) }, false),
