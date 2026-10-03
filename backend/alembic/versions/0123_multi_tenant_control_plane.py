@@ -125,6 +125,18 @@ def upgrade():
         ON CONFLICT (organization_id, user_id) DO NOTHING
     """))
 
+    # The national platform tenant spans every active facility. Access to it
+    # is still restricted to explicit platform administrators.
+    bind.execute(sa.text("""
+        INSERT INTO organization_facilities (organization_id, facility_id, status, created_at)
+        SELECT o.id, f.id, 'ACTIVE', now()
+        FROM organizations o
+        CROSS JOIN facilities f
+        WHERE o.code = 'PLATFORM:NATIONAL'
+          AND f.status = 'ACTIVE'
+        ON CONFLICT (organization_id, facility_id) DO NOTHING
+    """))
+
     # Dedicated tenant administration capability. System Administrators remain
     # privileged even if a deployment has not yet assigned this permission.
     bind.execute(sa.text("""
