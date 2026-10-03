@@ -34,7 +34,6 @@ from app.facilities.models import Facility
 from app.patients.models import PatientFacility
 from app.rbac.models import Permission, Role, RolePermission, Staff, StaffRole, User
 from app.tenancy.service import organization_facility_ids
-from app.tenancy.service import organization_facility_ids
 
 VALID_SCOPES = ("facility", "network", "county", "national")
 
@@ -151,14 +150,6 @@ def resolve_facility_ids(
     scope = (scope or "facility").strip().lower()
     if scope not in VALID_SCOPES:
         raise HTTPException(status_code=400, detail="INVALID_OPERATING_SCOPE")
-
-    tenant_facilities: list[UUID] | None = None
-    if tenant_id is not None:
-        tenant_facilities = organization_facility_ids(db, user=user, organization_id=tenant_id)
-        if token_facility_id not in tenant_facilities:
-            raise HTTPException(status_code=403, detail="TENANT_CONTEXT_DOES_NOT_INCLUDE_FACILITY")
-        if not tenant_facilities:
-            raise HTTPException(status_code=403, detail="TENANT_HAS_NO_ACTIVE_FACILITIES")
 
     tenant_facilities: list[UUID] | None = None
     if tenant_id is not None:
@@ -359,6 +350,7 @@ def record_scope_selection(
     facility_id: UUID,
     scope: str,
     previous_scope: str | None = None,
+    tenant_id: UUID | None = None,
 ) -> dict:
     """Explicit, auditable operating-scope change (Phase 95)."""
     scope = (scope or "facility").strip().lower()
@@ -395,7 +387,7 @@ def record_scope_selection(
         )
 
     facility_ids = resolve_facility_ids(
-        db, user=user, token_facility_id=facility_id, scope=scope
+        db, user=user, token_facility_id=facility_id, scope=scope, tenant_id=tenant_id
     )
     try:
         record_audit(
@@ -409,6 +401,7 @@ def record_scope_selection(
             metadata={
                 "scope": scope,
                 "previous_scope": previous_scope,
+                "tenant_id": str(tenant_id) if tenant_id else None,
                 "resolved_facility_count": len(facility_ids),
             },
             commit=True,
@@ -419,6 +412,7 @@ def record_scope_selection(
     return {
         "scope": scope,
         "previous_scope": previous_scope,
+        "tenant_id": str(tenant_id) if tenant_id else None,
         "available_scopes": scopes,
         "resolved_facility_count": len(facility_ids),
         "message": f"Operating scope set to {scope}.",
