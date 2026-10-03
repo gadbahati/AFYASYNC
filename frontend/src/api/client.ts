@@ -35,12 +35,26 @@ async function tryRefresh(): Promise<boolean> {
   const refresh = getRefreshToken();
   if (!refresh) return false;
   try {
-    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: refresh }) });
-    if (!res.ok) { notifyAuthExpired(); return false; }
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) {
+      notifyAuthExpired();
+      return false;
+    }
     const data = (await res.json()) as TokenResponse;
-    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, account_type: getAccountType() });
+    setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      account_type: getAccountType(),
+    });
     return true;
-  } catch { notifyAuthExpired(); return false; }
+  } catch {
+    notifyAuthExpired();
+    return false;
+  }
 }
 
 async function request<T = any>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
@@ -50,17 +64,32 @@ async function request<T = any>(path: string, init: RequestInit = {}, retry = tr
   const token = getAccessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
-  try { res = await fetch(`${API_BASE}${path}`, { ...init, headers }); }
-  catch { throw new ApiError(0, "API_UNREACHABLE"); }
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  } catch {
+    throw new ApiError(0, "API_UNREACHABLE");
+  }
   if (res.status === 401 && retry) {
-    if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null; });
+    if (!refreshPromise) refreshPromise = tryRefresh().finally(() => {
+      refreshPromise = null;
+    });
     if (await refreshPromise) return request<T>(path, init, false);
   }
   if (!res.ok) {
     let body: ApiErrorBody | null = null;
-    try { body = (await res.json()) as ApiErrorBody; } catch {}
+    try {
+      body = (await res.json()) as ApiErrorBody;
+    } catch {}
     const parsed = parseError(body, res.status);
-    if (res.status === 401 && !path.includes("/auth/login") && !path.includes("/auth/patient") && !path.includes("/auth/refresh") && !path.includes("/auth/logout")) notifyAuthExpired();
+    if (
+      res.status === 401 &&
+      !path.includes("/auth/login") &&
+      !path.includes("/auth/patient") &&
+      !path.includes("/auth/refresh") &&
+      !path.includes("/auth/logout")
+    ) {
+      notifyAuthExpired();
+    }
     throw new ApiError(res.status, parsed.code, parsed.message);
   }
   if (res.status === 204) return undefined as T;
@@ -68,9 +97,18 @@ async function request<T = any>(path: string, init: RequestInit = {}, retry = tr
 }
 
 const _apiCore: any = {
-  contextOverview: (scope?: string) => request("/api/v1/context" + (scope ? `?scope=${encodeURIComponent(scope)}` : "")),
-  contextScopeSummary: (scope: string = "facility") => request(`/api/v1/context/scope-summary?scope=${encodeURIComponent(scope)}`),
-  login: (username: string, password: string) => request("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
+  contextOverview: (scope?: string) =>
+    request("/api/v1/context" + (scope ? `?scope=${encodeURIComponent(scope)}` : "")),
+  contextScopeSummary: (scope: string = "facility") =>
+    request(`/api/v1/context/scope-summary?scope=${encodeURIComponent(scope)}`),
+  contextOperationsSummary: (scope: string = "facility", start?: string, end?: string) => {
+    const q = new URLSearchParams({ scope });
+    if (start) q.set("start_date", start);
+    if (end) q.set("end_date", end);
+    return request(`/api/v1/context/operations-summary?${q.toString()}`);
+  },
+  login: (username: string, password: string) =>
+    request("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
   patientLogin: (identifier: string, password: string) =>
     request("/api/v1/auth/patient/login", { method: "POST", body: JSON.stringify({ identifier, password }) }, false),
   patientRegister: (payload: {
@@ -85,13 +123,25 @@ const _apiCore: any = {
     request("/api/v1/auth/patient/password-reset/request", { method: "POST", body: JSON.stringify({ identifier, channel }) }, false),
   patientPasswordResetConfirm: (identifier: string, code: string, new_password: string) =>
     request("/api/v1/auth/patient/password-reset/confirm", { method: "POST", body: JSON.stringify({ identifier, code, new_password }) }, false),
-  selectFacility: (facility_id: string) => request("/api/v1/auth/select-facility", { method: "POST", body: JSON.stringify({ facility_id }) }, false),
+  selectFacility: (facility_id: string) =>
+    request("/api/v1/auth/select-facility", { method: "POST", body: JSON.stringify({ facility_id }) }, false),
   facilities: () => request("/api/v1/auth/facilities"),
-  facilityDirectory: (search = "", page = 1, pageSize = 30) => request(`/api/v1/facilities/directory?search=${encodeURIComponent(search.trim())}&page=${page}&page_size=${pageSize}`),
-  facilityReport: () => request("/api/v1/reports/facility"),
+  facilityDirectory: (search = "", page = 1, pageSize = 30) =>
+    request(
+      `/api/v1/facilities/directory?search=${encodeURIComponent(search.trim())}&page=${page}&page_size=${pageSize}`,
+    ),
+  facilityReport: (start?: string, end?: string) =>
+    request(
+      `/api/v1/reports/facility${start || end ? `?start_date=${start || ""}&end_date=${end || ""}` : ""}`,
+    ),
   listReferrals: (role = "source") => request(`/api/v1/referrals?role=${encodeURIComponent(role)}`),
   listTransfers: (role = "source") => request(`/api/v1/transfers?role=${encodeURIComponent(role)}`),
-  logout: () => request("/api/v1/auth/logout", { method: "POST" }),
+  listPatients: (limit = 50, offset = 0) => request(`/api/v1/patients?limit=${limit}&offset=${offset}`),
+  getPatient: (id: string) => request(`/api/v1/patients/${id}`),
+  createPatient: (payload: any) => request("/api/v1/patients", { method: "POST", body: JSON.stringify(payload) }),
+  me: () => request("/api/v1/auth/me"),
+  logout: (refresh_token?: string) =>
+    request("/api/v1/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token }) }, false),
 };
 
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
