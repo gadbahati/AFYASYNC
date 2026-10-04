@@ -25,6 +25,12 @@ export function EntryPage() {
                 Clinicians, administrators and facility teams. Requires facility workspace.
               </p>
             </Link>
+            <Link to="/login/government" className="portal-tile">
+              <strong>Government</strong>
+              <p className="muted small">
+                County and national health administration. Requires explicit government authorization.
+              </p>
+            </Link>
             <Link to="/login/patient" className="portal-tile">
               <strong>Patient</strong>
               <p className="muted small">
