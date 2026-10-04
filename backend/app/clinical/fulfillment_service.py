@@ -1,4 +1,4 @@
-"""Phase 133/146/147 — fulfill clinical orders + structured report fields.
+"""Phase 133/146/147/151 — fulfill clinical orders + structured report fields.
 
 Developed by BAHATI GAD WANGWE.
 """
@@ -15,15 +15,28 @@ from app.clinical.order_service import OrderError, STATUSES
 def _format_result_block(
     *,
     result_notes: str | None,
-    modality: str | None,
-    impression: str | None,
+    modality: str | None = None,
+    impression: str | None = None,
+    lab_value: str | None = None,
+    lab_units: str | None = None,
+    lab_flag: str | None = None,
 ) -> str | None:
-    """Phase 147 — combine free text + structured radiology fields."""
+    """Combine free text + structured radiology/lab fields."""
     parts: list[str] = []
     if modality and str(modality).strip():
         parts.append(f"Modality: {str(modality).strip()[:80]}")
     if impression and str(impression).strip():
         parts.append(f"Impression: {str(impression).strip()[:4000]}")
+    if lab_value is not None and str(lab_value).strip() != "":
+        val = str(lab_value).strip()[:200]
+        units = str(lab_units).strip()[:40] if lab_units else ""
+        flag = str(lab_flag).strip()[:20] if lab_flag else ""
+        line = f"Result: {val}"
+        if units:
+            line += f" {units}"
+        if flag:
+            line += f" ({flag})"
+        parts.append(line)
     if result_notes and str(result_notes).strip():
         parts.append(str(result_notes).strip()[:2000])
     if not parts:
@@ -39,7 +52,6 @@ def _append_encounter_note(
     status: str,
     result_notes: str,
 ) -> None:
-    """Surface fulfillment on the encounter clinical record."""
     try:
         from app.clinical.models import ClinicalNote
     except Exception:
@@ -90,8 +102,11 @@ def fulfill_order(
     result_notes: str | None = None,
     modality: str | None = None,
     impression: str | None = None,
+    lab_value: str | None = None,
+    lab_units: str | None = None,
+    lab_flag: str | None = None,
 ) -> ClinicalOrder:
-    """Mark order IN_PROGRESS / COMPLETED / CANCELLED with optional structured results."""
+    """Mark order complete with optional structured imaging/lab results."""
     status = (status or "COMPLETED").strip().upper()
     if status not in STATUSES:
         raise OrderError("INVALID_STATUS")
@@ -112,6 +127,9 @@ def fulfill_order(
         result_notes=result_notes,
         modality=modality,
         impression=impression,
+        lab_value=lab_value,
+        lab_units=lab_units,
+        lab_flag=lab_flag,
     )
 
     row.status = status
@@ -135,6 +153,8 @@ def fulfill_order(
             "has_result": bool(notes_text),
             "modality": (modality or "")[:80] or None,
             "has_impression": bool(impression and str(impression).strip()),
+            "has_lab_value": bool(lab_value and str(lab_value).strip()),
+            "lab_flag": (lab_flag or "")[:20] or None,
             "encounter_note": bool(notes_text and status == "COMPLETED"),
         },
         commit=False,

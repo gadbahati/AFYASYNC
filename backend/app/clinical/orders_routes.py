@@ -1,6 +1,6 @@
 """Clinical orders routes — list/create/status/fulfill/forward.
 
-Phase 147 passes modality/impression into fulfill.
+Phase 151: lab_value / lab_units / lab_flag on fulfill.
 Developed by BAHATI GAD WANGWE.
 """
 from uuid import UUID
@@ -112,7 +112,7 @@ def post_fulfill_order(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission("clinical.note.write")),
 ):
-    """Phase 147 — accepts modality + impression for imaging reports."""
+    """Accepts imaging modality/impression and lab value/units/flag."""
     try:
         row = fulfill_order(
             db,
@@ -123,6 +123,9 @@ def post_fulfill_order(
             result_notes=payload.get("result_notes"),
             modality=payload.get("modality"),
             impression=payload.get("impression"),
+            lab_value=payload.get("lab_value"),
+            lab_units=payload.get("lab_units"),
+            lab_flag=payload.get("lab_flag"),
         )
     except OrderError as exc:
         raise _http(exc) from exc
