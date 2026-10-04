@@ -273,7 +273,8 @@ def facility_activation_readiness(db: Session, facility_id: UUID) -> dict[str, o
     facility = db.get(Facility, facility_id)
     if facility is None:
         raise ValueError("FACILITY_NOT_FOUND")
-    departments = list(db.scalars(select(Department).where(Department.facility_id == facility_id)))
+    department_result = db.scalars(select(Department).where(Department.facility_id == facility_id))
+    departments = list(department_result.all() if hasattr(department_result, "all") else department_result)
     checks = {
         "identity": bool(facility.name.strip() and facility.facility_type.strip()),
         "geography": bool((facility.county or "").strip() and (facility.sub_county or "").strip()),
