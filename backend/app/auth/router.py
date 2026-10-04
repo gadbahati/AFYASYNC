@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import get_current_user, get_token_payload
 from app.auth.rate_limit import enforce_auth_rate_limit
-from app.auth.schemas import FacilityOption, FacilitySelectionRequest, FacilitySelectionRequired, GovernmentOrganizationOption, GovernmentSelectionRequired, LoginRequest, RefreshTokenRequest, TokenResponse
+from app.auth.schemas import FacilityOption, FacilitySelectionRequest, FacilitySelectionRequired, GovernmentOrganizationOption, GovernmentSelectionRequired, LoginRequest, RefreshTokenRequest, TokenResponse, MFARequired, MFASetupRequired, MFASetupResponse, MFASetupConfirmRequest
 from app.auth.service import authenticate_user, issue_access_token, issue_refresh_token, revoke_refresh_token, rotate_tokens_from_refresh
 from app.config import settings
+from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
 from app.database import get_db
 from app.facilities.models import Facility
 from app.rbac.models import Role, Staff, StaffRole, User
@@ -82,7 +84,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     return FacilitySelectionRequired(access_token=issue_access_token(user, None), facilities=options)
 
 
-@router.post("/government/login", response_model=TokenResponse | GovernmentSelectionRequired)
+@router.post("/government/login", response_model=TokenResponse | GovernmentSelectionRequired | MFARequired | MFASetupRequired)
 def government_login(payload: LoginRequest, request: Request, db: Session = Depends(get_db), _: None = Depends(enforce_auth_rate_limit)):
     result = authenticate_user(db, payload.username, payload.password)
     if result is None:
@@ -98,6 +100,14 @@ def government_login(payload: LoginRequest, request: Request, db: Session = Depe
     if not rows:
         record_audit(db, action="GOV_AUTH_LOGIN", resource_type="USER", result="NO_GOVERNMENT_ACCESS", user_id=user.id, ip_address=_client_ip(request))
         raise HTTPException(status_code=403, detail="NO_GOVERNMENT_ACCESS")
+    if user.mfa_required:
+        if not user.mfa_enabled or not user.mfa_secret_encrypted:
+            return MFASetupRequired(access_token=issue_access_token(user, None, portal_type="government_setup"))
+        challenge = MFAChallenge(user_id=user.id, portal_type="government", expires_at=datetime.now(timezone.utc) + timedelta(minutes=5))
+        db.add(challenge)
+        db.commit()
+        return MFARequired(challenge_id=challenge.id, expires_in=300)
+
     if len(rows) == 1:
         access, org = rows[0]
         record_audit(db, action="GOV_AUTH_LOGIN", resource_type="ORGANIZATION", resource_id=str(org.id), result="SUCCESS", user_id=user.id, ip_address=_client_ip(request), metadata={"scope_level": access.scope_level, "role_code": access.role_code})
@@ -106,6 +116,64 @@ def government_login(payload: LoginRequest, request: Request, db: Session = Depe
         access_token=issue_access_token(user, None, portal_type="government"),
         organizations=[GovernmentOrganizationOption(organization_id=org.id, organization_name=org.name, organization_type=org.organization_type, scope_level=access.scope_level, role_code=access.role_code) for access, org in rows],
     )
+
+
+
+@router.post("/government/mfa/setup", response_model=MFASetupResponse)
+def government_mfa_setup(user: User = Depends(get_current_user), payload: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+    if payload.get("portal_type") != "government_setup":
+        raise HTTPException(status_code=403, detail="GOVERNMENT_MFA_SETUP_TOKEN_REQUIRED")
+    secret = generate_secret()
+    user.mfa_secret_encrypted = encrypted_secret(secret)
+    user.mfa_enabled = False
+    user.mfa_required = True
+    db.commit()
+    record_audit(db, action="GOV_MFA_SECRET_GENERATED", resource_type="USER", result="SUCCESS", user_id=user.id)
+    return MFASetupResponse(enabled=False, secret=secret, otpauth_uri=otpauth_uri(secret, user.username))
+
+
+@router.post("/government/mfa/confirm-setup", response_model=TokenResponse | GovernmentSelectionRequired)
+def government_mfa_confirm_setup(payload_in: MFASetupConfirmRequest, user: User = Depends(get_current_user), payload: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+    if payload.get("portal_type") != "government_setup" or not user.mfa_secret_encrypted:
+        raise HTTPException(status_code=403, detail="GOVERNMENT_MFA_SETUP_REQUIRED")
+    if not verify_totp(decrypted_secret(user.mfa_secret_encrypted), payload_in.code):
+        raise HTTPException(status_code=401, detail="INVALID_MFA_CODE")
+    now = datetime.now(timezone.utc)
+    user.mfa_enabled = True
+    user.mfa_required = True
+    user.mfa_enrolled_at = now
+    user.mfa_last_verified_at = now
+    db.commit()
+    rows = list(db.execute(select(GovernmentAccess, Organization).join(Organization, Organization.id == GovernmentAccess.organization_id).where(GovernmentAccess.user_id == user.id, GovernmentAccess.status == "ACTIVE", Organization.status == "ACTIVE", Organization.organization_type.in_(["COUNTY_GOVERNMENT", "NATIONAL_GOVERNMENT"]))).all())
+    if len(rows) == 1:
+        access, org = rows[0]
+        return _token_response(db, user, None, portal_type="government", organization_id=org.id)
+    return GovernmentSelectionRequired(access_token=issue_access_token(user, None, portal_type="government"), organizations=[GovernmentOrganizationOption(organization_id=org.id, organization_name=org.name, organization_type=org.organization_type, scope_level=access.scope_level, role_code=access.role_code) for access, org in rows])
+
+
+@router.post("/government/mfa/verify", response_model=TokenResponse | GovernmentSelectionRequired)
+def government_mfa_verify(challenge_id: UUID, code: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    challenge = db.get(MFAChallenge, challenge_id)
+    now = datetime.now(timezone.utc)
+    if challenge is None or challenge.user_id != user.id or challenge.status != "PENDING" or challenge.expires_at <= now:
+        raise HTTPException(status_code=401, detail="MFA_CHALLENGE_EXPIRED")
+    if challenge.attempts >= 5:
+        challenge.status = "LOCKED"
+        db.commit()
+        raise HTTPException(status_code=429, detail="MFA_CHALLENGE_LOCKED")
+    challenge.attempts += 1
+    if not user.mfa_secret_encrypted or not verify_totp(decrypted_secret(user.mfa_secret_encrypted), code):
+        db.commit()
+        raise HTTPException(status_code=401, detail="INVALID_MFA_CODE")
+    challenge.status = "CONSUMED"
+    challenge.consumed_at = now
+    user.mfa_last_verified_at = now
+    db.commit()
+    rows = list(db.execute(select(GovernmentAccess, Organization).join(Organization, Organization.id == GovernmentAccess.organization_id).where(GovernmentAccess.user_id == user.id, GovernmentAccess.status == "ACTIVE", Organization.status == "ACTIVE", Organization.organization_type.in_(["COUNTY_GOVERNMENT", "NATIONAL_GOVERNMENT"]))).all())
+    if len(rows) == 1:
+        access, org = rows[0]
+        return _token_response(db, user, None, portal_type="government", organization_id=org.id)
+    return GovernmentSelectionRequired(access_token=issue_access_token(user, None, portal_type="government"), organizations=[GovernmentOrganizationOption(organization_id=org.id, organization_name=org.name, organization_type=org.organization_type, scope_level=access.scope_level, role_code=access.role_code) for access, org in rows])
 
 
 @router.get("/government/organizations", response_model=list[GovernmentOrganizationOption])
@@ -120,8 +188,10 @@ def government_organizations(user: User = Depends(get_current_user), db: Session
 
 
 @router.post("/government/select-organization", response_model=TokenResponse)
-def select_government_organization(organization_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def select_government_organization(organization_id: str, user: User = Depends(get_current_user), payload: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
     from uuid import UUID
+    if payload.get("portal_type") != "government" or not user.mfa_enabled:
+        raise HTTPException(status_code=403, detail="GOVERNMENT_MFA_REQUIRED")
     try:
         org_id = UUID(organization_id)
     except (ValueError, TypeError):
