@@ -88,6 +88,20 @@ export default function TenancyPage(){
       </div>
     </div>
 
+    {admin&&<div className="card" style={{marginBottom:18}}>
+      <h2>Government Portal access</h2>
+      <p className="muted">Grant a user explicit County or National Government Portal authority. This does not grant facility access.</p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>
+        <input value={govUserId} onChange={e=>setGovUserId(e.target.value)} placeholder="Target user UUID" />
+        <input value={govRole} onChange={e=>setGovRole(e.target.value)} placeholder="Role code" />
+        <select value={govScope} onChange={e=>setGovScope(e.target.value)}>
+          <option value="COUNTY">COUNTY</option>
+          <option value="NATIONAL">NATIONAL</option>
+        </select>
+        <button type="button" onClick={grantGovernment} disabled={!selected}>Grant Government Access</button>
+      </div>
+    </div>}
+
     <div className="card">
       <h2>Authorized organizations</h2>
       <div className="table-wrap">
