@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node scripts/assemble-client.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/assemble-client.mjs",
+    "prebuild": "node scripts/assemble-client.mjs && node scripts/verify-routes.mjs",
     "build": "tsc -b --force && vite build",
     "start": "node serve.mjs",
     "preview": "vite preview",
