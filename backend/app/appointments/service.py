@@ -9,14 +9,23 @@ from app.encounters.models import Encounter
 from app.encounters.service import create_encounter
 from app.facilities.models import Department, Facility
 from app.notifications.events import notify_patient_event
-from app.patients.models import Person
+from app.patients.models import PatientFacility, Person
 from app.rbac.models import Staff
+from app.audit.service import record_audit
 
 
-def _require_patient(db: Session, patient_id: UUID) -> Person:
+def _require_patient(db: Session, patient_id: UUID, facility_id: UUID | None = None) -> Person:
     patient = db.get(Person, patient_id)
     if patient is None or patient.status != "ACTIVE":
         raise ValueError("PATIENT_NOT_FOUND")
+    if facility_id is not None:
+        enrolled = db.scalar(select(PatientFacility.id).where(
+            PatientFacility.patient_id == patient_id,
+            PatientFacility.facility_id == facility_id,
+            PatientFacility.status == "ACTIVE",
+        ))
+        if enrolled is None:
+            raise ValueError("PATIENT_NOT_IN_FACILITY")
     return patient
 
 
@@ -38,12 +47,9 @@ def _require_provider(db: Session, provider_id: UUID | None, facility_id: UUID) 
 
 
 def create_appointment(db: Session, data: dict, actor_user_id: UUID | None = None) -> Appointment:
-    from app.appointments.capacity_service import (
-        assert_capacity_for_slot,
-        assert_patient_not_double_booked,
-    )
+    from app.appointments.capacity_service import assert_capacity_for_slot, assert_patient_not_double_booked
 
-    _require_patient(db, data["patient_id"])
+    _require_patient(db, data["patient_id"], data["facility_id"])
     _require_facility_department(db, data["facility_id"], data["department_id"])
     _require_provider(db, data.get("provider_id"), data["facility_id"])
 
@@ -52,45 +58,59 @@ def create_appointment(db: Session, data: dict, actor_user_id: UUID | None = Non
         appointment_at = appointment_at.replace(tzinfo=timezone.utc)
         data = {**data, "appointment_at": appointment_at}
 
-    assert_capacity_for_slot(
-        db,
-        facility_id=data["facility_id"],
-        department_id=data["department_id"],
-        appointment_at=appointment_at,
-    )
-    assert_patient_not_double_booked(
-        db,
-        patient_id=data["patient_id"],
-        facility_id=data["facility_id"],
-        department_id=data["department_id"],
-        appointment_at=appointment_at,
-    )
+    assert_capacity_for_slot(db, facility_id=data["facility_id"], department_id=data["department_id"], appointment_at=appointment_at)
+    assert_patient_not_double_booked(db, patient_id=data["patient_id"], facility_id=data["facility_id"], department_id=data["department_id"], appointment_at=appointment_at)
 
     appointment = Appointment(**data)
     db.add(appointment)
     db.flush()
     notify_patient_event(
-        db,
-        patient_id=appointment.patient_id,
-        facility_id=appointment.facility_id,
-        event_type="APPOINTMENT_CONFIRMED",
-        action_url=f"/appointments/{appointment.id}",
-        metadata={"appointment_id": str(appointment.id)},
-        actor_user_id=actor_user_id,
-        commit=False,
+        db, patient_id=appointment.patient_id, facility_id=appointment.facility_id,
+        event_type="APPOINTMENT_CONFIRMED", action_url=f"/appointments/{appointment.id}",
+        metadata={"appointment_id": str(appointment.id)}, actor_user_id=actor_user_id, commit=False,
     )
     db.commit()
     db.refresh(appointment)
     return appointment
 
 
-def list_appointments(
-    db: Session,
-    facility_id: UUID,
-    appointment_date: datetime | None = None,
-    *,
-    facility_ids: list[UUID] | None = None,
-) -> list[Appointment]:
+def update_appointment_status(db: Session, appointment_id: UUID, new_status: str, *, actor_user_id: UUID | None = None, facility_id: UUID | None = None) -> Appointment:
+    appointment = db.get(Appointment, appointment_id)
+    if appointment is None:
+        raise ValueError("APPOINTMENT_NOT_FOUND")
+    if facility_id is not None and appointment.facility_id != facility_id:
+        raise ValueError("FACILITY_ACCESS_DENIED")
+    allowed = {
+        "SCHEDULED": {"CONFIRMED", "CANCELLED", "NO_SHOW"},
+        "CONFIRMED": {"CANCELLED", "CHECKED_IN", "NO_SHOW"},
+        "CHECKED_IN": {"COMPLETED", "CANCELLED"},
+        "NO_SHOW": {"SCHEDULED"},
+        "COMPLETED": set(),
+        "CANCELLED": set(),
+    }
+    status = new_status.upper()
+    if status not in allowed.get(appointment.status, set()):
+        raise ValueError("INVALID_APPOINTMENT_TRANSITION")
+    previous = appointment.status
+    appointment.status = status
+    record_audit(
+        db, action="APPOINTMENT_STATUS_CHANGED", resource_type="APPOINTMENT",
+        resource_id=str(appointment.id), result="SUCCESS", user_id=actor_user_id,
+        facility_id=appointment.facility_id, patient_id=appointment.patient_id,
+        metadata={"previous_status": previous, "new_status": status}, commit=False,
+    )
+    notify_patient_event(
+        db, patient_id=appointment.patient_id, facility_id=appointment.facility_id,
+        event_type="APPOINTMENT_STATUS_CHANGED", action_url=f"/appointments/{appointment.id}",
+        metadata={"appointment_id": str(appointment.id), "status": status},
+        actor_user_id=actor_user_id, commit=False,
+    )
+    db.commit()
+    db.refresh(appointment)
+    return appointment
+
+
+def list_appointments(db: Session, facility_id: UUID, appointment_date: datetime | None = None, *, facility_ids: list[UUID] | None = None) -> list[Appointment]:
     scope_ids = facility_ids if facility_ids else [facility_id]
     stmt = select(Appointment).where(Appointment.facility_id.in_(scope_ids))
     if appointment_date:
@@ -121,10 +141,11 @@ def list_queue_entries(db: Session, facility_id: UUID, queue_id: UUID | None = N
 
 
 def add_to_queue(db: Session, data: dict, created_by: UUID, actor_user_id: UUID | None = None) -> QueueEntry:
-    _require_patient(db, data["patient_id"])
+    _require_patient(db, data["patient_id"], db.scalar(select(Queue.facility_id).join(QueueEntry, QueueEntry.queue_id == Queue.id).where(QueueEntry.id == data["queue_id"])) if False else None)
     queue = db.get(Queue, data["queue_id"])
     if queue is None or queue.status != "ACTIVE":
         raise ValueError("QUEUE_NOT_FOUND")
+    _require_patient(db, data["patient_id"], queue.facility_id)
     if data.get("appointment_id"):
         appointment = db.get(Appointment, data["appointment_id"])
         if appointment is None or appointment.facility_id != queue.facility_id or appointment.patient_id != data["patient_id"]:
@@ -153,6 +174,7 @@ def handoff_patient(db: Session, data: dict, actor_user_id: UUID | None = None) 
         raise ValueError("ENCOUNTER_NOT_FOUND")
     if encounter.status != "OPEN":
         raise ValueError("ENCOUNTER_CLOSED")
+    _require_patient(db, patient_id, encounter.facility_id)
     _require_facility_department(db, encounter.facility_id, destination_department_id)
     queue = db.scalar(select(Queue).where(Queue.facility_id == encounter.facility_id, Queue.department_id == destination_department_id, Queue.status == "ACTIVE").order_by(Queue.created_at).limit(1))
     if queue is None:
