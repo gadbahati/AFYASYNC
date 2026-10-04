@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.appointments.models import Queue, QueueEntry
 from app.appointments.schemas import AppointmentCreate, AppointmentResponse, PatientHandoffCreate, QueueCreate, QueueEntryCreate, QueueEntryResponse, QueueResponse
-from app.appointments.service import add_to_queue, create_appointment, create_queue, handoff_patient, list_appointments, list_queue_entries, list_queues, update_queue_status
+from app.appointments.service import add_to_queue, create_appointment, create_queue, handoff_patient, list_appointments, list_queue_entries, list_queues, update_appointment_status, update_queue_status
 from app.auth.dependencies import get_facility_context, require_permission
 from app.context.service import resolve_facility_ids
 from app.database import get_db
@@ -35,6 +35,10 @@ def _error(exc: ValueError) -> HTTPException:
         "DEPARTMENT_DAY_FULL": 409,
         "SLOT_UNAVAILABLE": 409,
         "PATIENT_ALREADY_BOOKED_THAT_DAY": 409,
+        "PATIENT_NOT_IN_FACILITY": 403,
+        "APPOINTMENT_NOT_FOUND": 404,
+        "FACILITY_ACCESS_DENIED": 403,
+        "INVALID_APPOINTMENT_TRANSITION": 409,
         "FACILITY_PENDING_QUEUE_FULL": 409,
         "DEPARTMENT_PENDING_QUEUE_FULL": 409,
         "INVALID_MAX_PER_DAY": 400,
@@ -49,6 +53,14 @@ def create(payload: AppointmentCreate, user: User = Depends(require_permission("
     data = payload.model_dump(); data["facility_id"] = facility_id
     try: return create_appointment(db, data, actor_user_id=user.id)
     except ValueError as err: raise _error(err) from err
+
+
+@router.patch("/{appointment_id}/{new_status}", response_model=AppointmentResponse)
+def change_appointment_status(appointment_id: UUID, new_status: str, user: User = Depends(require_permission("appointments.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    try:
+        return update_appointment_status(db, appointment_id, new_status, actor_user_id=user.id, facility_id=facility_id)
+    except ValueError as err:
+        raise _error(err) from err
 
 
 @router.get("", response_model=list[AppointmentResponse])
