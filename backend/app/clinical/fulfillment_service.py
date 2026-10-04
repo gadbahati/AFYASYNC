@@ -1,4 +1,4 @@
-"""Phase 133/146 — fulfill clinical orders + optional encounter clinical note.
+"""Phase 133/146 — fulfill clinical orders + encounter clinical note.
 
 Developed by BAHATI GAD WANGWE.
 """
@@ -22,35 +22,43 @@ def _append_encounter_note(
 ) -> None:
     """Phase 146 — surface fulfillment on the encounter clinical record."""
     try:
-        from app.clinical.schemas import ClinicalNoteCreate
-        from app.clinical.service import save_clinical_note
+        from app.clinical.models import ClinicalNote
     except Exception:
         return
 
-    content = (
+    body = (
         f"Clinical order {row.order_type} "
         f"({row.code or 'n/a'}) marked {status}.\n"
         f"{row.description or ''}\n"
         f"Result: {result_notes.strip()}"
     ).strip()
-    if len(content) > 20000:
-        content = content[:19997] + "..."
+    if len(body) > 20000:
+        body = body[:19997] + "..."
 
     note_type = "SPECIALIST" if row.order_type in {"IMAGING", "LAB", "LABORATORY"} else "PROGRESS"
     try:
-        payload = ClinicalNoteCreate(
+        note = ClinicalNote(
+            encounter_id=row.encounter_id,
             note_type=note_type,
-            content=content,
-            status="FINAL",
+            body=body,
+            author_id=actor_user_id,
         )
-        save_clinical_note(
+        db.add(note)
+        db.flush()
+        record_audit(
             db,
-            row.encounter_id,
-            payload,
-            actor_user_id=actor_user_id,
+            action="CLINICAL_NOTE_CREATED",
+            resource_type="CLINICAL_NOTE",
+            resource_id=str(note.id),
+            result="SUCCESS",
+            user_id=actor_user_id,
+            facility_id=row.facility_id,
+            patient_id=row.patient_id,
+            metadata={"source": "ORDER_FULFILL", "order_id": str(row.id)},
+            commit=False,
         )
     except Exception:
-        # Do not roll back order fulfillment if note write fails
+        # Do not block order fulfillment if note write fails
         pass
 
 
@@ -106,7 +114,6 @@ def fulfill_order(
         commit=False,
     )
 
-    # Phase 146 — write encounter clinical note when completing with results
     if status == "COMPLETED" and notes_text:
         _append_encounter_note(
             db,
