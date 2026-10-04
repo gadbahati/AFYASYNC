@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
+from app.hie.delivery_service import deliver_job, list_jobs, queue_bundle
 from app.hie.service import (
     build_patient_summary_bundle,
     build_referral_package,
@@ -249,6 +250,30 @@ def get_nodes(
         for n in list_nodes(db)
     ]
 
+
+@router.post("/deliver")
+def queue_delivery(patient_id: UUID, destination_node_id: UUID, bundle: dict, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
+    try:
+        job = queue_bundle(db, facility_id=facility_id, patient_id=patient_id, destination_node_id=destination_node_id, payload=bundle, created_by=user.id)
+        db.commit()
+        return {"id": str(job.id), "status": job.status, "idempotency_key": job.idempotency_key, "destination_node_id": str(job.destination_node_id)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@router.post("/deliver/{job_id}")
+def deliver_queued_job(job_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
+    try:
+        result = deliver_job(db, job_id=job_id, facility_id=facility_id, actor_user_id=user.id)
+        db.commit()
+        return result
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=404 if "NOT_FOUND" in code else 409, detail=code) from exc
+
+@router.get("/deliveries")
+def deliveries(limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("reports.read"))):
+    _ = user
+    return [{"id": str(j.id), "patient_id": str(j.patient_id), "destination_node_id": str(j.destination_node_id), "status": j.status, "attempts": j.attempts, "max_attempts": j.max_attempts, "last_http_status": j.last_http_status, "last_error": j.last_error, "next_attempt_at": j.next_attempt_at.isoformat() if j.next_attempt_at else None, "delivered_at": j.delivered_at.isoformat() if j.delivered_at else None, "created_at": j.created_at.isoformat() if j.created_at else None} for j in list_jobs(db, facility_id, limit=limit)]
 
 @router.get("/exports")
 def exports(
