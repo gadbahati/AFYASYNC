@@ -4,6 +4,7 @@ import { api, ApiError } from "../api/client";
 import type { ClinicalTimeline, Triage } from "../api/types";
 import { EncounterOrdersPanel } from "./EncounterOrdersPanel";
 import { EncounterDischargePanel } from "./EncounterDischargePanel";
+import { EncounterSummaryPanel } from "./EncounterSummaryPanel";
 
 export function EncounterDetailPage() {
   const { encounterId } = useParams();
@@ -380,6 +381,7 @@ export function EncounterDetailPage() {
             open={!!open}
             onDischarged={() => void reload()}
           />
+          <EncounterSummaryPanel encounterId={encounterId!} />
         </div>
       )}
     </div>
