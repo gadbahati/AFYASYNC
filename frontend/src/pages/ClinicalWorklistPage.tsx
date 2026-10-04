@@ -1,8 +1,8 @@
-/** Phase 153 — worklist: LAB results + pharmacy dispense + imaging links.
+/** Phase 155 — worklist with ?type= from dashboard + LAB/RX structured complete.
  *  Developed by BAHATI GAD WANGWE
  */
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ApiError, request } from "../api/client";
 
 type WorkItem = {
@@ -30,7 +30,11 @@ function departmentLink(o: WorkItem): { path: string; label: string } | null {
 }
 
 export function ClinicalWorklistPage() {
-  const [orderType, setOrderType] = useState("PHARMACY");
+  const [params] = useSearchParams();
+  const initialType = (params.get("type") || "PHARMACY").toUpperCase();
+  const [orderType, setOrderType] = useState(
+    ["LAB", "PHARMACY", "IMAGING", ""].includes(initialType) ? initialType : "PHARMACY",
+  );
   const [data, setData] = useState<{ count?: number; order_type?: string; items?: WorkItem[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -208,17 +212,11 @@ export function ClinicalWorklistPage() {
                 value={dispenseQty}
                 onChange={(e) => setDispenseQty(e.target.value)}
                 placeholder="e.g. 30 tablets"
-                aria-label="Dispense quantity"
               />
             </label>
             <label>
               Batch / lot{" "}
-              <input
-                value={batchNo}
-                onChange={(e) => setBatchNo(e.target.value)}
-                placeholder="optional"
-                aria-label="Batch number"
-              />
+              <input value={batchNo} onChange={(e) => setBatchNo(e.target.value)} placeholder="optional" />
             </label>
           </div>
         </section>
@@ -318,7 +316,7 @@ export function ClinicalWorklistPage() {
             })}
             {(data.items || []).length === 0 && <li className="muted">No open orders in this queue.</li>}
           </ul>
-          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 153</p>
+          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 155</p>
         </section>
       )}
     </div>
