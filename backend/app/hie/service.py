@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
+from html import escape
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -273,6 +274,19 @@ def build_patient_summary_bundle(
                 )
 
     bundle_id = str(uuid4())
+    composition_id = str(uuid4())
+    composition = {
+        "resourceType": "Composition",
+        "id": composition_id,
+        "status": "final",
+        "type": {"coding": [{"system": "http://loinc.org", "code": "60591-5", "display": "Patient summary Document"}], "text": "Patient summary"},
+        "subject": {"reference": f"Patient/{person.id}"},
+        "date": datetime.now(timezone.utc).isoformat(),
+        "author": [{"reference": f"Organization/{facility_id}"}],
+        "title": "AfyaSync Patient Summary",
+        "section": [{"title": "Clinical record", "entry": [{"reference": e["resource"]["resourceType"] + "/" + str(e["resource"]["id"])} for e in entries if isinstance(e, dict) and isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") != "Patient" and e["resource"].get("id")]}],
+    }
+    entries.insert(0, {"fullUrl": f"urn:uuid:{composition_id}", "resource": composition})
     bundle = {
         "resourceType": "Bundle",
         "id": bundle_id,
@@ -379,27 +393,18 @@ def build_referral_package(
         {"system": "https://afyasync.health.ke/developer", "code": "BAHATI_GAD_WANGWE"},
     ]
     if clinical_summary:
-        summary["entry"].insert(
-            1,
-            {
-                "fullUrl": f"urn:uuid:{uuid4()}",
-                "resource": {
-                    "resourceType": "Composition",
-                    "status": "final",
-                    "type": {"text": "Referral note"},
-                    "subject": {"reference": f"Patient/{patient_id}"},
-                    "date": datetime.now(timezone.utc).isoformat(),
-                    "title": "AfyaSync Referral Package",
-                    "section": [
-                        {
-                            "title": "Clinical summary",
-                            "text": {"div": clinical_summary[:4000]},
-                        }
-                    ],
-                },
-            },
+        composition = next(
+            (e["resource"] for e in summary["entry"] if isinstance(e, dict) and isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") == "Composition"),
+            None,
         )
-        summary["total"] = len(summary["entry"])
+        if composition is not None:
+            composition["title"] = "AfyaSync Referral Package"
+            composition["type"] = {"text": "Referral note"}
+            composition["section"].insert(
+                0,
+                {"title": "Clinical summary", "text": {"status": "generated", "div": f"<div>{escape(clinical_summary[:4000])}</div>"}},
+            )
+            summary["total"] = len(summary["entry"])
     return summary
 
 
