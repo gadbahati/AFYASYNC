@@ -27,6 +27,7 @@ import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { MCHPage } from "./pages/MCHPage";
 import { FacilityMessagesPage } from "./pages/FacilityMessagesPage";
 import { ReferralsPage } from "./pages/ReferralsPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { PatientPortalHomePage } from "./pages/PatientPortalHomePage";
 import { PatientVisitsPage } from "./pages/PatientVisitsPage";
 import { PatientBookAppointmentPage } from "./pages/PatientBookAppointmentPage";
