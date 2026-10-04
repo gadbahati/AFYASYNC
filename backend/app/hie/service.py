@@ -91,6 +91,10 @@ def build_patient_summary_bundle(
         node = db.get(HieNode, destination_node_id)
         if node is None or node.status != "ACTIVE":
             raise ValueError("HIE_NODE_NOT_FOUND")
+        if node.facility_id is not None and node.facility_id == facility_id:
+            raise ValueError("HIE_DESTINATION_SELF")
+        if node.trust_level not in {"HIGH", "NATIONAL"}:
+            raise ValueError("HIE_DESTINATION_NOT_TRUSTED")
 
     entries: list[dict] = []
     redacted = 0
@@ -439,10 +443,20 @@ def validate_inbound_bundle(
     if not has_patient:
         errors.append("MISSING_PATIENT_RESOURCE")
 
-    if source_node_id:
+    if source_node_id is None:
+        errors.append("SOURCE_NODE_REQUIRED")
+        node = None
+    else:
         node = db.get(HieNode, source_node_id)
         if node is None or node.status != "ACTIVE":
             errors.append("UNKNOWN_SOURCE_NODE")
+        else:
+            if node.trust_level not in {"HIGH", "NATIONAL"}:
+                errors.append("UNTRUSTED_SOURCE_NODE")
+            if source_code and source_code.strip().upper() != node.code:
+                errors.append("SOURCE_CODE_MISMATCH")
+            if node.facility_id is not None and node.facility_id == facility_id:
+                errors.append("SOURCE_NODE_SELF")
 
     status = "REJECTED" if errors else "ACCEPTED"
     doc_type = "UNKNOWN"
