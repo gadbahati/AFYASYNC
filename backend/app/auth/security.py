@@ -6,6 +6,9 @@ import jwt
 from fastapi import HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib import PasswordHash
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import base64
+import hashlib
 
 from app.config import settings
 
@@ -116,3 +119,19 @@ def decode_refresh_token(token: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
     return payload
+
+
+
+def _mfa_key() -> bytes:
+    return hashlib.sha256(settings.jwt_secret.encode("utf-8") + b":afyasync-government-mfa").digest()
+
+
+def encrypt_mfa_secret(secret: str) -> str:
+    nonce = __import__("os").urandom(12)
+    ciphertext = AESGCM(_mfa_key()).encrypt(nonce, secret.encode("utf-8"), None)
+    return base64.urlsafe_b64encode(nonce + ciphertext).decode("ascii")
+
+
+def decrypt_mfa_secret(value: str) -> str:
+    raw = base64.urlsafe_b64decode(value.encode("ascii"))
+    return AESGCM(_mfa_key()).decrypt(raw[:12], raw[12:], None).decode("utf-8")
