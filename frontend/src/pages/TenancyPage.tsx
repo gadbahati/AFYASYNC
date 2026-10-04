@@ -12,6 +12,9 @@ export default function TenancyPage(){
   const [facilityId,setFacilityId]=useState("");
   const [selected,setSelected]=useState<string>("");
   const [message,setMessage]=useState("");
+  const [govUserId,setGovUserId]=useState("");
+  const [govRole,setGovRole]=useState("HEALTH_OFFICER");
+  const [govScope,setGovScope]=useState("COUNTY");
   const [error,setError]=useState("");
 
   async function load(){
@@ -29,6 +32,15 @@ export default function TenancyPage(){
       await api.tenancyCreateOrganization({code,name,organization_type:type});
       setName("");setCode("");setMessage("Organization created.");await load();
     }catch(err:any){setError(err?.message||err?.code||"TENANT_CREATE_FAILED");}
+  }
+
+  async function grantGovernment(){
+    setError("");setMessage("");
+    if(!selected||!govUserId.trim()){setError("Select a government organization and enter the target user UUID.");return;}
+    try{
+      await api.tenancyGrantGovernmentAccess(selected,govUserId.trim(),govRole,govScope);
+      setMessage("Government portal access granted explicitly. The user must use Government Portal sign-in.");
+    }catch(err:any){setError(err?.message||err?.code||"GOVERNMENT_ACCESS_GRANT_FAILED");}
   }
 
   async function attachFacility(){
@@ -58,7 +70,7 @@ export default function TenancyPage(){
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="Organization name" required />
         <input value={code} onChange={e=>setCode(e.target.value)} placeholder="Unique code" required />
         <select value={type} onChange={e=>setType(e.target.value)}>
-          <option>PROVIDER_NETWORK</option><option>FACILITY_GROUP</option><option>COUNTY</option><option>NATIONAL</option><option>PARTNER</option>
+          <option>PROVIDER_NETWORK</option><option>FACILITY_GROUP</option><option>COUNTY_GOVERNMENT</option><option>NATIONAL_GOVERNMENT</option><option>PARTNER</option>
         </select>
         <button type="submit">Create tenant</button>
       </form>
