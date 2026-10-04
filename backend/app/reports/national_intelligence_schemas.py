@@ -56,7 +56,7 @@ class NationalIntelligenceResponse(BaseModel):
     end_date: str
     comparison_start_date: str
     comparison_end_date: str
-    generated_at: str
+    generated_at: str = Field(default_factory=lambda: __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat())
     alerts: list[NationalIntelligenceAlert] = Field(default_factory=list)
     facility_signals: list[NationalFacilitySignal] = Field(default_factory=list)
     facility_signals_total: int = Field(default=0, ge=0)
