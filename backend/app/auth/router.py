@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import get_current_user, get_token_payload
 from app.auth.rate_limit import enforce_auth_rate_limit
+from app.auth.mfa import decrypted_secret, encrypted_secret, generate_secret, otpauth_uri, verify_totp
+from app.auth.mfa_models import MFAChallenge
 from app.auth.schemas import FacilityOption, FacilitySelectionRequest, FacilitySelectionRequired, GovernmentOrganizationOption, GovernmentSelectionRequired, LoginRequest, RefreshTokenRequest, TokenResponse, MFARequired, MFASetupRequired, MFASetupResponse, MFASetupConfirmRequest
 from app.auth.service import authenticate_user, issue_access_token, issue_refresh_token, revoke_refresh_token, rotate_tokens_from_refresh
 from app.config import settings
