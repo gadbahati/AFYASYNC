@@ -418,20 +418,6 @@ def initialize_database():
         result = seed_universal_admin()
         print("UNIVERSAL_ADMIN_BOOTSTRAP:", result)
 
-    # Temporary development operator: facility System Administrator +
-    # explicit National Government Portal access. Never allowed in production.
-    dev_universal_requested = os.getenv("BOOTSTRAP_DEV_UNIVERSAL_ADMIN_ONCE", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
-    if dev_universal_requested:
-        if settings.environment == "production":
-            raise RuntimeError("BOOTSTRAP_DEV_UNIVERSAL_ADMIN_ONCE is forbidden in production")
-        from app.scripts.seed_dev_universal_admin import seed_dev_universal_admin
-
-        result = seed_dev_universal_admin()
-        print("DEV_UNIVERSAL_ADMIN_BOOTSTRAP:", result)
     try:
         started = start_kmhfr_national_sync()
         retry_started = start_kmhfr_retry_loop()
