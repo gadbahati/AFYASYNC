@@ -160,7 +160,7 @@ def get_encounter_clinical_summary(db: Session, encounter_id: UUID, facility_id:
         raise ValueError("FACILITY_ACCESS_DENIED")
     vitals = list(db.scalars(select(Vital).where(Vital.encounter_id == encounter_id).order_by(Vital.recorded_at.asc(), Vital.id.asc())))
     consultation = db.scalar(select(Consultation).where(Consultation.encounter_id == encounter_id))
-    diagnoses = list(db.scalars(select(Diagnosis).where(Diagnosis.encounter_id == encounter_id).order_by(Diagnosis.created_at.asc(), Diagnosis.id.asc())))
+    diagnoses = list(db.scalars(select(Diagnosis).where(Diagnosis.encounter_id == encounter_id).order_by(Diagnosis.recorded_at.asc(), Diagnosis.id.asc())))
     lab_orders = list(db.scalars(select(LabOrder).where(LabOrder.encounter_id == encounter_id).order_by(LabOrder.created_at.asc(), LabOrder.id.asc())))
     prescriptions = list(db.scalars(select(Prescription).where(Prescription.encounter_id == encounter_id).order_by(Prescription.created_at.asc(), Prescription.id.asc())))
     procedures = list(db.scalars(select(Procedure).where(Procedure.encounter_id == encounter_id).order_by(Procedure.performed_at.asc(), Procedure.id.asc())))
