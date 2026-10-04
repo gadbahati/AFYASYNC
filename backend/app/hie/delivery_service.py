@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.hie.delivery_models import HieDeliveryJob
+from app.hie.auth import get_hie_access_token
 from app.hie.models import HieExportLog, HieNode
 
 ACTIVE_STATUSES = {"PENDING", "RETRY"}
@@ -39,7 +40,9 @@ def deliver_job(db: Session, *, job_id: UUID, facility_id: UUID, actor_user_id: 
     if node is None or node.status != "ACTIVE": raise ValueError("HIE_DESTINATION_NOT_FOUND")
     if not node.endpoint_url: raise ValueError("HIE_DESTINATION_ENDPOINT_NOT_CONFIGURED")
     job.attempts += 1
-    token = os.getenv("HIE_OUTBOUND_BEARER_TOKEN", "").strip()
+    token = get_hie_access_token()
+    if token is None:
+        token = os.getenv("HIE_OUTBOUND_BEARER_TOKEN", "").strip()
     headers = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json", "Idempotency-Key": job.idempotency_key}
     if token: headers["Authorization"] = f"Bearer {token}"
     timeout = float(os.getenv("HIE_OUTBOUND_TIMEOUT_SECONDS", "15"))
