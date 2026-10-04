@@ -1,19 +1,17 @@
-"""Development-only universal administrator bootstrap.
+"""Temporary universal administrator bootstrap.
 
-Creates one temporary development operator with:
-- System Administrator facility access
-- explicit National Government Portal access
-- MFA required for Government Portal
+This command is intended to run as a Railway pre-deploy step, not from the
+web application's startup lifecycle. That keeps it single-run and safe when
+Uvicorn starts multiple workers.
 
-This must never run in production. Credentials are supplied through
-environment variables; no default password is stored in source control.
+Credentials are supplied only through environment variables.
 """
 
 from __future__ import annotations
 
 import os
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.database import SessionLocal
 from app.auth.security import hash_password
@@ -30,11 +28,18 @@ GOVERNMENT_NAME = "AfyaSync Development National Authority"
 GOVERNMENT_ROLE = "SYSTEM_ADMINISTRATOR"
 GOVERNMENT_SCOPE = "NATIONAL"
 ADMIN_ROLE = "System Administrator"
+LOCK_KEY = 914275631
 
 
 def seed_dev_universal_admin(*, username: str | None = None, password: str | None = None) -> dict:
-    if os.getenv("ENVIRONMENT", "development").strip().lower() == "production":
-        raise RuntimeError("Development universal administrator is forbidden in production")
+    bootstrap_enabled = os.getenv("BOOTSTRAP_DEV_UNIVERSAL_ADMIN_ONCE", "").strip().lower() in {
+        "1", "true", "yes",
+    }
+    if not bootstrap_enabled:
+        raise RuntimeError(
+            "Development universal administrator bootstrap requires "
+            "BOOTSTRAP_DEV_UNIVERSAL_ADMIN_ONCE=true"
+        )
 
     username = (username or os.getenv("DEV_UNIVERSAL_ADMIN_USERNAME") or USERNAME_DEFAULT).strip()
     password = password or os.getenv("DEV_UNIVERSAL_ADMIN_PASSWORD")
@@ -44,7 +49,14 @@ def seed_dev_universal_admin(*, username: str | None = None, password: str | Non
         raise ValueError("Development administrator password must be at least 16 characters")
 
     db = SessionLocal()
+    advisory_lock = False
     try:
+        # PostgreSQL advisory lock prevents two accidental invocations from
+        # racing if the command is ever invoked concurrently.
+        if db.get_bind().dialect.name == "postgresql":
+            db.execute(text("SELECT pg_advisory_lock(:lock_key)"), {"lock_key": LOCK_KEY})
+            advisory_lock = True
+
         facility = db.scalar(select(Facility).where(Facility.facility_id == FACILITY_CODE))
         if facility is None:
             facility = Facility(
@@ -129,16 +141,9 @@ def seed_dev_universal_admin(*, username: str | None = None, password: str | Non
                 )
             )
             if existing is None:
-                db.add(
-                    RolePermission(
-                        role_id=role.id,
-                        permission_id=permission.id,
-                    )
-                )
+                db.add(RolePermission(role_id=role.id, permission_id=permission.id))
 
-        government = db.scalar(
-            select(Organization).where(Organization.code == GOVERNMENT_CODE)
-        )
+        government = db.scalar(select(Organization).where(Organization.code == GOVERNMENT_CODE))
         if government is None:
             government = Organization(
                 code=GOVERNMENT_CODE,
@@ -173,8 +178,6 @@ def seed_dev_universal_admin(*, username: str | None = None, password: str | Non
             gov_access.scope_level = GOVERNMENT_SCOPE
             gov_access.status = "ACTIVE"
 
-        # Government access always requires MFA. This does not affect the
-        # facility login for this development account.
         user.mfa_required = True
 
         db.commit()
@@ -191,6 +194,11 @@ def seed_dev_universal_admin(*, username: str | None = None, password: str | Non
         db.rollback()
         raise
     finally:
+        if advisory_lock:
+            try:
+                db.execute(text("SELECT pg_advisory_unlock(:lock_key)"), {"lock_key": LOCK_KEY})
+            except Exception:
+                pass
         db.close()
 
 
