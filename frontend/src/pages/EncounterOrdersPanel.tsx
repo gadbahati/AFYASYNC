@@ -1,4 +1,4 @@
-/** Phase 133 — place and fulfill clinical orders on an encounter. Developed by BAHATI GAD WANGWE */
+/** Phase 134 — place, forward, and fulfill clinical orders. Developed by BAHATI GAD WANGWE */
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 
@@ -27,7 +27,7 @@ export function EncounterOrdersPanel({ encounterId, open, legacyLabCount = 0, le
     <section className="card">
       <h2>Clinical orders</h2>
       <p className="muted small">
-        Phase 132–133 · LAB / PHARMACY / IMAGING · Legacy lab: {legacyLabCount} · Rx: {legacyRxCount}
+        Phase 132–134 · LAB / PHARMACY / IMAGING · Legacy lab: {legacyLabCount} · Rx: {legacyRxCount}
       </p>
       {error && <div className="error">{error}</div>}
       {open && (
@@ -73,7 +73,7 @@ export function EncounterOrdersPanel({ encounterId, open, legacyLabCount = 0, le
           </label>
           <label>
             Code
-            <input name="code" placeholder="e.g. CBC" />
+            <input name="code" placeholder="e.g. CBC or drug code" />
           </label>
           <label className="span-2">
             Description
@@ -117,6 +117,31 @@ export function EncounterOrdersPanel({ encounterId, open, legacyLabCount = 0, le
                   }
                 >
                   Start
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void (async () => {
+                      setBusy(true);
+                      setError(null);
+                      try {
+                        const res = await api.forwardClinicalOrder(o.id);
+                        const msg = res?.forward?.message || "Forwarded";
+                        if (res?.forward && res.forward.matched === false) {
+                          setError(msg);
+                        }
+                        await reload();
+                      } catch (err) {
+                        setError(err instanceof ApiError ? err.code : "FORWARD_FAILED");
+                      } finally {
+                        setBusy(false);
+                      }
+                    })()
+                  }
+                >
+                  Forward to dept
                 </button>
                 <button
                   type="button"
@@ -168,7 +193,7 @@ export function EncounterOrdersPanel({ encounterId, open, legacyLabCount = 0, le
         ))}
         {orders.length === 0 && <li className="muted">No clinical orders yet.</li>}
       </ul>
-      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 133</p>
+      <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 134</p>
     </section>
   );
 }
