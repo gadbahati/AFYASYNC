@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
 from app.clinical.models import Allergy, CarePlan
-from app.clinical.schemas import AllergyCreate, AllergyResponse, AllergyUpdate, CarePlanCreate, CarePlanResponse, CarePlanUpdate, ClinicalTimelineSummary, ConsultationCreate, ConsultationResponse, DiagnosisCreate, DiagnosisResponse, VitalCreate, VitalResponse
+from app.clinical.triage import latest_triage, record_triage
+from app.clinical.schemas import AllergyCreate, AllergyResponse, AllergyUpdate, CarePlanCreate, CarePlanResponse, CarePlanUpdate, ClinicalTimelineSummary, ConsultationCreate, ConsultationResponse, DiagnosisCreate, DiagnosisResponse, TriageCreate, TriageResponse, VitalCreate, VitalResponse
 from app.clinical.service import add_diagnosis, create_allergy, create_care_plan, create_or_update_consultation, get_encounter_clinical_summary, list_allergies, list_care_plans, record_vitals, update_allergy, update_care_plan
 from app.database import get_db
 from app.encounters.models import Encounter
@@ -53,6 +54,25 @@ def create_vitals(encounter_id: UUID, payload: VitalCreate, user: User = Depends
     encounter = _encounter(db, encounter_id, facility_id)
     try: return record_vitals(db, encounter.id, _staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
     except ValueError as err: raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@encounter_router.get("/{encounter_id}/triage", response_model=TriageResponse | None)
+def get_latest_triage(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> TriageResponse | None:
+    try:
+        return latest_triage(db, encounter_id, facility_id)
+    except ValueError as err:
+        code = str(err)
+        raise HTTPException(status_code=404 if code == "ENCOUNTER_NOT_FOUND" else 403, detail=code) from err
+
+
+@encounter_router.post("/{encounter_id}/triage", response_model=TriageResponse, status_code=status.HTTP_201_CREATED)
+def create_triage(encounter_id: UUID, payload: TriageCreate, user: User = Depends(require_permission("clinical.vitals.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> TriageResponse:
+    try:
+        return record_triage(db, encounter_id, facility_id, _staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
+    except ValueError as err:
+        code = str(err)
+        mapping = {"ENCOUNTER_NOT_FOUND": 404, "FACILITY_ACCESS_DENIED": 403, "ENCOUNTER_CLOSED": 409, "STAFF_NOT_FOUND": 403, "VITAL_NOT_FOUND": 404}
+        raise HTTPException(status_code=mapping.get(code, 400), detail=code) from err
 
 
 @encounter_router.post("/{encounter_id}/consultation", response_model=ConsultationResponse)
