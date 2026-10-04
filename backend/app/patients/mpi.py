@@ -20,6 +20,7 @@ def find_mpi_candidates(
     db: Session,
     *,
     facility_id: UUID,
+    facility_ids: list[UUID] | None = None,
     first_name: str | None,
     last_name: str | None,
     date_of_birth: date | None,
@@ -49,15 +50,13 @@ def find_mpi_candidates(
     if not conditions:
         raise ValueError("MPI_SEARCH_REQUIRES_IDENTIFIER")
 
-    # Phase 126 is facility-safe: this pre-registration search only surfaces
-    # identities already known to the active facility. Cross-facility/national
-    # MPI discovery belongs to the governed interoperability layer.
+    scope_ids = facility_ids if facility_ids else [facility_id]
     stmt = (
         select(Person, AfyaIdentity)
         .join(AfyaIdentity, AfyaIdentity.person_id == Person.id)
         .join(PatientFacility, PatientFacility.patient_id == Person.id)
         .where(
-            PatientFacility.facility_id == facility_id,
+            PatientFacility.facility_id.in_(scope_ids),
             PatientFacility.status == "ACTIVE",
             Person.status == "ACTIVE",
             or_(*conditions),
@@ -136,6 +135,7 @@ def find_mpi_candidates(
         facility_id=facility_id,
         metadata={
             "candidate_count": len(results),
+            "facility_scope_count": len(scope_ids),
             "searched_national_id": bool(national_id_number),
             "searched_phone": bool(normalized_phone),
             "searched_dob": bool(date_of_birth),
