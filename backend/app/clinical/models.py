@@ -117,3 +117,36 @@ class TriageAssessment(Base):
     disposition: Mapped[str | None] = mapped_column(String(40), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Procedure(Base):
+    __tablename__ = "clinical_procedures"
+    __table_args__ = (Index("ix_clinical_procedures_encounter_performed_at", "encounter_id", "performed_at"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id", ondelete="RESTRICT"), index=True)
+    procedure_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    procedure_name: Mapped[str] = mapped_column(String(250), nullable=False)
+    procedure_type: Mapped[str] = mapped_column(String(40), default="CLINICAL", nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="COMPLETED", nullable=False, index=True)
+    performed_by: Mapped[UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
+    performed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ClinicalNote(Base):
+    __tablename__ = "clinical_notes"
+    __table_args__ = (Index("ix_clinical_notes_encounter_created_at", "encounter_id", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id", ondelete="RESTRICT"), index=True)
+    author_id: Mapped[UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
+    note_type: Mapped[str] = mapped_column(String(40), default="PROGRESS", nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="DRAFT", nullable=False, index=True)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    signed_by: Mapped[UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
