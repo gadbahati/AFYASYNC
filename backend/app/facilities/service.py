@@ -48,7 +48,8 @@ def _next_facility_id(db: Session) -> str:
 
 
 def _ensure_default_departments(db: Session, facility_id: UUID) -> None:
-    existing = set(db.scalars(select(Department.code).where(Department.facility_id == facility_id)).all())
+    result = db.scalars(select(Department.code).where(Department.facility_id == facility_id))
+    existing = set(result.all() if hasattr(result, "all") else result)
     for code, name in DEFAULT_DEPARTMENTS:
         if code not in existing:
             db.add(Department(facility_id=facility_id, name=name, code=code, status="ACTIVE"))
