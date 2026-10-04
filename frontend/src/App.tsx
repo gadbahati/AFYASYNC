@@ -27,7 +27,7 @@ import { MCHPage } from "./pages/MCHPage";
 import { FacilityMessagesPage } from "./pages/FacilityMessagesPage";
 import { ReferralsPage } from "./pages/ReferralsPage";
 
-/** Phase 149+ — facility routes and workspace architecture. */
+/** Phase 149+ — facility routes and workspace architecture. Build sync checkpoint. */
 export default function App() {
   return (
     <AuthProvider>
