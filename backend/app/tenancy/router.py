@@ -10,7 +10,7 @@ from app.auth.dependencies import get_current_user, get_facility_context
 from app.database import get_db
 from app.facilities.models import Facility
 from app.rbac.models import User
-from app.tenancy.models import Organization, OrganizationFacility, OrganizationUser
+from app.tenancy.models import GovernmentAccess, Organization, OrganizationFacility, OrganizationUser
 from app.tenancy.service import (
     accessible_organizations,
     audit,
@@ -208,6 +208,38 @@ def add_user_to_organization(
         metadata={"target_user_id": str(target_user_id), "access_level": level},
     )
     return {"organization_id": str(organization_id), "user_id": str(target_user_id), "access_level": level}
+
+
+@router.post("/organizations/{organization_id}/government-access/{target_user_id}")
+def grant_government_access(
+    organization_id: UUID,
+    target_user_id: UUID,
+    role_code: str = "HEALTH_OFFICER",
+    scope_level: str = "COUNTY",
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_tenant_admin(db, user)
+    org = get_accessible_organization(db, user=user, organization_id=organization_id)
+    if org.organization_type not in ("COUNTY_GOVERNMENT", "NATIONAL_GOVERNMENT"):
+        raise HTTPException(status_code=400, detail="ORGANIZATION_IS_NOT_GOVERNMENT")
+    target = db.get(User, target_user_id)
+    if target is None or target.status != ACTIVE:
+        raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
+    level = scope_level.strip().upper()
+    expected = "COUNTY" if org.organization_type == "COUNTY_GOVERNMENT" else "NATIONAL"
+    if level != expected:
+        raise HTTPException(status_code=400, detail="GOVERNMENT_SCOPE_DOES_NOT_MATCH_ORGANIZATION")
+    existing = db.scalar(select(GovernmentAccess).where(GovernmentAccess.organization_id == organization_id, GovernmentAccess.user_id == target_user_id))
+    if existing:
+        existing.role_code = role_code.strip().upper()[:80] or "HEALTH_OFFICER"
+        existing.scope_level = level
+        existing.status = ACTIVE
+    else:
+        db.add(GovernmentAccess(organization_id=organization_id, user_id=target_user_id, role_code=role_code.strip().upper()[:80] or "HEALTH_OFFICER", scope_level=level, status=ACTIVE))
+    db.flush()
+    audit(db, action="GOVERNMENT_ACCESS_GRANTED", user=user, organization_id=organization_id, metadata={"target_user_id": str(target_user_id), "role_code": role_code, "scope_level": level})
+    return {"organization_id": str(organization_id), "user_id": str(target_user_id), "role_code": role_code.strip().upper(), "scope_level": level, "status": ACTIVE}
 
 
 @router.delete("/organizations/{organization_id}/users/{target_user_id}")
