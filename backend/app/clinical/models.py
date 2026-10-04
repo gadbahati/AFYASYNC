@@ -2,6 +2,7 @@ from datetime import date, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Numeric, String, Text, func
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -93,3 +94,23 @@ class Allergy(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class TriageAssessment(Base):
+    __tablename__ = "triage_assessments"
+    __table_args__ = (
+        Index("ix_triage_assessments_encounter_assessed_at", "encounter_id", "assessed_at"),
+        Index("ix_triage_assessments_priority_assessed_at", "priority", "assessed_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id", ondelete="RESTRICT"), index=True)
+    assessed_by: Mapped[UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
+    vital_id: Mapped[UUID | None] = mapped_column(ForeignKey("vitals.id", ondelete="SET NULL"), nullable=True)
+    acuity: Mapped[int] = mapped_column(nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    chief_complaint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    red_flags: Mapped[list] = mapped_column(postgresql.JSONB, nullable=False, default=list)
+    disposition: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
