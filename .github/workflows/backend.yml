@@ -108,6 +108,9 @@ jobs:
           print("Migration revisions:", len(list(script.walk_revisions())))
           PY
 
+      - name: Apply database migrations
+        run: alembic upgrade head
+
       - name: Validate installed dependency metadata
         run: python -m pip check
 
