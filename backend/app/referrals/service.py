@@ -4,6 +4,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
+from app.hie.models import HieNode
+from app.hie.service import build_referral_package
 from app.encounters.models import Encounter
 from app.facilities.models import Department, Facility
 from app.notifications.events import notify_patient_event
@@ -105,6 +107,41 @@ def create_referral(db: Session, facility_id: UUID, staff_id: UUID, payload: dic
     db.commit()
     db.refresh(referral)
     return referral
+
+
+def build_referral_hie_package(
+    db: Session,
+    *,
+    referral_id: UUID,
+    facility_id: UUID,
+    destination_node_id: UUID,
+    actor_user_id: UUID | None = None,
+    clinical_summary: str | None = None,
+    purpose_of_use: str = "TREATMENT",
+) -> dict:
+    referral = get_referral_for_facility(db, referral_id, facility_id)
+    if referral.source_facility_id != facility_id:
+        raise ReferralError("SOURCE_FACILITY_ACTION_REQUIRED")
+    if referral.status not in {"SENT", "ACCEPTED", "IN_PROGRESS"}:
+        raise ReferralError("REFERRAL_NOT_READY_FOR_HIE")
+
+    node = db.get(HieNode, destination_node_id)
+    if node is None or node.status != "ACTIVE":
+        raise ReferralError("HIE_DESTINATION_NOT_FOUND")
+    if node.facility_id is not None and node.facility_id != referral.destination_facility_id:
+        raise ReferralError("HIE_DESTINATION_MISMATCH")
+
+    return build_referral_package(
+        db,
+        patient_id=referral.patient_id,
+        facility_id=facility_id,
+        encounter_id=referral.encounter_id,
+        clinical_summary=clinical_summary or referral.clinical_summary,
+        actor_user_id=actor_user_id,
+        destination=node.code,
+        destination_node_id=node.id,
+        purpose_of_use=purpose_of_use,
+    )
 
 
 def get_referral_for_facility(db: Session, referral_id: UUID, facility_id: UUID) -> Referral:
