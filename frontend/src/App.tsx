@@ -35,6 +35,7 @@ import { PatientConsentsPage } from "./pages/PatientConsentsPage";
 import { PatientCoveragePage } from "./pages/PatientCoveragePage";
 import { PatientContinuityCardPage } from "./pages/PatientContinuityCardPage";
 import { PatientResultsPage } from "./pages/PatientResultsPage";
+import { CitizenWalletPage } from "./pages/CitizenWalletPage";
 import { QueuePage } from "./pages/QueuePage";
 import { NewPatientPage } from "./pages/NewPatientPage";
 import { HouseholdWalletPage } from "./pages/HouseholdWalletPage";
@@ -180,6 +181,7 @@ export default function App() {
             <Route path="/login/government" element={<GovernmentLoginPage />} />
             <Route path="/portal" element={<PatientPortalHomePage />} />
             <Route path="/portal/results" element={<PatientResultsPage />} />
+            <Route path="/portal/wallet" element={<CitizenWalletPage />} />
             <Route path="/portal/encounters" element={<PatientVisitsPage />} />
             <Route path="/portal/book" element={<PatientBookAppointmentPage />} />
             <Route path="/portal/messages" element={<PatientMessagesPage />} />
