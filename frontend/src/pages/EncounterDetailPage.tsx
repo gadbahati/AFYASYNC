@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import type { ClinicalTimeline } from "../api/types";
+import type { ClinicalTimeline, Triage } from "../api/types";
 
 export function EncounterDetailPage() {
   const { encounterId } = useParams();
   const [timeline, setTimeline] = useState<ClinicalTimeline | null>(null);
+  const [triage, setTriage] = useState<Triage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
     if (!encounterId) return;
-    const data = await api.getClinicalTimeline(encounterId);
+    const [data, latestTriage] = await Promise.all([api.getClinicalTimeline(encounterId), api.getLatestTriage(encounterId)]);
     setTimeline(data);
+    setTriage(latestTriage);
   }, [encounterId]);
 
   useEffect(() => {
@@ -70,6 +72,30 @@ export function EncounterDetailPage() {
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.code : "VITALS_FAILED");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onTriage(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!encounterId) return;
+    const fd = new FormData(e.currentTarget);
+    const redFlags = String(fd.get("red_flags") || "").split(",").map((v) => v.trim()).filter(Boolean);
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.recordTriage(encounterId, {
+        acuity: Number(fd.get("acuity")),
+        chief_complaint: String(fd.get("chief_complaint") || "").trim() || null,
+        red_flags: redFlags,
+        disposition: String(fd.get("disposition") || "").trim() || null,
+        notes: String(fd.get("notes") || "").trim() || null,
+      });
+      setTriage(saved);
+      e.currentTarget.reset();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.code : "TRIAGE_FAILED");
     } finally {
       setBusy(false);
     }
@@ -151,6 +177,40 @@ export function EncounterDetailPage() {
 
       {timeline && (
         <div className="stack">
+          <section className="card">
+            <h2>Triage & acuity</h2>
+            {triage ? (
+              <div className="detail-grid">
+                <Field label="Acuity" value={`Level ${triage.acuity} · ${triage.priority}`} />
+                <Field label="Chief complaint" value={triage.chief_complaint} />
+                <Field label="Red flags" value={triage.red_flags.length ? triage.red_flags.join(", ") : "None recorded"} />
+                <Field label="Disposition" value={triage.disposition} />
+                <Field label="Notes" value={triage.notes} />
+                <Field label="Assessed" value={new Date(triage.assessed_at).toLocaleString()} />
+              </div>
+            ) : (
+              <p className="muted">No triage assessment recorded yet.</p>
+            )}
+            {open && (
+              <form className="form-grid" onSubmit={onTriage}>
+                <label>Acuity<select name="acuity" defaultValue={triage?.acuity || 3}>
+                  <option value="1">1 — Resuscitation / immediate</option>
+                  <option value="2">2 — Emergency / very urgent</option>
+                  <option value="3">3 — Urgent</option>
+                  <option value="4">4 — Less urgent</option>
+                  <option value="5">5 — Non-urgent</option>
+                </select></label>
+                <label className="full">Chief complaint <input name="chief_complaint" defaultValue={triage?.chief_complaint || ""} maxLength={5000} /></label>
+                <label className="full">Red flags <input name="red_flags" placeholder="e.g. chest pain, severe bleeding, altered consciousness" /></label>
+                <label>Disposition<select name="disposition" defaultValue={triage?.disposition || ""}>
+                  <option value="">Select</option><option value="IMMEDIATE_CARE">Immediate care</option><option value="URGENT_REVIEW">Urgent review</option><option value="ROUTINE_REVIEW">Routine review</option><option value="OBSERVATION">Observation</option><option value="REFERRAL">Referral</option>
+                </select></label>
+                <label className="full">Triage notes <textarea name="notes" rows={2} defaultValue={triage?.notes || ""} maxLength={10000} /></label>
+                <div className="full actions"><button type="submit" disabled={busy}>Save triage assessment</button></div>
+              </form>
+            )}
+          </section>
+
           <section className="card">
             <h2>Vitals</h2>
             {timeline.vitals.length === 0 && <p className="muted">No vitals recorded yet.</p>}
