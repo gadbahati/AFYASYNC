@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.hie.delivery_models import HieDeliveryJob
+from app.hie.consent_models import HieConsent
 from app.hie.auth import clear_hie_token_cache, get_hie_access_token
 from app.hie.models import HieExportLog, HieNode
 
@@ -19,6 +20,18 @@ def queue_bundle(db: Session, *, facility_id: UUID, patient_id: UUID, destinatio
     if node.facility_id == facility_id: raise ValueError("HIE_DESTINATION_SELF")
     if node.trust_level not in {"HIGH", "NATIONAL"}: raise ValueError("HIE_DESTINATION_NOT_TRUSTED")
     if not node.endpoint_url: raise ValueError("HIE_DESTINATION_ENDPOINT_NOT_CONFIGURED")
+    consent = db.scalar(select(HieConsent).where(
+        HieConsent.patient_id == patient_id,
+        HieConsent.facility_id == facility_id,
+        HieConsent.status == "ACTIVE",
+        HieConsent.decision == "PERMIT",
+        HieConsent.scope == "HIE_SHARE",
+        (HieConsent.recipient_node_id == destination_node_id) | (HieConsent.recipient_node_id.is_(None)),
+    ).order_by(HieConsent.created_at.desc()))
+    if consent is None: raise ValueError("HIE_PATIENT_CONSENT_REQUIRED")
+    now = datetime.now(timezone.utc)
+    if consent.period_start and consent.period_start > now: raise ValueError("HIE_CONSENT_NOT_YET_ACTIVE")
+    if consent.period_end and consent.period_end < now: raise ValueError("HIE_CONSENT_EXPIRED")
     bundle_id = str(payload.get("id") or uuid4())
     key = f"{destination_node_id}:{bundle_id}"
     existing = db.scalar(select(HieDeliveryJob).where(HieDeliveryJob.idempotency_key == key))
