@@ -37,6 +37,7 @@ def _capability_matrix() -> dict:
         "disaster_recovery": "app.disaster_recovery",
         "national_reporting": "app.reports",
         "national_operations": "app.national_ops",
+        "government_portal": "app.government",
     }
     return {name: _module_status(module) for name, module in capabilities.items()}
 
@@ -77,7 +78,7 @@ def final_readiness(db: Session) -> dict:
         blockers.append("DISASTER_RECOVERY")
 
     return {
-        "phase": 125,
+        "phase": "125.x",
         "product": "AfyaSync",
         "release_gate": "GO" if not blockers else "HOLD",
         "software_readiness": "READY" if not blockers else "REMEDIATION_REQUIRED",
@@ -91,6 +92,7 @@ def final_readiness(db: Session) -> dict:
             "External penetration testing",
             "Live national HIE/SHA credentials and connectivity validation",
             "County/national operational sign-off",
+            "Government identity provisioning and role authorization",
             "Measured national-scale load and recovery tests",
         ],
         "statement": "Software readiness is not a certification or government approval. Capability presence is not proof of live external connectivity.",
