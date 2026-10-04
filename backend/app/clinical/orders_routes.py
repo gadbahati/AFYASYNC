@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
+from app.clinical.department_bridge import forward_clinical_order
 from app.clinical.fulfillment_service import fulfill_order
 from app.clinical.order_service import (
     OrderError,
@@ -17,16 +18,25 @@ from app.clinical.order_service import (
     order_to_dict,
     update_order_status,
 )
-from app.clinical.department_bridge import forward_order_to_department
 from app.database import get_db
 from app.rbac.models import User
 
 orders_router = APIRouter(tags=["Clinical Orders"])
 
 
-def _http(exc: OrderError) -> HTTPException:
+def _http(exc: Exception) -> HTTPException:
     code = str(exc)
-    status_code = 404 if "NOT_FOUND" in code else (403 if "DENIED" in code else 409 if "CANCELLED" in code or "COMPLETED" in code else 400)
+    status_code = (
+        404
+        if "NOT_FOUND" in code
+        else (
+            403
+            if "DENIED" in code
+            else 409
+            if "CANCELLED" in code or "ALREADY_COMPLETED" in code or "COMPLETED" in code
+            else 400
+        )
+    )
     return HTTPException(status_code=status_code, detail=code)
 
 
@@ -40,7 +50,9 @@ def get_orders(
 ):
     _ = user
     try:
-        rows = list_orders(db, encounter_id=encounter_id, facility_id=facility_id, order_type=order_type)
+        rows = list_orders(
+            db, encounter_id=encounter_id, facility_id=facility_id, order_type=order_type
+        )
     except OrderError as exc:
         raise _http(exc) from exc
     return [order_to_dict(r) for r in rows]
@@ -68,9 +80,6 @@ def post_order(
         )
     except OrderError as exc:
         raise _http(exc) from exc
-    except TypeError:
-        # Fallback if create_order signature differs slightly
-        raise HTTPException(status_code=400, detail="INVALID_ORDER_PAYLOAD")
     return order_to_dict(row)
 
 
@@ -92,8 +101,6 @@ def patch_order_status(
         )
     except OrderError as exc:
         raise _http(exc) from exc
-    except TypeError:
-        raise HTTPException(status_code=400, detail="INVALID_STATUS_PAYLOAD")
     return order_to_dict(row)
 
 
@@ -130,17 +137,14 @@ def post_forward_order(
     user: User = Depends(require_permission("clinical.note.write")),
 ):
     try:
-        result = forward_order_to_department(
+        result = forward_clinical_order(
             db,
             order_id=order_id,
             facility_id=facility_id,
             actor_user_id=user.id,
         )
+    except OrderError as exc:
+        raise _http(exc) from exc
     except Exception as exc:
-        code = str(exc)
-        if "NOT_FOUND" in code:
-            raise HTTPException(status_code=404, detail=code) from exc
-        if "DENIED" in code:
-            raise HTTPException(status_code=403, detail=code) from exc
-        raise HTTPException(status_code=400, detail=code) from exc
+        raise _http(exc) from exc
     return result
