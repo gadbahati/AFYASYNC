@@ -1,4 +1,4 @@
-/** Phase 144 — Imaging / radiology workbench. Developed by BAHATI GAD WANGWE */
+/** Phase 145 — Imaging workbench with patient context. Developed by BAHATI GAD WANGWE */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError, request } from "../api/client";
@@ -11,12 +11,14 @@ type WorkItem = {
   priority?: string;
   status?: string;
   encounter_id?: string;
+  patient_id?: string;
 };
 
 export function RadiologyPage() {
   const [params] = useSearchParams();
   const focusOrderId = params.get("orderId") || "";
   const focusEncounterId = params.get("encounterId") || "";
+  const focusPatientId = params.get("patientId") || "";
 
   const [items, setItems] = useState<WorkItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +38,10 @@ export function RadiologyPage() {
         list = [...list].sort((a, b) =>
           a.encounter_id === focusEncounterId ? -1 : b.encounter_id === focusEncounterId ? 1 : 0,
         );
+      } else if (focusPatientId) {
+        list = [...list].sort((a, b) =>
+          a.patient_id === focusPatientId ? -1 : b.patient_id === focusPatientId ? 1 : 0,
+        );
       }
       setItems(list);
     } catch (err) {
@@ -44,7 +50,7 @@ export function RadiologyPage() {
     } finally {
       setLoading(false);
     }
-  }, [focusOrderId, focusEncounterId]);
+  }, [focusOrderId, focusEncounterId, focusPatientId]);
 
   useEffect(() => {
     void reload();
@@ -90,11 +96,18 @@ export function RadiologyPage() {
           </Link>
           <h1>Radiology / imaging</h1>
           <p className="muted">IMAGING orders for this facility</p>
-          {(focusOrderId || focusEncounterId) && (
+          {(focusOrderId || focusEncounterId || focusPatientId) && (
             <p className="muted small">
-              Focus: {focusOrderId ? `order ${focusOrderId.slice(0, 8)}…` : ""}
-              {focusOrderId && focusEncounterId ? " · " : ""}
-              {focusEncounterId ? `encounter ${focusEncounterId.slice(0, 8)}…` : ""}
+              Focus:{" "}
+              {focusPatientId && (
+                <Link to={`/patients/${focusPatientId}`}>patient {focusPatientId.slice(0, 8)}…</Link>
+              )}
+              {focusPatientId && (focusOrderId || focusEncounterId) ? " · " : ""}
+              {focusEncounterId && (
+                <Link to={`/encounters/${focusEncounterId}`}>encounter {focusEncounterId.slice(0, 8)}…</Link>
+              )}
+              {focusEncounterId && focusOrderId ? " · " : ""}
+              {focusOrderId ? `order ${focusOrderId.slice(0, 8)}…` : ""}
             </p>
           )}
         </div>
@@ -119,7 +132,10 @@ export function RadiologyPage() {
         <h2>Queue ({items.length})</h2>
         <ul className="plain-list">
           {items.map((o) => {
-            const focused = o.id === focusOrderId || o.encounter_id === focusEncounterId;
+            const focused =
+              o.id === focusOrderId ||
+              o.encounter_id === focusEncounterId ||
+              o.patient_id === focusPatientId;
             return (
               <li
                 key={o.id}
@@ -136,6 +152,11 @@ export function RadiologyPage() {
                   {focused && <span className="muted small"> · focused</span>}
                 </div>
                 <div className="actions" style={{ marginTop: "0.35rem", flexWrap: "wrap", gap: "0.35rem" }}>
+                  {o.patient_id && (
+                    <Link className="button secondary" to={`/patients/${o.patient_id}`}>
+                      Patient
+                    </Link>
+                  )}
                   {o.encounter_id && (
                     <Link className="button secondary" to={`/encounters/${o.encounter_id}`}>
                       Encounter
@@ -162,7 +183,7 @@ export function RadiologyPage() {
           })}
           {items.length === 0 && !loading && <li className="muted">No open imaging orders.</li>}
         </ul>
-        <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 144</p>
+        <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 145</p>
       </section>
     </div>
   );

@@ -1,4 +1,4 @@
-/** Phase 144 — clinical worklist with dept deep-links + context query params.
+/** Phase 145 — clinical worklist with patientId context for dept workbenches.
  *  Developed by BAHATI GAD WANGWE
  */
 import { useCallback, useEffect, useState } from "react";
@@ -13,11 +13,13 @@ type WorkItem = {
   priority?: string;
   status?: string;
   encounter_id?: string;
+  patient_id?: string;
 };
 
 function departmentLink(o: WorkItem): { path: string; label: string } | null {
   const t = (o.order_type || "").toUpperCase();
   const q = new URLSearchParams();
+  if (o.patient_id) q.set("patientId", o.patient_id);
   if (o.encounter_id) q.set("encounterId", o.encounter_id);
   if (o.id) q.set("orderId", o.id);
   const qs = q.toString() ? `?${q.toString()}` : "";
@@ -93,7 +95,7 @@ export function ClinicalWorklistPage() {
             ← Dashboard
           </Link>
           <h1>Clinical worklist</h1>
-          <p className="muted">LAB / PHARMACY / IMAGING queues with department context links</p>
+          <p className="muted">Queues with patient + encounter context for lab, pharmacy, and radiology</p>
         </div>
         <div className="actions">
           <select value={orderType} onChange={(e) => setOrderType(e.target.value)} aria-label="Order type">
@@ -135,6 +137,11 @@ export function ClinicalWorklistPage() {
                     <span className="status-pill">{o.status}</span>
                   </div>
                   <div className="actions" style={{ marginTop: "0.35rem", flexWrap: "wrap", gap: "0.35rem" }}>
+                    {o.patient_id && (
+                      <Link className="button secondary" to={`/patients/${o.patient_id}`}>
+                        Patient
+                      </Link>
+                    )}
                     {o.encounter_id && (
                       <Link className="button secondary" to={`/encounters/${o.encounter_id}`}>
                         Encounter
@@ -170,7 +177,7 @@ export function ClinicalWorklistPage() {
             })}
             {(data.items || []).length === 0 && <li className="muted">No open orders in this queue.</li>}
           </ul>
-          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 144</p>
+          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 145</p>
         </section>
       )}
     </div>
