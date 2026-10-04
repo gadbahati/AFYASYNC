@@ -14,6 +14,7 @@ from app.portal.schemas import (
     PortalEncounterListResponse,
     PortalEncounterSummary,
     PortalProfileResponse,
+    PortalResultsResponse,
     PortalReferralListResponse,
 )
 from app.portal.service import (
@@ -25,6 +26,7 @@ from app.portal.service import (
     list_my_coverage,
     list_my_encounters,
     list_my_referrals,
+    get_my_results,
     require_patient_person_id,
     update_my_consent,
 )
@@ -201,6 +203,31 @@ def portal_update_consent(
         raise _error(err) from err
 
     return PortalConsentItem.model_validate(consent)
+
+
+@router.get("/results", response_model=PortalResultsResponse)
+def portal_results(
+    limit: int = Query(default=50, ge=1, le=100),
+    user: User = Depends(require_patient_identity),
+    db: Session = Depends(get_db),
+) -> PortalResultsResponse:
+    person_id = _person_id(user)
+    labs, imaging = get_my_results(db, person_id, limit=limit)
+    audit_portal_view(
+        db,
+        user_id=user.id,
+        person_id=person_id,
+        action="PORTAL_VIEW_RESULTS",
+        resource_type="PERSON",
+        resource_id=str(person_id),
+        metadata={"lab_count": len(labs), "imaging_count": len(imaging)},
+    )
+    return PortalResultsResponse(
+        labs=labs,
+        imaging=imaging,
+        total_labs=len(labs),
+        total_imaging=len(imaging),
+    )
 
 
 @router.get("/coverage", response_model=PortalCoverageSummary)
