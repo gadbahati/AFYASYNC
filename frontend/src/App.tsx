@@ -18,9 +18,13 @@ import { PatientsPage } from "./pages/PatientsPage";
 import { PatientDetailPage } from "./pages/PatientDetailPage";
 import { NewEncounterPage } from "./pages/NewEncounterPage";
 import { WorkspacePage } from "./pages/WorkspacePage";
+import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
+import { PharmacyPage } from "./pages/PharmacyPage";
+import { RadiologyPage } from "./pages/RadiologyPage";
 
-/** Phase 140 — App routes. Full route tree may be extended by existing build pipeline.
- *  This entry ensures clinical worklist is registered. Developed by BAHATI GAD WANGWE.
+/** Phase 144 — core clinical routes including lab/pharmacy/radiology.
+ *  For the full historical route tree run: bash scripts/restore_app_tsx.sh
+ *  Developed by BAHATI GAD WANGWE.
  */
 export default function App() {
   return (
@@ -46,6 +50,9 @@ export default function App() {
                       <Route path="/patients/:patientId" element={<PatientDetailPage />} />
                       <Route path="/patients/:patientId/encounters/new" element={<NewEncounterPage />} />
                       <Route path="/clinical-worklist" element={<ClinicalWorklistPage />} />
+                      <Route path="/laboratory" element={<LaboratoryWorkflowPage />} />
+                      <Route path="/pharmacy" element={<PharmacyPage />} />
+                      <Route path="/radiology" element={<RadiologyPage />} />
                       <Route path="/encounters" element={<EncountersPage />} />
                       <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
@@ -54,7 +61,16 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
-            <Route path="/government/*" element={<GovernmentProtectedRoute><Layout><DashboardPage /></Layout></GovernmentProtectedRoute>} />
+            <Route
+              path="/government/*"
+              element={
+                <GovernmentProtectedRoute>
+                  <Layout>
+                    <DashboardPage />
+                  </Layout>
+                </GovernmentProtectedRoute>
+              }
+            />
           </Routes>
         </WorkspaceProvider>
       </BrowserRouter>
