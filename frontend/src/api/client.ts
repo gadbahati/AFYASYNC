@@ -194,6 +194,12 @@ const _apiCore: any = {
     request(`/api/v1/referrals?role=${encodeURIComponent(role)}&scope=${encodeURIComponent(scope)}`),
   listTransfers: (role = "all", scope = "facility") =>
     request(`/api/v1/referrals/transfers?role=${encodeURIComponent(role)}&scope=${encodeURIComponent(scope)}`),
+  hieNodes: () => request("/api/v1/hie/nodes"),
+  createReferralHiePackage: (referralId: string, destinationNodeId: string, clinicalSummary?: string) => {
+    const q = new URLSearchParams({ destination_node_id: destinationNodeId });
+    if (clinicalSummary) q.set("clinical_summary", clinicalSummary);
+    return request(`/api/v1/referrals/${encodeURIComponent(referralId)}/hie-package?${q.toString()}`, { method: "POST" });
+  },
   listAppointments: (scope = "facility", appointment_date?: string) => {
     const q = new URLSearchParams({ scope });
     if (appointment_date) q.set("appointment_date", appointment_date);
