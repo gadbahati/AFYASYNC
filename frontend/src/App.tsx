@@ -8,7 +8,6 @@ import { GovernmentProtectedRoute } from "./components/GovernmentProtectedRoute"
 import { EntryPage } from "./pages/EntryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PatientLoginPage } from "./pages/PatientLoginPage";
-import { FacilityLoginPage } from "./pages/FacilityLoginPage";
 import { GovernmentLoginPage } from "./pages/GovernmentLoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EncountersPage } from "./pages/EncountersPage";
@@ -17,7 +16,7 @@ import { EncounterDetailPage } from "./pages/EncounterDetailPage";
 import { PatientsPage } from "./pages/PatientsPage";
 import { PatientDetailPage } from "./pages/PatientDetailPage";
 import { NewEncounterPage } from "./pages/NewEncounterPage";
-import { WorkspacePage } from "./pages/WorkspacePage";
+import WorkspaceHomePage from "./pages/WorkspaceHomePage";
 import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
 import { PharmacyPage } from "./pages/PharmacyPage";
 import { RadiologyPage } from "./pages/RadiologyPage";
@@ -28,10 +27,7 @@ import { MCHPage } from "./pages/MCHPage";
 import { FacilityMessagesPage } from "./pages/FacilityMessagesPage";
 import { ReferralsPage } from "./pages/ReferralsPage";
 
-/** Phase 149 — facility routes with real Referrals page.
- *  Full tree: python3 scripts/merge_app_routes.py
- *  Developed by BAHATI GAD WANGWE.
- */
+/** Phase 149+ — facility routes and workspace architecture. */
 export default function App() {
   return (
     <AuthProvider>
@@ -42,7 +38,7 @@ export default function App() {
             <Route path="/" element={<EntryPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/login/patient" element={<PatientLoginPage />} />
-            <Route path="/login/facility" element={<FacilityLoginPage />} />
+            <Route path="/login/facility" element={<LoginPage />} />
             <Route path="/login/government" element={<GovernmentLoginPage />} />
             <Route
               path="/*"
@@ -51,7 +47,7 @@ export default function App() {
                   <Layout>
                     <Routes>
                       <Route path="/" element={<DashboardPage />} />
-                      <Route path="/workspace" element={<WorkspacePage />} />
+                      <Route path="/workspace" element={<WorkspaceHomePage />} />
                       <Route path="/patients" element={<PatientsPage />} />
                       <Route path="/patients/:patientId" element={<PatientDetailPage />} />
                       <Route path="/patients/:patientId/encounters/new" element={<NewEncounterPage />} />
