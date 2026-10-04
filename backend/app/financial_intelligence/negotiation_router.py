@@ -41,7 +41,7 @@ def err(e):
 def item_out(x):
     return {"id":str(x.id),"case_id":str(x.case_id),"item_type":x.item_type,"title":x.title,"current_value":x.current_value,"requested_value":x.requested_value,"rationale":x.rationale,"priority":x.priority,"status":x.status,"external_response":x.external_response}
 def event_out(x):
-    return {"id":str(x.id),"event_type":x.event_type,"from_status":x.from_status,"to_status":x.to_status,"actor_id":str(x.actor_id) if x.actor_id else None,"note":x.note,"metadata":x.metadata,"created_at":x.created_at.isoformat() if x.created_at else None}
+    return {"id":str(x.id),"event_type":x.event_type,"from_status":x.from_status,"to_status":x.to_status,"actor_id":str(x.actor_id) if x.actor_id else None,"note":x.note,"metadata":x.event_metadata,"created_at":x.created_at.isoformat() if x.created_at else None}
 @router.get("/overview")
 def get_overview(db:Session=Depends(get_db),facility_id:UUID=Depends(get_facility_context),user:User=Depends(require_permission("claims.reconcile"))):return overview(db,facility_id)
 @router.get("")
