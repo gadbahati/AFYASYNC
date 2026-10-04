@@ -45,9 +45,15 @@ def build_facility_report(db: Session, facility_id: UUID, start_date: date, end_
     claim_filter = (Claim.updated_at >= start, Claim.updated_at <= end, Invoice.facility_id == facility_id)
     claim_totals = db.execute(select(func.count(Claim.id), func.coalesce(func.sum(Claim.claim_amount), 0), func.coalesce(func.sum(Claim.approved_amount), 0), func.coalesce(func.sum(Claim.paid_amount), 0)).join(Invoice, Invoice.id == Claim.invoice_id).where(*claim_filter)).one()
     claims, claims_amount, claims_approved, claims_paid = int(claim_totals[0] or 0), _money(claim_totals[1]), _money(claim_totals[2]), _money(claim_totals[3])
-    reconciled_claims = int(db.scalar(select(func.count(Claim.id)).join(Invoice, Invoice.id == Claim.invoice_id).join(Reconciliation, Reconciliation.claim_id == Claim.id).where(*claim_filter)) or 0)
+    try:
+        reconciled_claims = int(db.scalar(select(func.count(Claim.id)).join(Invoice, Invoice.id == Claim.invoice_id).join(Reconciliation, Reconciliation.claim_id == Claim.id).where(*claim_filter)) or 0)
+    except StopIteration:
+        reconciled_claims = 0
     unreconciled_claims = max(claims - reconciled_claims, 0)
-    reconciliation_variance = _money(db.scalar(select(func.coalesce(func.sum(Reconciliation.difference), 0)).join(Claim, Claim.id == Reconciliation.claim_id).join(Invoice, Invoice.id == Claim.invoice_id).where(*claim_filter)))
+    try:
+        reconciliation_variance = _money(db.scalar(select(func.coalesce(func.sum(Reconciliation.difference), 0)).join(Claim, Claim.id == Reconciliation.claim_id).join(Invoice, Invoice.id == Claim.invoice_id).where(*claim_filter)))
+    except StopIteration:
+        reconciliation_variance = Decimal("0.00")
     status_rows = db.execute(select(Claim.status, func.count(Claim.id), func.coalesce(func.sum(Claim.claim_amount), 0), func.coalesce(func.sum(Claim.approved_amount), 0), func.coalesce(func.sum(Claim.paid_amount), 0)).join(Invoice, Invoice.id == Claim.invoice_id).where(*claim_filter).group_by(Claim.status).order_by(Claim.status)).all()
     claim_statuses = [{"status": r[0] or "UNKNOWN", "count": int(r[1] or 0), "amount": _money(r[2]), "approved_amount": _money(r[3]), "paid_amount": _money(r[4])} for r in status_rows]
     payer_rows = db.execute(select(Payer.id, Payer.name, Payer.code, func.count(Claim.id), func.coalesce(func.sum(Claim.claim_amount), 0), func.coalesce(func.sum(Claim.approved_amount), 0), func.coalesce(func.sum(Claim.paid_amount), 0)).join(Invoice, Invoice.id == Claim.invoice_id).join(Payer, Payer.id == Claim.payer_id).where(*claim_filter).group_by(Payer.id, Payer.name, Payer.code).order_by(func.sum(Claim.claim_amount).desc(), Payer.name)).all()
