@@ -36,6 +36,20 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: afasync
+          POSTGRES_PASSWORD: afasync
+          POSTGRES_DB: afasync
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U afasync -d afasync"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     defaults:
       run:
         working-directory: backend
@@ -54,6 +68,10 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Prepare PostgreSQL extensions
+        run: PGPASSWORD=afasync psql -h 127.0.0.1 -U afasync -d afasync -c 'CREATE EXTENSION IF NOT EXISTS citext;'
+      - name: Apply database migrations
+        run: alembic upgrade head
       - name: Prepare PostgreSQL extensions
         run: PGPASSWORD=afasync psql -h 127.0.0.1 -U afasync -d afasync -c 'CREATE EXTENSION IF NOT EXISTS citext;'
       - name: Apply database migrations
