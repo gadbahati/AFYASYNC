@@ -12,7 +12,7 @@ from app.clinical.discharge_models import ClinicalDischarge
 from app.clinical.order_models import ClinicalOrder
 from app.encounters.models import Encounter
 from app.facilities.models import Facility
-from app.persons.models import Person
+from app.patients.models import Person
 
 
 class SummaryError(ValueError):
@@ -35,7 +35,6 @@ def build_encounter_summary(
     facility = db.get(Facility, facility_id)
     patient = db.get(Person, enc.patient_id)
 
-    # Prefer full clinical timeline if available
     timeline: dict = {}
     try:
         from app.clinical.service import get_encounter_clinical_summary
@@ -46,19 +45,11 @@ def build_encounter_summary(
             raw = get_encounter_clinical_summary(db, encounter_id)
         if isinstance(raw, dict):
             timeline = raw
-        else:
-            # ORM-style return — serialize lightly
-            timeline = {
-                "vitals": getattr(raw, "vitals", []) if not isinstance(raw, dict) else raw.get("vitals", []),
-            }
     except Exception:
         timeline = {}
 
-    # Diagnoses / vitals / notes from timeline dict or empty
     def _rows(key: str):
         val = timeline.get(key) if isinstance(timeline, dict) else None
-        if val is None:
-            return []
         if not isinstance(val, list):
             return []
         out = []
@@ -160,10 +151,7 @@ def _jsonable(d: dict) -> dict:
         elif isinstance(v, UUID):
             out[k] = str(v)
         else:
-            try:
-                out[k] = v
-            except Exception:
-                out[k] = str(v)
+            out[k] = v
     return out
 
 
