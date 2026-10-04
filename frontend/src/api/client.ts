@@ -206,6 +206,26 @@ const _apiCore: any = {
   addProcedure: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/procedures`, { method: "POST", body: JSON.stringify(payload) }),
   getClinicalNotes: (encounterId: string) => request(`/api/v1/encounters/${encounterId}/clinical-notes`),
   addClinicalNote: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/clinical-notes`, { method: "POST", body: JSON.stringify(payload) }),
+  listClinicalOrders: (encounterId: string, orderType?: string) => {
+    const q = orderType ? `?order_type=${encodeURIComponent(orderType)}` : "";
+    return request(`/api/v1/encounters/${encounterId}/orders${q}`);
+  },
+  createClinicalOrder: (encounterId: string, payload: any) =>
+    request(`/api/v1/encounters/${encounterId}/orders`, { method: "POST", body: JSON.stringify(payload) }),
+  fulfillClinicalOrder: (orderId: string, payload: { status?: string; result_notes?: string } = {}) =>
+    request(`/api/v1/encounters/orders/${orderId}/fulfill`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateClinicalOrderStatus: (orderId: string, status: string) =>
+    request(`/api/v1/encounters/orders/${orderId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  dischargeEncounter: (encounterId: string, payload: any) =>
+    request(`/api/v1/encounters/${encounterId}/discharge`, { method: "POST", body: JSON.stringify(payload) }),
+  getEncounterDischarge: (encounterId: string) =>
+    request(`/api/v1/encounters/${encounterId}/discharge`),
   getLatestTriage: (encounterId: string) => request(`/api/v1/encounters/${encounterId}/triage`),
   recordTriage: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/triage`, { method: "POST", body: JSON.stringify(payload) }),
   updateAppointmentStatus: (appointmentId: string, status: string) => request(`/api/v1/appointments/${appointmentId}/${encodeURIComponent(status)}`, { method: "PATCH" }),
@@ -334,7 +354,6 @@ const _apiCore: any = {
 export const api: any = { ..._apiCore, ...citizenApiMethods(request) };
 
 export { request, API_BASE, AUTH_EXPIRED_EVENT };
-
 
 export async function downloadWarehouseCsv(days = 30): Promise<string> {
   const token = getAccessToken();
