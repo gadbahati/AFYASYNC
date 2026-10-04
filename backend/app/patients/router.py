@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
-from app.auth.dependencies import get_facility_context, require_permission
+from app.auth.dependencies import get_facility_context, require_national_permission, require_permission
 from app.context.service import resolve_facility_ids
 from app.database import get_db
 from app.encounters.schemas import EncounterListResponse
@@ -14,6 +14,8 @@ from app.patients.record_schemas import PatientRecordSummaryResponse
 from app.patients.mpi import find_mpi_candidates
 from app.patients.mpi_schemas import MPIResponse
 from app.patients.record_service import get_patient_record_summary
+from app.patients.cross_facility import get_cross_facility_record
+from app.patients.cross_facility_schemas import CrossFacilityRecordResponse, CrossFacilityMPIResponse
 from app.patients.schemas import PatientCreate, PatientFacilityResponse, PatientFacilityStatusUpdate, PatientListResponse, PatientResponse, PatientSearchResult, PatientUpdate
 from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_facility_enrollments, get_patient_for_facility, list_patients_for_facility, search_patients, update_patient, update_patient_facility_status
 from app.rbac.models import User
@@ -60,6 +62,66 @@ def _degraded_patient_record(db: Session, patient_id: UUID, facility_id: UUID) -
         "billing": {"charges": [], "invoices": [], "payments": []}, "claims": [], "appointments": [],
         "queue_history": [], "referrals": [], "transfers": [],
     }
+
+
+@router.get("/mpi/cross-facility/candidates", response_model=CrossFacilityMPIResponse)
+def cross_facility_mpi_candidates(
+    first_name: str | None = Query(default=None, max_length=100),
+    last_name: str | None = Query(default=None, max_length=100),
+    date_of_birth: str | None = Query(default=None),
+    phone: str | None = Query(default=None, max_length=30),
+    national_id_number: str | None = Query(default=None, min_length=7, max_length=9),
+    limit: int = Query(default=20, ge=1, le=50),
+    user: User = Depends(require_national_permission("interoperability.patient.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> CrossFacilityMPIResponse:
+    from datetime import date
+    from app.context.service import resolve_facility_ids
+    parsed_dob = None
+    if date_of_birth:
+        try:
+            parsed_dob = date.fromisoformat(date_of_birth)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"code": "INVALID_DATE_OF_BIRTH", "message": "Use YYYY-MM-DD."}) from exc
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope="network")
+    try:
+        candidates = find_mpi_candidates(
+            db, facility_id=facility_id, facility_ids=facility_ids,
+            first_name=first_name, last_name=last_name, date_of_birth=parsed_dob,
+            phone=phone, national_id_number=national_id_number, limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc), "message": "Provide at least one identity or demographic identifier."}) from exc
+    record_audit(db, action="CROSS_FACILITY_MPI_SEARCH", resource_type="PERSON",
+                 resource_id=str(facility_id), result="SUCCESS", user_id=user.id,
+                 facility_id=facility_id,
+                 metadata={"candidate_count": len(candidates), "facility_count": len(facility_ids)},
+                 commit=True)
+    return CrossFacilityMPIResponse(candidates=candidates, requires_review_before_access=bool(candidates))
+
+
+@router.get("/cross-facility/{patient_id}/record", response_model=CrossFacilityRecordResponse)
+def cross_facility_patient_record(
+    patient_id: UUID,
+    access_reason: str = Query(min_length=3, max_length=200),
+    user: User = Depends(require_national_permission("interoperability.patient.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> CrossFacilityRecordResponse:
+    from app.context.service import resolve_facility_ids
+    facility_ids = resolve_facility_ids(db, user=user, token_facility_id=facility_id, scope="network")
+    try:
+        result = get_cross_facility_record(
+            db, patient_id=patient_id, facility_ids=facility_ids,
+            requesting_facility_id=facility_id, actor_user_id=user.id,
+            access_reason=access_reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail={"code": "PATIENT_NOT_IN_AUTHORIZED_NETWORK", "message": "No active patient record was found within your authorized facility network."})
+    return CrossFacilityRecordResponse(**result)
 
 
 @router.get("/mpi/candidates", response_model=MPIResponse)
