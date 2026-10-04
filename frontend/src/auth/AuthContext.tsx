@@ -1,12 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, ApiError } from "../api/client";
-import type { AuthMe, FacilityOption, FacilitySelectionRequired, LoginResult, TokenResponse } from "../api/types";
+import type { AuthMe, FacilityOption, FacilitySelectionRequired, GovernmentOrganizationOption, GovernmentSelectionRequired, LoginResult, TokenResponse } from "../api/types";
 import {
   clearSession,
   getAccessToken,
   getAccountType,
   getFacilityId,
   getFacilityName,
+  getOrganizationId,
+  getPortalType,
   getRefreshToken,
   setSession,
 } from "./storage";
@@ -17,9 +19,14 @@ type AuthState = {
   facilityId: string | null;
   facilityName: string | null;
   accountType: "patient" | "staff" | null;
+  portalType: "patient" | "facility" | "government" | null;
+  organizationId: string | null;
+  governmentOrganization: GovernmentOrganizationOption | null;
   contextScope: "facility" | "network" | "county" | "national";
   pendingFacilities: FacilityOption[] | null;
   login: (username: string, password: string) => Promise<"ready" | "select_facility">;
+  governmentLogin: (username: string, password: string) => Promise<"ready" | "select_organization">;
+  selectGovernmentOrganization: (organization: GovernmentOrganizationOption) => Promise<void>;
   patientLogin: (identifier: string, password: string) => Promise<void>;
   patientRegister: (payload: {
     afya_id: string;
@@ -46,6 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [facilityId, setFacilityId] = useState<string | null>(getFacilityId());
   const [facilityName, setFacilityName] = useState<string | null>(getFacilityName());
   const [accountType, setAccountType] = useState<"patient" | "staff" | null>(getAccountType());
+  const [portalType, setPortalType] = useState<"patient" | "facility" | "government" | null>(getPortalType());
+  const [organizationId, setOrganizationId] = useState<string | null>(getOrganizationId());
+  const [governmentOrganization, setGovernmentOrganization] = useState<GovernmentOrganizationOption | null>(null);
+  const [pendingGovernmentOrganizations, setPendingGovernmentOrganizations] = useState<GovernmentOrganizationOption[] | null>(null);
   const [contextScope, setContextScope] = useState<"facility" | "network" | "county" | "national">("facility");
   const [pendingFacilities, setPendingFacilities] = useState<FacilityOption[] | null>(null);
 
@@ -56,6 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFacilityId(null);
       setFacilityName(null);
       setAccountType(null);
+      setPortalType(null);
+      setOrganizationId(null);
+      setGovernmentOrganization(null);
+      setPendingGovernmentOrganizations(null);
       setContextScope("facility");
       setPendingFacilities(null);
     };
@@ -76,6 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setFacilityId(getFacilityId());
         setFacilityName(getFacilityName());
         setAccountType(type ?? (getFacilityId() ? "staff" : "patient"));
+        setPortalType(getPortalType() ?? (getFacilityId() ? "facility" : "patient"));
+        setOrganizationId(getOrganizationId());
       })
       .catch(() => {
         clearSession();
@@ -83,6 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setFacilityId(null);
         setFacilityName(null);
         setAccountType(null);
+        setPortalType(null);
+        setOrganizationId(null);
+        setGovernmentOrganization(null);
+        setPendingGovernmentOrganizations(null);
         setContextScope("facility");
       })
       .finally(() => setReady(true));
@@ -130,6 +151,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return "ready";
   }, []);
 
+  const governmentLogin = useCallback(async (user: string, password: string) => {
+    const result = await api.governmentLogin(user, password) as TokenResponse | GovernmentSelectionRequired;
+    if ("requires_government_organization_selection" in result && result.requires_government_organization_selection) {
+      setSession({ access_token: result.access_token, account_type: "staff", portal_type: "government" });
+      setUsername(user);
+      setAccountType("staff");
+      setPortalType("government");
+      setOrganizationId(null);
+      setGovernmentOrganization(null);
+      setPendingGovernmentOrganizations(result.organizations);
+      return "select_organization";
+    }
+    const tokens = result as TokenResponse;
+    setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, account_type: "staff", portal_type: "government" });
+    const me = await api.governmentMe();
+    const data = me.data;
+    const org: GovernmentOrganizationOption = {
+      organization_id: data.organization_id,
+      organization_name: data.organization_name,
+      organization_type: data.organization_type,
+      scope_level: data.scope_level,
+      role_code: data.role_code,
+    };
+    setUsername(data.username);
+    setAccountType("staff");
+    setPortalType("government");
+    setOrganizationId(data.organization_id);
+    setGovernmentOrganization(org);
+    setPendingGovernmentOrganizations(null);
+    setFacilityId(null);
+    setFacilityName(null);
+    return "ready";
+  }, []);
+
+  const selectGovernmentOrganization = useCallback(async (organization: GovernmentOrganizationOption) => {
+    const tokens = await api.selectGovernmentOrganization(organization.organization_id);
+    setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, account_type: "staff", portal_type: "government", organization_id: organization.organization_id });
+    setPortalType("government");
+    setAccountType("staff");
+    setOrganizationId(organization.organization_id);
+    setGovernmentOrganization(organization);
+    setFacilityId(null);
+    setFacilityName(null);
+    setPendingGovernmentOrganizations(null);
+    const me = await api.governmentMe();
+    setUsername(me.data.username);
+  }, []);
+
   const patientLogin = useCallback(async (identifier: string, password: string) => {
     const tokens = await api.patientLogin(identifier, password);
     setSession({
@@ -140,6 +209,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setFacilityId(null);
     setFacilityName(null);
     setAccountType("patient");
+    setPortalType("patient");
+    setOrganizationId(null);
+    setGovernmentOrganization(null);
+    setPendingGovernmentOrganizations(null);
     setPendingFacilities(null);
     const me: AuthMe = await api.me();
     setUsername(me.data.username);
@@ -182,6 +255,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setFacilityId(facility.facility_id);
     setFacilityName(facility.facility_name);
     setAccountType("staff");
+    setPortalType("facility");
+    setOrganizationId(null);
+    setGovernmentOrganization(null);
+    setPendingGovernmentOrganizations(null);
     setPendingFacilities(null);
     const me: AuthMe = await api.me();
     setUsername(me.data.username);
@@ -201,6 +278,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setFacilityId(null);
     setFacilityName(null);
     setAccountType(null);
+    setPortalType(null);
+    setOrganizationId(null);
+    setGovernmentOrganization(null);
+    setPendingGovernmentOrganizations(null);
     setPendingFacilities(null);
   }, []);
 
@@ -213,7 +294,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       accountType,
       contextScope,
       pendingFacilities,
+      portalType,
+      organizationId,
+      governmentOrganization,
+      pendingGovernmentOrganizations,
       login,
+      governmentLogin,
+      selectGovernmentOrganization,
       patientLogin,
       patientRegister,
       selectFacility,
@@ -227,7 +314,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       accountType,
       contextScope,
       pendingFacilities,
+      portalType,
+      organizationId,
+      governmentOrganization,
+      pendingGovernmentOrganizations,
       login,
+      governmentLogin,
+      selectGovernmentOrganization,
       patientLogin,
       patientRegister,
       selectFacility,
