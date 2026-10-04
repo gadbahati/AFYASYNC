@@ -1,6 +1,7 @@
 """HIE depth APIs — robust national exchange."""
 
-from datetime import datetime\nfrom uuid import UUID
+from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
