@@ -117,3 +117,4 @@ class ClinicalNote(Base):
 
 
 from app.clinical.discharge_models import ClinicalDischarge  # noqa: E402,F401
+from app.clinical.order_models import ClinicalOrder  # noqa: E402,F401
