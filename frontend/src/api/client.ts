@@ -217,6 +217,8 @@ const _apiCore: any = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  forwardClinicalOrder: (orderId: string) =>
+    request(`/api/v1/encounters/orders/${orderId}/forward`, { method: "POST" }),
   updateClinicalOrderStatus: (orderId: string, status: string) =>
     request(`/api/v1/encounters/orders/${orderId}/status`, {
       method: "PATCH",
