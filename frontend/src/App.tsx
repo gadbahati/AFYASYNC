@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
@@ -27,8 +28,33 @@ import { MCHPage } from "./pages/MCHPage";
 import { FacilityMessagesPage } from "./pages/FacilityMessagesPage";
 import { ReferralsPage } from "./pages/ReferralsPage";
 
-/** Phase 149+ — facility routes and workspace architecture. Build sync checkpoint. */
+/** Phase 149+ — facility routes and workspace architecture. */
 export default function App() {
+  const facilityShell = (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/workspace" element={<WorkspaceHomePage />} />
+        <Route path="/patients" element={<PatientsPage />} />
+        <Route path="/patients/:patientId" element={<PatientDetailPage />} />
+        <Route path="/patients/:patientId/encounters/new" element={<NewEncounterPage />} />
+        <Route path="/clinical-worklist" element={<ClinicalWorklistPage />} />
+        <Route path="/laboratory" element={<LaboratoryWorkflowPage />} />
+        <Route path="/pharmacy" element={<PharmacyPage />} />
+        <Route path="/radiology" element={<RadiologyPage />} />
+        <Route path="/encounters" element={<EncountersPage />} />
+        <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
+        <Route path="/appointments" element={<AppointmentsPage />} />
+        <Route path="/mch" element={<MCHPage />} />
+        <Route path="/billing" element={<BillingPage />} />
+        <Route path="/claims" element={<ClaimsPage />} />
+        <Route path="/messages" element={<FacilityMessagesPage />} />
+        <Route path="/referrals" element={<ReferralsPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Layout>
+  );
+
   return (
     <AuthProvider>
       <BrowserRouter>
@@ -42,42 +68,17 @@ export default function App() {
             <Route path="/login/government" element={<GovernmentLoginPage />} />
             <Route
               path="/*"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Routes>
-                      <Route path="/" element={<DashboardPage />} />
-                      <Route path="/workspace" element={<WorkspaceHomePage />} />
-                      <Route path="/patients" element={<PatientsPage />} />
-                      <Route path="/patients/:patientId" element={<PatientDetailPage />} />
-                      <Route path="/patients/:patientId/encounters/new" element={<NewEncounterPage />} />
-                      <Route path="/clinical-worklist" element={<ClinicalWorklistPage />} />
-                      <Route path="/laboratory" element={<LaboratoryWorkflowPage />} />
-                      <Route path="/pharmacy" element={<PharmacyPage />} />
-                      <Route path="/radiology" element={<RadiologyPage />} />
-                      <Route path="/encounters" element={<EncountersPage />} />
-                      <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
-                      <Route path="/appointments" element={<AppointmentsPage />} />
-                      <Route path="/mch" element={<MCHPage />} />
-                      <Route path="/billing" element={<BillingPage />} />
-                      <Route path="/claims" element={<ClaimsPage />} />
-                      <Route path="/messages" element={<FacilityMessagesPage />} />
-                      <Route path="/referrals" element={<ReferralsPage />} />
-                      <Route path="*" element={<Navigate to="/" replace />} />
-                    </Routes>
-                  </Layout>
-                </ProtectedRoute>
-              }
+              element={createElement(ProtectedRoute, null, facilityShell)}
             />
             <Route
               path="/government/*"
-              element={
-                <GovernmentProtectedRoute>
-                  <Layout>
-                    <DashboardPage />
-                  </Layout>
-                </GovernmentProtectedRoute>
-              }
+              element={createElement(
+                GovernmentProtectedRoute,
+                null,
+                <Layout>
+                  <DashboardPage />
+                </Layout>,
+              )}
             />
           </Routes>
         </WorkspaceProvider>
