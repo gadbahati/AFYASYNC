@@ -37,11 +37,8 @@ def test_inbound_fhir_patient_id_is_not_treated_as_local_identity():
     db = MagicMock()
     node = type("Node", (), {"status": "ACTIVE", "trust_level": "HIGH", "code": "TRUSTED-A", "facility_id": uuid4()})()
     db.get.return_value = node
-    row = None
-    def capture_add(value):
-        nonlocal row
-        row = value
-    db.add.side_effect = capture_add
+    added = []
+    db.add.side_effect = lambda value: added.append(value)
     db.flush.side_effect = lambda: None
 
     remote_id = str(uuid4())
@@ -69,6 +66,6 @@ def test_inbound_fhir_patient_id_is_not_treated_as_local_identity():
 
     assert result["validation_status"] == "ACCEPTED"
     assert result["patient_id"] is None
-    assert row is not None
+    row = next(value for value in added if getattr(value, "__tablename__", None) == "hie_inbound_documents")
     assert row.patient_id is None
     assert row.payload == bundle
