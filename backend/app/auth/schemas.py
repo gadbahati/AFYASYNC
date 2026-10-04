@@ -18,6 +18,11 @@ class MFARequired(BaseModel):
     expires_in: int
 
 
+class MFASetupRequired(BaseModel):
+    mfa_setup_required: bool = True
+    access_token: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -69,6 +74,10 @@ class MFASetupResponse(BaseModel):
     enabled: bool
     secret: str
     otpauth_uri: str
+
+
+class MFASetupConfirmRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=8)
 
 
 class MFAStatusResponse(BaseModel):
