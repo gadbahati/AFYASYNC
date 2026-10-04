@@ -1,6 +1,6 @@
-"""Phase 137/149/151 — printable clinical encounter summary.
+"""Phase 137–153 — printable clinical encounter summary.
 
-Imaging reports + lab results extracted from fulfilled clinical orders.
+Imaging, lab, and pharmacy dispense extraction from fulfilled orders.
 Developed by BAHATI GAD WANGWE.
 """
 from datetime import datetime, timezone
@@ -20,8 +20,37 @@ class SummaryError(ValueError):
     pass
 
 
+def _parse_pharmacy_dispense(o: ClinicalOrder) -> dict:
+    """Phase 153 — extract Dispensed / Batch from order notes."""
+    qty = batch = None
+    notes = o.notes or ""
+    for line in str(notes).splitlines():
+        sline = line.strip()
+        low = sline.lower()
+        if low.startswith("dispensed:"):
+            rest = sline.split(":", 1)[1].strip()
+            if "·" in rest or "batch:" in low:
+                parts = rest.replace("·", "|").split("|")
+                qty = parts[0].strip()
+                for p in parts[1:]:
+                    if "batch" in p.lower():
+                        batch = p.split(":", 1)[-1].strip()
+            else:
+                qty = rest
+        elif low.startswith("batch:"):
+            batch = sline.split(":", 1)[1].strip()
+    return {
+        "order_id": str(o.id),
+        "code": o.code,
+        "description": o.description,
+        "status": o.status,
+        "dispense_qty": qty,
+        "batch_no": batch,
+        "notes": o.notes,
+    }
+
+
 def _parse_lab_result(o: ClinicalOrder) -> dict:
-    """Phase 151 — extract Result: value units (FLAG) from order notes."""
     value = units = flag = None
     notes = o.notes or ""
     for line in str(notes).splitlines():
@@ -50,7 +79,6 @@ def _parse_lab_result(o: ClinicalOrder) -> dict:
 
 
 def _parse_imaging_report(notes: str | None) -> dict:
-    """Pull Modality / Impression lines from fulfilled order notes."""
     modality = None
     impression = None
     if not notes:
@@ -61,11 +89,7 @@ def _parse_imaging_report(notes: str | None) -> dict:
             modality = s.split(":", 1)[1].strip() or modality
         elif s.lower().startswith("impression:"):
             impression = s.split(":", 1)[1].strip() or impression
-    return {
-        "modality": modality,
-        "impression": impression,
-        "raw_notes": notes,
-    }
+    return {"modality": modality, "impression": impression, "raw_notes": notes}
 
 
 def build_encounter_summary(
@@ -119,6 +143,7 @@ def build_encounter_summary(
     order_payload = []
     imaging_reports = []
     lab_results = []
+    pharmacy_dispenses = []
     for o in clinical_orders:
         item = {
             "id": str(o.id),
@@ -131,7 +156,8 @@ def build_encounter_summary(
             "created_at": o.created_at.isoformat() if o.created_at else None,
         }
         order_payload.append(item)
-        if (o.order_type or "").upper() in {"IMAGING", "RADIOLOGY"} and o.status == "COMPLETED":
+        ot = (o.order_type or "").upper()
+        if ot in {"IMAGING", "RADIOLOGY"} and o.status == "COMPLETED":
             parsed = _parse_imaging_report(o.notes)
             imaging_reports.append(
                 {
@@ -144,8 +170,10 @@ def build_encounter_summary(
                     "notes": o.notes,
                 }
             )
-        if (o.order_type or "").upper() in {"LAB", "LABORATORY"} and o.status == "COMPLETED":
+        if ot in {"LAB", "LABORATORY"} and o.status == "COMPLETED":
             lab_results.append(_parse_lab_result(o))
+        if ot in {"PHARMACY", "RX"} and o.status == "COMPLETED":
+            pharmacy_dispenses.append(_parse_pharmacy_dispense(o))
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -181,6 +209,7 @@ def build_encounter_summary(
         "clinical_orders": order_payload,
         "imaging_reports": imaging_reports,
         "lab_results": lab_results,
+        "pharmacy_dispenses": pharmacy_dispenses,
         "discharge": (
             {
                 "disposition": discharge.disposition,
