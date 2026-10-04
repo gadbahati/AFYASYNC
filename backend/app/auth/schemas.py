@@ -31,6 +31,20 @@ class FacilitySelectionRequest(BaseModel):
     facility_id: UUID
 
 
+class GovernmentOrganizationOption(BaseModel):
+    organization_id: UUID
+    organization_name: str
+    organization_type: str
+    scope_level: str
+    role_code: str
+
+
+class GovernmentSelectionRequired(BaseModel):
+    requires_government_organization_selection: bool = True
+    access_token: str
+    organizations: list[GovernmentOrganizationOption]
+
+
 class FacilitySelectionRequired(BaseModel):
     """Returned by /login while the user chooses an active facility."""
 
