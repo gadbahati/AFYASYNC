@@ -22,7 +22,6 @@ ROUTERS: list[tuple[str, str, str]] = [
     ("app.emergency.router", "router", "emergency_router"),
     ("app.encounters.router", "router", "encounters_router"),
     ("app.clinical.router", "router", "clinical_router"),
-    ("app.clinical.worklist_routes", "worklist_router", "worklist_router"),
     ("app.appointments.router", "router", "appointments_router"),
     ("app.billing.router", "router", "billing_router"),
     ("app.claims.router", "router", "claims_router"),
@@ -31,4 +30,5 @@ ROUTERS: list[tuple[str, str, str]] = [
     ("app.pharmacy.router", "router", "pharmacy_router"),
     ("app.radiology.router", "router", "radiology_router"),
     ("app.auth", "router", "auth_router"),
+    ("app.clinical.worklist_routes", "worklist_router", "worklist_router"),
 ]
