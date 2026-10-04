@@ -219,3 +219,77 @@ def audit_portal_view(
         metadata=metadata or {},
         commit=True,
     )
+
+
+def get_my_results(db: Session, person_id: UUID, *, limit: int = 50) -> tuple[list, list]:
+    """Return only finalized patient-owned laboratory and radiology results."""
+    limit = min(max(limit, 1), 100)
+    labs = []
+    imaging = []
+
+    from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabTest
+
+    lab_rows = db.execute(
+        select(LabResult, LabOrderItem, LabOrder, LabTest)
+        .join(LabOrderItem, LabOrderItem.id == LabResult.lab_order_item_id)
+        .join(LabOrder, LabOrder.id == LabOrderItem.lab_order_id)
+        .join(LabTest, LabTest.id == LabOrderItem.test_id)
+        .where(
+            LabOrder.patient_id == person_id,
+            LabResult.verified_by.is_not(None),
+        )
+        .order_by(LabResult.created_at.desc(), LabResult.id.desc())
+        .limit(limit)
+    ).all()
+
+    for result, item, order, test in lab_rows:
+        labs.append(
+            {
+                "id": result.id,
+                "lab_order_item_id": item.id,
+                "order_id": order.order_id,
+                "encounter_id": order.encounter_id,
+                "test_name": test.name,
+                "test_code": test.code,
+                "result": result.result,
+                "unit": result.unit,
+                "reference_range": result.reference_range,
+                "comments": result.comments,
+                "status": result.status,
+                "verified_at": result.verified_at,
+                "created_at": result.created_at,
+            }
+        )
+
+    from app.radiology.models import ImagingOrder, ImagingReport, ImagingTest
+
+    imaging_rows = db.execute(
+        select(ImagingReport, ImagingOrder, ImagingTest)
+        .join(ImagingOrder, ImagingOrder.id == ImagingReport.order_id)
+        .join(ImagingTest, ImagingTest.id == ImagingOrder.test_id)
+        .where(
+            ImagingOrder.patient_id == person_id,
+            ImagingReport.report_status.in_(["FINAL", "REVIEWED"]),
+        )
+        .order_by(ImagingReport.reported_at.desc(), ImagingReport.id.desc())
+        .limit(limit)
+    ).all()
+
+    for report, order, test in imaging_rows:
+        imaging.append(
+            {
+                "id": report.id,
+                "order_id": order.id,
+                "order_number": order.order_number,
+                "encounter_id": order.encounter_id,
+                "test_name": test.name,
+                "modality": test.modality,
+                "findings": report.findings,
+                "impression": report.impression,
+                "report_status": report.report_status,
+                "reported_at": report.reported_at,
+                "reviewed_at": report.reviewed_at,
+            }
+        )
+
+    return labs, imaging
