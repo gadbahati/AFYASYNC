@@ -15,6 +15,7 @@ from app.treat_abroad import models as treat_abroad_models
 from app.portal import messaging_models as portal_messaging_models
 from app.hie import import_models as hie_import_models
 from app.hie import delivery_models as hie_delivery_models
+from app.hie import consent_models as hie_consent_models
 
 _ = (
     patient_models,
