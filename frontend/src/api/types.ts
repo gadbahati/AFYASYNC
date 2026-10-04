@@ -2,6 +2,9 @@ export type TokenResponse = { access_token: string; refresh_token: string; token
 export type FacilityOption = { facility_id: string; facility_name: string };
 export type GovernmentOrganizationOption = { organization_id: string; organization_name: string; organization_type: string; scope_level: string; role_code: string };
 export type GovernmentSelectionRequired = { requires_government_organization_selection: true; access_token: string; organizations: GovernmentOrganizationOption[] };
+export type GovernmentMFARequired = { mfa_required: true; challenge_id: string; expires_in: number };
+export type GovernmentMFASetupRequired = { mfa_setup_required: true; access_token: string };
+export type GovernmentMFASetup = { enabled: boolean; secret: string; otpauth_uri: string };
 
 export type FacilitySelectionRequired = { requires_facility_selection: true; access_token: string; facilities: FacilityOption[] };
 export type LoginResult = TokenResponse | FacilitySelectionRequired;
