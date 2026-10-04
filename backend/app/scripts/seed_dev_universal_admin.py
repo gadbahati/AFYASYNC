@@ -153,7 +153,15 @@ def seed_dev_universal_admin(*, username: str | None = None, password: str | Non
             db.add(government)
             db.flush()
         else:
+            # An older bootstrap may have created this code as a non-government
+            # organization. Government login filters by organization_type, so
+            # normalize the existing record instead of only reactivating it.
+            government.name = GOVERNMENT_NAME
+            government.organization_type = "NATIONAL_GOVERNMENT"
             government.status = "ACTIVE"
+            government.description = (
+                "Temporary AfyaSync development organization. Remove before production handover."
+            )
 
         gov_access = db.scalar(
             select(GovernmentAccess).where(
