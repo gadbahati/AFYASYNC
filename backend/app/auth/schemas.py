@@ -12,6 +12,12 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(min_length=1)
 
 
+class MFARequired(BaseModel):
+    mfa_required: bool = True
+    challenge_id: UUID
+    expires_in: int
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -51,3 +57,21 @@ class FacilitySelectionRequired(BaseModel):
     requires_facility_selection: bool = True
     access_token: str
     facilities: list[FacilityOption]
+
+
+
+class MFAVerifyRequest(BaseModel):
+    challenge_id: UUID
+    code: str = Field(min_length=6, max_length=8)
+
+
+class MFASetupResponse(BaseModel):
+    enabled: bool
+    secret: str
+    otpauth_uri: str
+
+
+class MFAStatusResponse(BaseModel):
+    enabled: bool
+    required: bool
+    enrolled_at: str | None = None
