@@ -11,6 +11,7 @@ from app.hie.delivery_models import HieDeliveryJob
 from app.hie.consent_models import HieConsent
 from app.hie.auth import clear_hie_token_cache, get_hie_access_token
 from app.hie.models import HieExportLog, HieNode
+from app.hie.conformance import assert_valid_bundle
 
 ACTIVE_STATUSES = {"PENDING", "RETRY"}
 
@@ -20,6 +21,7 @@ def queue_bundle(db: Session, *, facility_id: UUID, patient_id: UUID, destinatio
     if node.facility_id == facility_id: raise ValueError("HIE_DESTINATION_SELF")
     if node.trust_level not in {"HIGH", "NATIONAL"}: raise ValueError("HIE_DESTINATION_NOT_TRUSTED")
     if not node.endpoint_url: raise ValueError("HIE_DESTINATION_ENDPOINT_NOT_CONFIGURED")
+    assert_valid_bundle(payload)
     consent = db.scalar(select(HieConsent).where(
         HieConsent.patient_id == patient_id,
         HieConsent.facility_id == facility_id,
