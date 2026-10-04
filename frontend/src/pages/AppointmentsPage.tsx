@@ -109,6 +109,21 @@ export function AppointmentsPage() {
     }
   }
 
+
+  async function changeStatus(id: string, status: string) {
+    setSaving(true);
+    setNotice(null);
+    try {
+      const updated = await api.updateAppointmentStatus(id, status);
+      setRows((current) => current.map((item) => item.id === id ? updated : item));
+      setNotice("Appointment status updated.");
+    } catch (e) {
+      setNotice(e instanceof ApiError ? e.code : "STATUS_UPDATE_FAILED");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const name = (id: string) => {
     const p = patients.find((x) => x.id === id);
     return p ? [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(" ") : id;
@@ -252,7 +267,7 @@ export function AppointmentsPage() {
                   <td>{departments.find((d) => d.id === a.department_id)?.name || a.department_id}</td>
                   <td>{a.provider_id || "Any available doctor"}</td>
                   <td>{a.reason || "Return visit"}</td>
-                  <td><span className="status-pill">{a.status}</span></td>
+                  <td>\n                    <span className="status-pill">{a.status}</span>\n                    <div className="form-actions" style={{ marginTop: 6 }}>\n                      {a.status === "SCHEDULED" && <button type="button" className="secondary" disabled={saving} onClick={() => void changeStatus(a.id, "CONFIRMED")}>Confirm</button>}\n                      {(a.status === "SCHEDULED" || a.status === "CONFIRMED") && <button type="button" className="secondary" disabled={saving} onClick={() => void changeStatus(a.id, "CANCELLED")}>Cancel</button>}\n                      {a.status === "CONFIRMED" && <button type="button" className="secondary" disabled={saving} onClick={() => void changeStatus(a.id, "CHECKED_IN")}>Check in</button>}\n                      {a.status === "CHECKED_IN" && <button type="button" className="secondary" disabled={saving} onClick={() => void changeStatus(a.id, "COMPLETED")}>Complete</button>}\n                    </div>\n                  </td>
                 </tr>
               ))}
               {rows.length === 0 && (
