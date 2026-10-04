@@ -1,8 +1,9 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
+import type { ReactNode } from "react";
 import { getAccessToken } from "../auth/storage";
 import { useAuth } from "../auth/AuthContext";
 
-export function ProtectedRoute() {
+export function ProtectedRoute({ children }: { children?: ReactNode }) {
   const auth = useAuth();
   const location = useLocation();
 
@@ -20,7 +21,6 @@ export function ProtectedRoute() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  // Patient sessions must stay in the patient portal — never the facility shell.
   if (auth.portalType === "government") {
     return <Navigate to="/government" replace />;
   }
@@ -37,5 +37,5 @@ export function ProtectedRoute() {
     return <Navigate to="/select-facility" replace state={{ from: location.pathname }} />;
   }
 
-  return <Outlet />;
+  return children ?? <Outlet />;
 }
