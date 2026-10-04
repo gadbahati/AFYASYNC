@@ -158,3 +158,21 @@ class AllergyResponse(BaseModel):
     notes: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class TriageCreate(BaseModel):
+    acuity: int = Field(ge=1, le=5)
+    chief_complaint: str | None = Field(default=None, max_length=5000)
+    red_flags: list[str] = Field(default_factory=list, max_length=20)
+    disposition: str | None = Field(default=None, pattern="^(IMMEDIATE_CARE|URGENT_REVIEW|ROUTINE_REVIEW|OBSERVATION|REFERRAL)$")
+    notes: str | None = Field(default=None, max_length=10000)
+    vital_id: UUID | None = None
+
+
+class TriageResponse(TriageCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    encounter_id: UUID
+    assessed_by: UUID
+    priority: str
+    assessed_at: datetime
