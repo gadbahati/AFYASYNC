@@ -79,7 +79,15 @@ def create_triage(encounter_id: UUID, payload: TriageCreate, user: User = Depend
 def save_consultation(encounter_id: UUID, payload: ConsultationCreate, user: User = Depends(require_permission("clinical.consultation.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> ConsultationResponse:
     encounter = _encounter(db, encounter_id, facility_id)
     try: return create_or_update_consultation(db, encounter.id, _staff(db, user, facility_id).id, payload.model_dump(), actor_user_id=user.id)
-    except ValueError as err: raise HTTPException(status_code=400, detail=str(err)) from err
+    except ValueError as err:
+        code = str(err)
+        mapping = {
+            "CONSULTATION_ALREADY_FINAL": 409,
+            "ASSESSMENT_REQUIRED_FOR_FINAL": 422,
+            "TREATMENT_PLAN_REQUIRED_FOR_FINAL": 422,
+            "INVALID_CONSULTATION_STATUS": 422,
+        }
+        raise HTTPException(status_code=mapping.get(code, 400), detail=code) from err
 
 
 @encounter_router.post("/{encounter_id}/diagnoses", response_model=DiagnosisResponse, status_code=status.HTTP_201_CREATED)
