@@ -97,7 +97,7 @@ def verify_membership(db, membership_id, verification_type, notes, actor):
     db.commit(); db.refresh(row); return row
 
 def _contract_event(db, row, event_type, actor, from_status=None, to_status=None, notes=None, metadata=None):
-    db.add(ProviderContractEvent(contract_id=row.id,event_type=event_type,from_status=from_status,to_status=to_status,actor_id=actor,notes=notes,metadata=metadata))
+    db.add(ProviderContractEvent(contract_id=row.id,event_type=event_type,from_status=from_status,to_status=to_status,actor_id=actor,notes=notes,event_metadata=metadata))
 
 def negotiate_contract(db, contract_id, actor, notes=None):
     row=db.get(ProviderNetworkContract,contract_id)
