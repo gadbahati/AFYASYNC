@@ -158,6 +158,7 @@ const _apiCore: any = {
   selectGovernmentOrganization: (organizationId: string) =>
     request("/api/v1/auth/government/select-organization?organization_id=" + encodeURIComponent(organizationId), { method: "POST" }),
   governmentMe: () => request("/api/v1/auth/government/me"),
+  governmentOverview: () => request("/api/v1/government/overview"),
   patientLogin: (identifier: string, password: string) =>
     request("/api/v1/auth/patient/login", { method: "POST", body: JSON.stringify({ identifier, password }) }, false),
   patientRegister: (payload: {
