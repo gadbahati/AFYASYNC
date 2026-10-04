@@ -21,6 +21,10 @@ export function ProtectedRoute() {
   }
 
   // Patient sessions must stay in the patient portal — never the facility shell.
+  if (auth.portalType === "government") {
+    return <Navigate to="/government" replace />;
+  }
+
   if (auth.accountType === "patient") {
     return <Navigate to="/portal" replace />;
   }
