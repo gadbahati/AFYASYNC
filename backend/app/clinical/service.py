@@ -55,15 +55,32 @@ def create_or_update_consultation(db: Session, encounter_id: UUID, doctor_id: UU
     encounter = _open_encounter(db, encounter_id)
     _staff_at_facility(db, doctor_id, encounter.facility_id)
     consultation = db.scalar(select(Consultation).where(Consultation.encounter_id == encounter_id))
+    requested_status = (data.get("status") or "DRAFT").upper()
+    if requested_status not in {"DRAFT", "FINAL"}:
+        raise ValueError("INVALID_CONSULTATION_STATUS")
+    if consultation is not None and consultation.status == "FINAL":
+        raise ValueError("CONSULTATION_ALREADY_FINAL")
+    if requested_status == "FINAL":
+        if not (data.get("assessment") or "").strip():
+            raise ValueError("ASSESSMENT_REQUIRED_FOR_FINAL")
+        if not (data.get("treatment_plan") or "").strip():
+            raise ValueError("TREATMENT_PLAN_REQUIRED_FOR_FINAL")
+    payload = dict(data)
+    payload.pop("status", None)
     action = "CLINICAL_CONSULTATION_CREATED"
     if consultation is None:
-        consultation = Consultation(encounter_id=encounter_id, doctor_id=doctor_id, **data)
+        consultation = Consultation(encounter_id=encounter_id, doctor_id=doctor_id, status=requested_status, **payload)
         db.add(consultation)
     else:
         action = "CLINICAL_CONSULTATION_UPDATED"
         consultation.doctor_id = doctor_id
-        for key, value in data.items():
+        for key, value in payload.items():
             setattr(consultation, key, value)
+    if requested_status == "FINAL":
+        consultation.status = "FINAL"
+        consultation.signed_at = datetime.now(timezone.utc)
+        consultation.signed_by = doctor_id
+        action = "CLINICAL_CONSULTATION_SIGNED"
     db.flush()
     if actor_user_id:
         record_audit(db, action=action, resource_type="CONSULTATION", resource_id=str(consultation.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, commit=False)
