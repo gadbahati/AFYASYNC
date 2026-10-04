@@ -16,6 +16,7 @@ from app.hie.service import (
     list_nodes,
     upsert_node,
     validate_inbound_bundle,
+    resolve_inbound_patient,
 )
 from app.rbac.models import User
 
@@ -130,10 +131,41 @@ def inbound_document(
             source_node_id=body.source_node_id,
             actor_user_id=user.id,
         )
+        if result["validation_status"] == "ACCEPTED":
+            result["mpi"] = resolve_inbound_patient(
+                db,
+                inbound_id=UUID(result["id"]),
+                facility_id=facility_id,
+                actor_user_id=user.id,
+            )
         db.commit()
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/inbound/{inbound_id}/resolve")
+def resolve_inbound(
+    inbound_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("patients.record.read")),
+):
+    try:
+        result = resolve_inbound_patient(
+            db,
+            inbound_id=inbound_id,
+            facility_id=facility_id,
+            actor_user_id=user.id,
+        )
+        db.commit()
+        return result
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=404 if "NOT_FOUND" in code else 409 if "ACCEPTED" in code else 400,
+            detail=code,
+        ) from exc
 
 
 @router.put("/nodes")
