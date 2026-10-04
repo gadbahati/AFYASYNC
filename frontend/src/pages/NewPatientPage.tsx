@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 
 /**
@@ -11,6 +11,9 @@ export function NewPatientPage() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [checkingMpi, setCheckingMpi] = useState(false);
+  const [mpiCandidates, setMpiCandidates] = useState<any[]>([]);
+  const [mpiChecked, setMpiChecked] = useState(false);
   const [form, setForm] = useState({
     first_name: "",
     middle_name: "",
@@ -27,11 +30,41 @@ export function NewPatientPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  async function checkMpi() {
+    setError(null);
+    setCheckingMpi(true);
+    try {
+      const result = await api.mpiCandidates({
+        first_name: form.first_name.trim() || undefined,
+        last_name: form.last_name.trim() || undefined,
+        date_of_birth: form.date_of_birth || undefined,
+        phone: form.phone.trim() || undefined,
+        national_id_number: form.national_id_number.trim() || undefined,
+      }) as any;
+      setMpiCandidates(result.candidates || []);
+      setMpiChecked(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.code : "MPI_CHECK_FAILED");
+      setMpiCandidates([]);
+      setMpiChecked(false);
+    } finally {
+      setCheckingMpi(false);
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     if (!/^\d{7,9}$/.test(form.national_id_number.trim())) {
       setError("Enter a valid 7–9 digit national ID number.");
+      return;
+    }
+    if (!mpiChecked) {
+      setError("Run the Master Patient Index check before registering this patient.");
+      return;
+    }
+    if (mpiCandidates.length) {
+      setError("A possible existing patient was found. Open the existing record or confirm the identity before creating another record.");
       return;
     }
     setSubmitting(true);
@@ -118,8 +151,23 @@ export function NewPatientPage() {
           Address
           <input value={form.address} onChange={(e) => update("address", e.target.value)} />
         </label>
+        <div className="full card" style={{marginTop:8}}>
+          <strong>Master Patient Index check</strong>
+          <p className="muted small">Search existing facility identities before creating a new AfyaSync identity. A match must be reviewed instead of creating a duplicate.</p>
+          <button type="button" className="button secondary" onClick={checkMpi} disabled={checkingMpi || !form.first_name.trim() && !form.last_name.trim() && !form.phone.trim() && !form.national_id_number.trim() && !form.date_of_birth}>
+            {checkingMpi ? "Checking MPI…" : "Check existing patient"}
+          </button>
+          {mpiChecked && mpiCandidates.length === 0 && <p className="success">No existing candidate matched the supplied identifiers. Registration may continue.</p>}
+          {mpiCandidates.length > 0 && <div className="error" style={{marginTop:10}}>
+            <strong>Possible existing patient(s) found</strong>
+            {mpiCandidates.map((candidate:any) => <div key={candidate.patient_id} style={{marginTop:8}}>
+              <Link to={`/patients/${candidate.patient_id}/journey`}><strong>{candidate.afya_id}</strong> — {candidate.full_name}</Link>
+              <div className="small muted">Match {candidate.match_score}% · {candidate.match_reasons.join(", ")}</div>
+            </div>)}
+          </div>}
+        </div>
         <div className="muted full">
-          ID numbers are hashed for duplicate detection. Coverage is separate from this registration step.
+          National ID numbers remain hashed. MPI review happens before a new identity is created.
         </div>
         {error && <div className="error full">{error}</div>}
         <div className="full actions">
