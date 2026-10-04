@@ -1,4 +1,4 @@
-/** Phase 155 — worklist with ?type= from dashboard + LAB/RX structured complete.
+/** Phase 157 — worklist with STAT/URGENT priority badges.
  *  Developed by BAHATI GAD WANGWE
  */
 import { useCallback, useEffect, useState } from "react";
@@ -29,6 +29,27 @@ function departmentLink(o: WorkItem): { path: string; label: string } | null {
   return null;
 }
 
+function PriorityBadge({ priority }: { priority?: string }) {
+  const p = (priority || "ROUTINE").toUpperCase();
+  if (p === "ROUTINE" || p === "NORMAL") {
+    return <span className="muted small">{p}</span>;
+  }
+  const critical = p === "STAT" || p === "URGENT" || p === "CRITICAL" || p === "C";
+  return (
+    <span
+      className="status-pill"
+      style={{
+        background: critical ? "#b91c1c" : "#b45309",
+        color: "#fff",
+        fontWeight: 700,
+      }}
+      title={critical ? "High priority — action promptly" : `Priority: ${p}`}
+    >
+      {p}
+    </span>
+  );
+}
+
 export function ClinicalWorklistPage() {
   const [params] = useSearchParams();
   const initialType = (params.get("type") || "PHARMACY").toUpperCase();
@@ -54,7 +75,18 @@ export function ClinicalWorklistPage() {
     try {
       const q = orderType ? `?order_type=${encodeURIComponent(orderType)}` : "";
       const body = await request(`/api/v1/clinical/worklist${q}`);
-      setData(body);
+      const items: WorkItem[] = body.items || [];
+      // STAT / URGENT first
+      items.sort((a, b) => {
+        const rank = (p?: string) => {
+          const x = (p || "").toUpperCase();
+          if (x === "STAT" || x === "CRITICAL" || x === "C") return 0;
+          if (x === "URGENT") return 1;
+          return 2;
+        };
+        return rank(a.priority) - rank(b.priority);
+      });
+      setData({ ...body, items });
     } catch (err) {
       setError(err instanceof ApiError ? err.code : "WORKLIST_FAILED");
       setData(null);
@@ -159,7 +191,7 @@ export function ClinicalWorklistPage() {
             ← Dashboard
           </Link>
           <h1>Clinical worklist</h1>
-          <p className="muted">Lab results · pharmacy dispense · imaging · department links</p>
+          <p className="muted">STAT / URGENT sorted first · structured lab & pharmacy complete</p>
         </div>
         <div className="actions">
           <select value={orderType} onChange={(e) => setOrderType(e.target.value)} aria-label="Order type">
@@ -194,7 +226,7 @@ export function ClinicalWorklistPage() {
                 <option value="H">H</option>
                 <option value="L">L</option>
                 <option value="A">A</option>
-                <option value="C">C</option>
+                <option value="C">C (critical)</option>
               </select>
             </label>
           </div>
@@ -204,15 +236,10 @@ export function ClinicalWorklistPage() {
       {showRxForm && (
         <section className="card" style={{ marginBottom: "1rem" }}>
           <h2>Pharmacy dispense</h2>
-          <p className="muted small">Select a PHARMACY order, enter quantity (± batch), then Mark complete.</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}>
             <label>
               Quantity{" "}
-              <input
-                value={dispenseQty}
-                onChange={(e) => setDispenseQty(e.target.value)}
-                placeholder="e.g. 30 tablets"
-              />
+              <input value={dispenseQty} onChange={(e) => setDispenseQty(e.target.value)} placeholder="e.g. 30 tablets" />
             </label>
             <label>
               Batch / lot{" "}
@@ -243,20 +270,25 @@ export function ClinicalWorklistPage() {
             {(data.items || []).map((o) => {
               const dept = departmentLink(o);
               const selected = selectedId === o.id;
+              const high =
+                ["STAT", "URGENT", "CRITICAL", "C"].includes((o.priority || "").toUpperCase());
               return (
                 <li
                   key={o.id}
                   style={{
                     marginBottom: "0.75rem",
-                    padding: selected ? "0.5rem" : undefined,
-                    border: selected ? "1px solid var(--border, #ccc)" : undefined,
-                    borderRadius: selected ? "6px" : undefined,
+                    padding: "0.5rem",
+                    border: selected || high ? "1px solid" : undefined,
+                    borderColor: high ? "#b91c1c" : selected ? "var(--border, #ccc)" : undefined,
+                    borderRadius: "6px",
                     cursor: "pointer",
+                    background: high ? "rgba(185, 28, 28, 0.06)" : undefined,
                   }}
                   onClick={() => setSelectedId(o.id)}
                 >
                   <div>
-                    <strong>{o.order_type}</strong> {o.code || ""} — {o.description} · {o.priority || "ROUTINE"} ·{" "}
+                    <strong>{o.order_type}</strong> {o.code || ""} — {o.description} ·{" "}
+                    <PriorityBadge priority={o.priority} /> ·{" "}
                     <span className="status-pill">{o.status}</span>
                     {selected && <span className="muted small"> · selected</span>}
                   </div>
@@ -316,7 +348,7 @@ export function ClinicalWorklistPage() {
             })}
             {(data.items || []).length === 0 && <li className="muted">No open orders in this queue.</li>}
           </ul>
-          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 155</p>
+          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 157</p>
         </section>
       )}
     </div>
