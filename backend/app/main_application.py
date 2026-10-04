@@ -1,9 +1,7 @@
-"""AfyaSync API application (Phase 139 fallback / bootstrap).
+"""AfyaSync API application bootstrap (Phase 140).
 
-When the full historical main module is restored via blob, that takes precedence
-through main.py. This module keeps the API bootable with core clinical routes.
-
-Developed by BAHATI GAD WANGWE.
+Mounts routers from router_registry so the API is fully usable after main.py
+recovery. Developed by BAHATI GAD WANGWE.
 """
 from __future__ import annotations
 
@@ -40,24 +38,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_mounted: list[str] = []
+_failed: list[str] = []
+
 
 def _mount_routers() -> None:
-    routers = [
-        ("app.clinical.router", "router", "clinical"),
-        ("app.clinical.worklist_routes", "worklist_router", "worklist"),
-        ("app.auth.router", "router", "auth"),
-        ("app.encounters.router", "router", "encounters"),
-        ("app.laboratory.router", "router", "laboratory"),
-        ("app.pharmacy.router", "router", "pharmacy"),
-        ("app.radiology.router", "router", "radiology"),
-    ]
-    for mod_name, attr, label in routers:
+    try:
+        from app.router_registry import ROUTERS
+    except Exception:
+        ROUTERS = [
+            ("app.clinical.router", "router", "clinical_router"),
+            ("app.clinical.worklist_routes", "worklist_router", "worklist_router"),
+            ("app.encounters.router", "router", "encounters_router"),
+            ("app.auth", "router", "auth_router"),
+        ]
+    for mod_name, attr, label in ROUTERS:
         try:
             mod = __import__(mod_name, fromlist=[attr])
             router = getattr(mod, attr)
             app.include_router(router)
+            _mounted.append(label)
             logger.info("mounted_%s", label)
         except Exception:
+            _failed.append(label)
             logger.exception("failed_to_mount_%s", label)
 
 
@@ -78,7 +81,12 @@ def _startup() -> None:
 def health():
     return {
         "success": True,
-        "data": {"status": "healthy", "service": "afasync-api"},
+        "data": {
+            "status": "healthy",
+            "service": "afasync-api",
+            "routers_mounted": len(_mounted),
+            "routers_failed": len(_failed),
+        },
         "message": "AfyaSync API is running",
     }
 
@@ -109,6 +117,8 @@ def ready(response: Response):
                 "clinical_departments": clinical_departments,
                 "database": "ok",
                 "bootstrap": "main_application",
+                "routers_mounted": _mounted[:50],
+                "routers_failed": _failed[:20],
             },
             "message": "AfyaSync API is ready",
         }
@@ -121,6 +131,7 @@ def ready(response: Response):
                 "status": "not_ready",
                 "clinical_departments": clinical_departments,
                 "database": "unavailable",
+                "routers_failed": _failed[:20],
             },
             "message": "AfyaSync API is not ready",
         }
