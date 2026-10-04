@@ -1,0 +1,15 @@
+app.integrations.router|router|integrations_router
+app.referrals.router|router|referrals_router
+app.notifications.router|router|notifications_router
+app.portal.router|router|portal_router
+app.reports.router|router|reports_router
+app.insight.router|router|insight_router
+app.benefits.router|router|benefits_router
+app.settlement.router|router|settlement_router
+app.adjudication.router|router|adjudication_router
+app.benefit_engine.router|router|benefit_engine_router
+app.health_exchange.router|router|health_exchange_router
+app.eligibility.router|router|eligibility_router
+app.provider_network.router|router|provider_network_router
+app.financial_intelligence.router|router|financial_intelligence_router
+app.clinical.worklist_routes|worklist_router|worklist_router
