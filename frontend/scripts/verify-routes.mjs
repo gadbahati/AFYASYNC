@@ -17,7 +17,7 @@ const required = new Set([
   "/government/*",
 ]);
 
-const missing = [...required].filter((route) => !appRoutes.has(route));
+const missing = [...required].filter((route) => !appRoutes.has(route) && !appRoutes.has(`${route}/*`));
 if (missing.length) {
   console.error("Missing registered frontend routes:");
   for (const route of missing) console.error(` - ${route}`);
