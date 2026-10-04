@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_token_payload
 from app.auth.rate_limit import enforce_auth_rate_limit
 from app.auth.schemas import FacilityOption, FacilitySelectionRequest, FacilitySelectionRequired, GovernmentOrganizationOption, GovernmentSelectionRequired, LoginRequest, RefreshTokenRequest, TokenResponse
 from app.auth.service import authenticate_user, issue_access_token, issue_refresh_token, revoke_refresh_token, rotate_tokens_from_refresh
