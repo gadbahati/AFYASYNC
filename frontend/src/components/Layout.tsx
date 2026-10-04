@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -171,7 +171,7 @@ function KenyaCrest({ className = "" }: { className?: string }) {
   return <img className={`kenya-crest ${className}`} src={KENYA_CREST} alt="Coat of arms of Kenya" />;
 }
 
-export function Layout() {
+export function Layout({ children }: { children?: ReactNode }) {
   const auth = useAuth();
   const { workspace, setWorkspace, scope, setScope, tenantId } = useWorkspace();
   const moduleAccess = useModuleAccess();
@@ -426,7 +426,7 @@ export function Layout() {
           </div>
         </header>
         <div className="content-inner">
-          <Outlet />
+          {children ?? <Outlet />}
         </div>
         <footer className="site-footer">
           <div className="footer-main">
