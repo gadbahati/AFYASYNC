@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
-from app.clinical.models import Allergy, CarePlan, Consultation, Diagnosis, Vital
+from app.clinical.models import Allergy, CarePlan, ClinicalNote, Consultation, Diagnosis, Procedure, Vital
 from app.encounters.models import Encounter
 from app.laboratory.models import LabOrder
 from app.patients.models import PatientFacility, Person
@@ -102,6 +102,56 @@ def add_diagnosis(db: Session, encounter_id: UUID, staff_id: UUID, data: dict, *
     return diagnosis
 
 
+def add_procedure(db: Session, encounter_id: UUID, staff_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> Procedure:
+    encounter = _open_encounter(db, encounter_id)
+    _staff_at_facility(db, staff_id, encounter.facility_id)
+    procedure = Procedure(encounter_id=encounter_id, performed_by=staff_id, **data)
+    db.add(procedure)
+    db.flush()
+    if actor_user_id:
+        record_audit(db, action="CLINICAL_PROCEDURE_RECORDED", resource_type="PROCEDURE", resource_id=str(procedure.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, commit=False)
+    db.commit()
+    db.refresh(procedure)
+    return procedure
+
+
+def list_procedures(db: Session, encounter_id: UUID, facility_id: UUID) -> list[Procedure]:
+    encounter = db.get(Encounter, encounter_id)
+    if encounter is None:
+        raise ValueError("ENCOUNTER_NOT_FOUND")
+    if encounter.facility_id != facility_id:
+        raise ValueError("FACILITY_ACCESS_DENIED")
+    return list(db.scalars(select(Procedure).where(Procedure.encounter_id == encounter_id).order_by(Procedure.performed_at.asc(), Procedure.id.asc())))
+
+
+def save_clinical_note(db: Session, encounter_id: UUID, staff_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> ClinicalNote:
+    encounter = _open_encounter(db, encounter_id)
+    _staff_at_facility(db, staff_id, encounter.facility_id)
+    requested_status = (data.get("status") or "DRAFT").upper()
+    if requested_status not in {"DRAFT", "FINAL"}:
+        raise ValueError("INVALID_CLINICAL_NOTE_STATUS")
+    note = ClinicalNote(encounter_id=encounter_id, author_id=staff_id, note_type=data.get("note_type", "PROGRESS"), content=data["content"], status=requested_status)
+    if requested_status == "FINAL":
+        note.signed_at = datetime.now(timezone.utc)
+        note.signed_by = staff_id
+    db.add(note)
+    db.flush()
+    if actor_user_id:
+        record_audit(db, action="CLINICAL_NOTE_SIGNED" if requested_status == "FINAL" else "CLINICAL_NOTE_CREATED", resource_type="CLINICAL_NOTE", resource_id=str(note.id), result="SUCCESS", user_id=actor_user_id, facility_id=encounter.facility_id, patient_id=encounter.patient_id, commit=False)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+def list_clinical_notes(db: Session, encounter_id: UUID, facility_id: UUID) -> list[ClinicalNote]:
+    encounter = db.get(Encounter, encounter_id)
+    if encounter is None:
+        raise ValueError("ENCOUNTER_NOT_FOUND")
+    if encounter.facility_id != facility_id:
+        raise ValueError("FACILITY_ACCESS_DENIED")
+    return list(db.scalars(select(ClinicalNote).where(ClinicalNote.encounter_id == encounter_id).order_by(ClinicalNote.created_at.asc(), ClinicalNote.id.asc())))
+
+
 def get_encounter_clinical_summary(db: Session, encounter_id: UUID, facility_id: UUID) -> dict:
     encounter = db.get(Encounter, encounter_id)
     if encounter is None:
@@ -113,7 +163,9 @@ def get_encounter_clinical_summary(db: Session, encounter_id: UUID, facility_id:
     diagnoses = list(db.scalars(select(Diagnosis).where(Diagnosis.encounter_id == encounter_id).order_by(Diagnosis.created_at.asc(), Diagnosis.id.asc())))
     lab_orders = list(db.scalars(select(LabOrder).where(LabOrder.encounter_id == encounter_id).order_by(LabOrder.created_at.asc(), LabOrder.id.asc())))
     prescriptions = list(db.scalars(select(Prescription).where(Prescription.encounter_id == encounter_id).order_by(Prescription.created_at.asc(), Prescription.id.asc())))
-    return {"encounter": encounter, "vitals": vitals, "consultation": consultation, "diagnoses": diagnoses, "lab_orders": lab_orders, "prescriptions": prescriptions}
+    procedures = list(db.scalars(select(Procedure).where(Procedure.encounter_id == encounter_id).order_by(Procedure.performed_at.asc(), Procedure.id.asc())))
+    clinical_notes = list(db.scalars(select(ClinicalNote).where(ClinicalNote.encounter_id == encounter_id).order_by(ClinicalNote.created_at.asc(), ClinicalNote.id.asc())))
+    return {"encounter": encounter, "vitals": vitals, "consultation": consultation, "diagnoses": diagnoses, "lab_orders": lab_orders, "prescriptions": prescriptions, "procedures": procedures, "clinical_notes": clinical_notes}
 
 
 def _active_patient_at_facility(db: Session, patient_id: UUID, facility_id: UUID) -> Person:
