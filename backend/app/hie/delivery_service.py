@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.hie.delivery_models import HieDeliveryJob
-from app.hie.auth import get_hie_access_token
+from app.hie.auth import clear_hie_token_cache, get_hie_access_token
 from app.hie.models import HieExportLog, HieNode
 
 ACTIVE_STATUSES = {"PENDING", "RETRY"}
@@ -49,6 +49,12 @@ def deliver_job(db: Session, *, job_id: UUID, facility_id: UUID, actor_user_id: 
     try:
         with httpx.Client(timeout=timeout, follow_redirects=False) as client:
             response = client.post(node.endpoint_url, json=job.payload, headers=headers)
+            if response.status_code == 401 and headers.get("Authorization"):
+                clear_hie_token_cache()
+                refreshed = get_hie_access_token()
+                if refreshed:
+                    headers["Authorization"] = f"Bearer {refreshed}"
+                    response = client.post(node.endpoint_url, json=job.payload, headers=headers)
         job.last_http_status = response.status_code
         if 200 <= response.status_code < 300:
             job.status = "DELIVERED"; job.delivered_at = datetime.now(timezone.utc); job.last_error = None
