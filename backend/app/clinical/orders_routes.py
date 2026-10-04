@@ -1,4 +1,4 @@
-"""Phase 132–134 order routes — mounted on clinical encounter router."""
+"""Phase 132–135 order routes — mounted on clinical encounter router."""
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,6 +8,7 @@ from app.auth.dependencies import get_facility_context, require_permission
 from app.clinical.department_bridge import forward_clinical_order
 from app.clinical.fulfillment_service import fulfill_order
 from app.clinical.order_service import OrderError, create_order, list_orders, order_to_dict, update_order_status
+from app.clinical.order_sync import sync_clinical_order
 from app.database import get_db
 from app.rbac.models import User
 
@@ -90,7 +91,6 @@ def post_fulfill_order(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission("clinical.note.write")),
 ):
-    """Phase 133 — fulfill order with optional result notes."""
     try:
         row = fulfill_order(
             db,
@@ -114,7 +114,6 @@ def post_forward_order(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission("clinical.note.write")),
 ):
-    """Phase 134 — forward order to lab/pharmacy/imaging department."""
     try:
         return forward_clinical_order(
             db,
@@ -127,4 +126,25 @@ def post_forward_order(
         status_code = 404 if code in {"ORDER_NOT_FOUND", "ENCOUNTER_NOT_FOUND"} else (
             403 if code == "FACILITY_ACCESS_DENIED" else 409
         )
+        raise HTTPException(status_code=status_code, detail=code) from exc
+
+
+@orders_router.post("/orders/{order_id}/sync")
+def post_sync_order(
+    order_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("clinical.note.write")),
+):
+    """Phase 135 — re-check lab/Rx and complete clinical order if department finished."""
+    try:
+        return sync_clinical_order(
+            db,
+            order_id=order_id,
+            facility_id=facility_id,
+            actor_user_id=user.id,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        status_code = 404 if code == "ORDER_NOT_FOUND" else (403 if code == "FACILITY_ACCESS_DENIED" else 409)
         raise HTTPException(status_code=status_code, detail=code) from exc

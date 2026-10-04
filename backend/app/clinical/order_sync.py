@@ -53,6 +53,7 @@ def sync_from_lab_order(
     lab_order_id: UUID,
     actor_user_id: UUID | None = None,
     reason: str = "Lab results verified",
+    commit: bool = True,
 ) -> list[dict]:
     """Complete clinical orders that were forwarded to this lab order."""
     lid = str(lab_order_id)
@@ -76,7 +77,7 @@ def sync_from_lab_order(
         updated = _complete_row(db, row, actor_user_id=actor_user_id, reason=reason)
         if updated:
             done.append(order_to_dict(updated))
-    if done:
+    if done and commit:
         db.commit()
     return done
 
@@ -87,6 +88,7 @@ def sync_from_prescription(
     prescription_id: UUID,
     actor_user_id: UUID | None = None,
     reason: str = "Prescription dispensed",
+    commit: bool = True,
 ) -> list[dict]:
     """Complete clinical orders that were forwarded to this prescription."""
     pid = str(prescription_id)
@@ -110,7 +112,7 @@ def sync_from_prescription(
         updated = _complete_row(db, row, actor_user_id=actor_user_id, reason=reason)
         if updated:
             done.append(order_to_dict(updated))
-    if done:
+    if done and commit:
         db.commit()
     return done
 
@@ -141,26 +143,28 @@ def sync_clinical_order(
             lab = db.get(LabOrder, lab_id)
             if lab and lab.status in {"COMPLETED", "RESULTED", "VERIFIED"}:
                 completed = sync_from_lab_order(
-                    db, lab_order_id=lab_id, actor_user_id=actor_user_id, reason=f"Lab status={lab.status}"
+                    db,
+                    lab_order_id=lab_id,
+                    actor_user_id=actor_user_id,
+                    reason=f"Lab status={lab.status}",
+                    commit=True,
                 )
             elif lab:
-                # complete if all items have verified results
                 items = list(db.scalars(select(LabOrderItem).where(LabOrderItem.lab_order_id == lab.id)).all())
                 if items:
                     all_done = True
                     for it in items:
                         res = db.scalar(select(LabResult).where(LabResult.lab_order_item_id == it.id))
-                        if res is None or getattr(res, "status", None) not in {"VERIFIED", "FINAL", "ENTERED"}:
-                            # Prefer VERIFIED; if only ENTERED still allow progressive sync only on verify hook
-                            if res is None or getattr(res, "status", None) != "VERIFIED":
-                                all_done = False
-                                break
+                        if res is None or getattr(res, "status", None) != "VERIFIED":
+                            all_done = False
+                            break
                     if all_done:
                         completed = sync_from_lab_order(
                             db,
                             lab_order_id=lab_id,
                             actor_user_id=actor_user_id,
                             reason="All lab results verified",
+                            commit=True,
                         )
 
     elif row.order_type == "PHARMACY":
@@ -172,7 +176,11 @@ def sync_clinical_order(
             rx = db.get(Prescription, rx_id)
             if rx and rx.status == "DISPENSED":
                 completed = sync_from_prescription(
-                    db, prescription_id=rx_id, actor_user_id=actor_user_id, reason="Prescription dispensed"
+                    db,
+                    prescription_id=rx_id,
+                    actor_user_id=actor_user_id,
+                    reason="Prescription dispensed",
+                    commit=True,
                 )
 
     db.refresh(row)
