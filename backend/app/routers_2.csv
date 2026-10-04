@@ -36,5 +36,5 @@ app.financial_intelligence.cash_closure_router|router|cash_closure_router
 app.financial_intelligence.execution_router|router|contract_execution_router
 app.financial_intelligence.activation_router|router|contract_activation_router
 app.financial_intelligence.guardrail_router|router|contract_guardrail_router
-app.auth|router|auth_router
+app.auth.router|router|auth_router
 app.clinical.worklist_routes|worklist_router|worklist_router
