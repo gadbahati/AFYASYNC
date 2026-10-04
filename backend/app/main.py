@@ -19,6 +19,7 @@ from app.auth import models as auth_models
 from app.auth import patient_models as patient_auth_models
 from app.auth import router as auth_router
 from app.auth.patient_router import router as patient_auth_router
+from app.government.router import router as government_router
 from app.benefits import models as benefit_models
 from app.benefits.router import router as benefits_router
 from app.billing import models as billing_models
@@ -312,6 +313,7 @@ _REQUIRED_PROD_TABLES = (
     "organization_users",
     "business_continuity_plans",
     "business_continuity_events",
+    "government_access",
     "contract_compliance_guardrail_events",
 )
 
@@ -422,6 +424,7 @@ def initialize_database():
 
 
 app.include_router(auth_router.router)
+app.include_router(government_router)
 app.include_router(context_router)
 app.include_router(business_continuity_router)
 app.include_router(national_audit_router)
