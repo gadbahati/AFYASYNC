@@ -57,6 +57,9 @@ export function DashboardPage() {
           <Link className="button secondary" to="/referrals">
             Referrals & transfers
           </Link>
+          <Link className="button secondary" to="/clinical-worklist">
+            Clinical worklist
+          </Link>
         </div>
       </section>
 
@@ -201,6 +204,8 @@ export function DashboardPage() {
               <Link to="/patients">Patients</Link>
               {" · "}
               <Link to="/encounters">Encounters</Link>
+              {" · "}
+              <Link to="/clinical-worklist">Clinical worklist</Link>
               {" · "}
               <Link to="/appointments">Appointments</Link>
               {" · "}
