@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
-from app.clinical.models import Allergy, CarePlan
+from app.clinical.models import Allergy, CarePlan, Procedure, ClinicalNote
 from app.clinical.triage import latest_triage, record_triage
-from app.clinical.schemas import AllergyCreate, AllergyResponse, AllergyUpdate, CarePlanCreate, CarePlanResponse, CarePlanUpdate, ClinicalTimelineSummary, ConsultationCreate, ConsultationResponse, DiagnosisCreate, DiagnosisResponse, TriageCreate, TriageResponse, VitalCreate, VitalResponse
-from app.clinical.service import add_diagnosis, create_allergy, create_care_plan, create_or_update_consultation, get_encounter_clinical_summary, list_allergies, list_care_plans, record_vitals, update_allergy, update_care_plan
+from app.clinical.schemas import AllergyCreate, AllergyResponse, AllergyUpdate, CarePlanCreate, CarePlanResponse, CarePlanUpdate, ClinicalTimelineSummary, ConsultationCreate, ConsultationResponse, DiagnosisCreate, DiagnosisResponse, ProcedureCreate, ProcedureResponse, ClinicalNoteCreate, ClinicalNoteResponse, TriageCreate, TriageResponse, VitalCreate, VitalResponse
+from app.clinical.service import add_diagnosis, add_procedure, create_allergy, create_care_plan, create_or_update_consultation, get_encounter_clinical_summary, list_allergies, list_care_plans, list_clinical_notes, list_procedures, record_vitals, save_clinical_note, update_allergy, update_care_plan
 from app.database import get_db
 from app.encounters.models import Encounter
 from app.pharmacy.models import Medication
@@ -38,7 +38,7 @@ def _staff(db: Session, user: User, facility_id: UUID) -> Staff:
 def get_clinical_timeline(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> ClinicalTimelineSummary:
     try:
         summary = get_encounter_clinical_summary(db, encounter_id, facility_id)
-        response = ClinicalTimelineSummary(encounter=summary["encounter"], vitals=summary["vitals"], consultation=summary["consultation"], diagnoses=summary["diagnoses"], lab_orders=summary["lab_orders"], prescriptions=summary["prescriptions"])
+        response = ClinicalTimelineSummary(encounter=summary["encounter"], vitals=summary["vitals"], consultation=summary["consultation"], diagnoses=summary["diagnoses"], lab_orders=summary["lab_orders"], prescriptions=summary["prescriptions"], procedures=summary["procedures"], clinical_notes=summary["clinical_notes"])
         encounter = summary["encounter"]
         record_audit(db, action="VIEW_CLINICAL_TIMELINE", resource_type="ENCOUNTER", resource_id=str(encounter.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=encounter.patient_id, metadata={"vitals_count": len(summary["vitals"]), "diagnoses_count": len(summary["diagnoses"]), "has_consultation": summary["consultation"] is not None, "lab_orders_count": len(summary["lab_orders"]), "prescriptions_count": len(summary["prescriptions"])}, commit=True)
         return response
@@ -90,6 +90,44 @@ def save_consultation(encounter_id: UUID, payload: ConsultationCreate, user: Use
         raise HTTPException(status_code=mapping.get(code, 400), detail=code) from err
 
 
+
+
+@encounter_router.get("/{encounter_id}/procedures", response_model=list[ProcedureResponse])
+def get_procedures(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    try:
+        return list_procedures(db, encounter_id, facility_id)
+    except ValueError as err:
+        code = str(err)
+        raise HTTPException(status_code=404 if code == "ENCOUNTER_NOT_FOUND" else 403 if code == "FACILITY_ACCESS_DENIED" else 400, detail=code) from err
+
+
+@encounter_router.post("/{encounter_id}/procedures", response_model=ProcedureResponse, status_code=status.HTTP_201_CREATED)
+def create_procedure(encounter_id: UUID, payload: ProcedureCreate, user: User = Depends(require_permission("clinical.procedure.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    try:
+        return add_procedure(db, encounter_id, _staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
+    except ValueError as err:
+        code = str(err)
+        mapping = {"ENCOUNTER_NOT_FOUND": 404, "ENCOUNTER_CLOSED": 409, "STAFF_NOT_FOUND": 403, "FACILITY_ACCESS_DENIED": 403}
+        raise HTTPException(status_code=mapping.get(code, 400), detail=code) from err
+
+
+@encounter_router.get("/{encounter_id}/clinical-notes", response_model=list[ClinicalNoteResponse])
+def get_clinical_notes(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    try:
+        return list_clinical_notes(db, encounter_id, facility_id)
+    except ValueError as err:
+        code = str(err)
+        raise HTTPException(status_code=404 if code == "ENCOUNTER_NOT_FOUND" else 403 if code == "FACILITY_ACCESS_DENIED" else 400, detail=code) from err
+
+
+@encounter_router.post("/{encounter_id}/clinical-notes", response_model=ClinicalNoteResponse, status_code=status.HTTP_201_CREATED)
+def create_clinical_note(encounter_id: UUID, payload: ClinicalNoteCreate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    try:
+        return save_clinical_note(db, encounter_id, _staff(db, user, facility_id).id, payload.model_dump(), actor_user_id=user.id)
+    except ValueError as err:
+        code = str(err)
+        mapping = {"ENCOUNTER_NOT_FOUND": 404, "ENCOUNTER_CLOSED": 409, "STAFF_NOT_FOUND": 403, "INVALID_CLINICAL_NOTE_STATUS": 422}
+        raise HTTPException(status_code=mapping.get(code, 400), detail=code) from err
 @encounter_router.post("/{encounter_id}/diagnoses", response_model=DiagnosisResponse, status_code=status.HTTP_201_CREATED)
 def create_diagnosis(encounter_id: UUID, payload: DiagnosisCreate, user: User = Depends(require_permission("clinical.diagnosis.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)) -> DiagnosisResponse:
     encounter = _encounter(db, encounter_id, facility_id)
