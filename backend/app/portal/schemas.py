@@ -97,3 +97,40 @@ class PortalCoverageItem(BaseModel):
 class PortalCoverageSummary(BaseModel):
     items: list[PortalCoverageItem]
     total: int
+
+
+class PortalLabResultItem(BaseModel):
+    id: UUID
+    lab_order_item_id: UUID
+    order_id: str
+    encounter_id: UUID
+    test_name: str
+    test_code: str
+    result: str
+    unit: str | None = None
+    reference_range: str | None = None
+    comments: str | None = None
+    status: str
+    verified_at: datetime | None = None
+    created_at: datetime
+
+
+class PortalImagingResultItem(BaseModel):
+    id: UUID
+    order_id: UUID
+    order_number: str
+    encounter_id: UUID | None = None
+    test_name: str
+    modality: str
+    findings: str
+    impression: str | None = None
+    report_status: str
+    reported_at: datetime
+    reviewed_at: datetime | None = None
+
+
+class PortalResultsResponse(BaseModel):
+    labs: list[PortalLabResultItem]
+    imaging: list[PortalImagingResultItem]
+    total_labs: int
+    total_imaging: int
