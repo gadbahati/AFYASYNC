@@ -1,5 +1,8 @@
 export type TokenResponse = { access_token: string; refresh_token: string; token_type: string; expires_in: number };
 export type FacilityOption = { facility_id: string; facility_name: string };
+export type GovernmentOrganizationOption = { organization_id: string; organization_name: string; organization_type: string; scope_level: string; role_code: string };
+export type GovernmentSelectionRequired = { requires_government_organization_selection: true; access_token: string; organizations: GovernmentOrganizationOption[] };
+
 export type FacilitySelectionRequired = { requires_facility_selection: true; access_token: string; facilities: FacilityOption[] };
 export type LoginResult = TokenResponse | FacilitySelectionRequired;
 export type AuthMe = { success: boolean; data: { user_id: string; username: string; status: string }; message: string };
