@@ -90,10 +90,6 @@ export function PatientPortalHomePage() {
               <strong>My results</strong>
               <p className="muted small">View verified lab results and completed imaging reports</p>
             </Link>
-            <Link to="/portal/results" className="portal-tile">
-              <strong>My results</strong>
-              <p className="muted small">View verified lab results and completed imaging reports</p>
-            </Link>
             <Link to="/portal/encounters" className="portal-tile">
               <strong>My visits</strong>
               <p className="muted small">Encounters and clinical summaries</p>
