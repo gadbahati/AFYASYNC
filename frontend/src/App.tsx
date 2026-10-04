@@ -26,9 +26,10 @@ import { BillingPage } from "./pages/BillingPage";
 import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { MCHPage } from "./pages/MCHPage";
 import { FacilityMessagesPage } from "./pages/FacilityMessagesPage";
+import { ReferralsPage } from "./pages/ReferralsPage";
 
-/** Phase 148 — expanded facility routes (clinical + finance + MCH).
- *  Full historical tree: python3 scripts/merge_app_routes.py
+/** Phase 149 — facility routes with real Referrals page.
+ *  Full tree: python3 scripts/merge_app_routes.py
  *  Developed by BAHATI GAD WANGWE.
  */
 export default function App() {
@@ -65,7 +66,7 @@ export default function App() {
                       <Route path="/billing" element={<BillingPage />} />
                       <Route path="/claims" element={<ClaimsPage />} />
                       <Route path="/messages" element={<FacilityMessagesPage />} />
-                      <Route path="/referrals" element={<FacilityMessagesPage />} />
+                      <Route path="/referrals" element={<ReferralsPage />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </Layout>

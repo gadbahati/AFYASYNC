@@ -1,5 +1,6 @@
-"""Phase 137 — printable clinical encounter summary.
+"""Phase 137/149 — printable clinical encounter summary.
 
+Phase 149 extracts imaging reports (modality + impression) from clinical orders.
 Developed by BAHATI GAD WANGWE.
 """
 from datetime import datetime, timezone
@@ -17,6 +18,28 @@ from app.patients.models import Person
 
 class SummaryError(ValueError):
     pass
+
+
+def _parse_imaging_report(notes: str | None) -> dict:
+    """Pull Modality / Impression lines from fulfilled order notes."""
+    modality = None
+    impression = None
+    if not notes:
+        return {"modality": None, "impression": None, "raw_notes": None}
+    for line in str(notes).splitlines():
+        s = line.strip()
+        if s.lower().startswith("modality:"):
+            modality = s.split(":", 1)[1].strip() or modality
+        elif s.lower().startswith("impression:"):
+            impression = s.split(":", 1)[1].strip() or impression
+        elif "[COMPLETED]" in s and "Impression:" in s:
+            # fallback single-line formats
+            pass
+    return {
+        "modality": modality,
+        "impression": impression,
+        "raw_notes": notes,
+    }
 
 
 def build_encounter_summary(
@@ -50,18 +73,11 @@ def build_encounter_summary(
 
     def _rows(key: str):
         val = timeline.get(key) if isinstance(timeline, dict) else None
-        if not isinstance(val, list):
+        if val is None:
             return []
-        out = []
-        for item in val:
-            if hasattr(item, "__dict__") and not isinstance(item, dict):
-                d = {k: v for k, v in item.__dict__.items() if not k.startswith("_")}
-                out.append(_jsonable(d))
-            elif isinstance(item, dict):
-                out.append(_jsonable(item))
-            else:
-                out.append(str(item))
-        return out
+        if isinstance(val, list):
+            return [_serialize_one(x) or {} for x in val]
+        return [_serialize_one(val) or {}]
 
     clinical_orders = list(
         db.scalars(
@@ -70,20 +86,41 @@ def build_encounter_summary(
             .order_by(ClinicalOrder.created_at.asc())
         )
     )
-    discharge = db.scalar(select(ClinicalDischarge).where(ClinicalDischarge.encounter_id == encounter_id))
 
-    patient_name = None
-    if patient is not None:
-        parts = [
-            getattr(patient, "first_name", None),
-            getattr(patient, "middle_name", None),
-            getattr(patient, "last_name", None),
-        ]
-        patient_name = " ".join(p for p in parts if p) or getattr(patient, "full_name", None)
+    discharge = db.scalar(
+        select(ClinicalDischarge).where(ClinicalDischarge.encounter_id == encounter_id)
+    )
+
+    order_payload = []
+    imaging_reports = []
+    for o in clinical_orders:
+        item = {
+            "id": str(o.id),
+            "order_type": o.order_type,
+            "code": o.code,
+            "description": o.description,
+            "priority": o.priority,
+            "status": o.status,
+            "notes": o.notes,
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+        }
+        order_payload.append(item)
+        if (o.order_type or "").upper() in {"IMAGING", "RADIOLOGY"} and o.status == "COMPLETED":
+            parsed = _parse_imaging_report(o.notes)
+            imaging_reports.append(
+                {
+                    "order_id": str(o.id),
+                    "code": o.code,
+                    "description": o.description,
+                    "status": o.status,
+                    "modality": parsed["modality"],
+                    "impression": parsed["impression"],
+                    "notes": o.notes,
+                }
+            )
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "developer": "BAHATI GAD WANGWE",
         "facility": {
             "id": str(facility_id),
             "name": getattr(facility, "name", None) if facility else None,
@@ -91,15 +128,17 @@ def build_encounter_summary(
         },
         "patient": {
             "id": str(enc.patient_id),
-            "name": patient_name,
-            "afya_id": getattr(patient, "afya_id", None) if patient else None,
-            "national_id": getattr(patient, "national_id_number", None) if patient else None,
+            "display_name": (
+                getattr(patient, "display_name", None)
+                or getattr(patient, "full_name", None)
+                if patient
+                else None
+            ),
+            "identifier": getattr(patient, "national_id", None) if patient else None,
         },
         "encounter": {
             "id": str(enc.id),
-            "encounter_id": getattr(enc, "encounter_id", None),
-            "type": getattr(enc, "encounter_type", None),
-            "status": enc.status,
+            "status": getattr(enc, "status", None),
             "started_at": enc.started_at.isoformat() if getattr(enc, "started_at", None) else None,
             "ended_at": enc.ended_at.isoformat() if getattr(enc, "ended_at", None) else None,
             "coverage_mode": getattr(enc, "coverage_mode", None),
@@ -111,19 +150,8 @@ def build_encounter_summary(
         "clinical_notes": _rows("clinical_notes"),
         "lab_orders_legacy": _rows("lab_orders"),
         "prescriptions_legacy": _rows("prescriptions"),
-        "clinical_orders": [
-            {
-                "id": str(o.id),
-                "order_type": o.order_type,
-                "code": o.code,
-                "description": o.description,
-                "priority": o.priority,
-                "status": o.status,
-                "notes": o.notes,
-                "created_at": o.created_at.isoformat() if o.created_at else None,
-            }
-            for o in clinical_orders
-        ],
+        "clinical_orders": order_payload,
+        "imaging_reports": imaging_reports,
         "discharge": (
             {
                 "disposition": discharge.disposition,
@@ -140,6 +168,7 @@ def build_encounter_summary(
             if discharge
             else None
         ),
+        "developer": "BAHATI GAD WANGWE",
     }
 
 
