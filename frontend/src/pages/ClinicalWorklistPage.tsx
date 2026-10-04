@@ -1,4 +1,6 @@
-/** Phase 142 — clinical department worklist with forward/fulfill. Developed by BAHATI GAD WANGWE */
+/** Phase 143 — clinical worklist with dept deep-links + forward/fulfill.
+ *  Developed by BAHATI GAD WANGWE
+ */
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, request } from "../api/client";
@@ -12,6 +14,15 @@ type WorkItem = {
   status?: string;
   encounter_id?: string;
 };
+
+/** Map clinical order type → facility department workspace path. */
+function departmentPath(orderType?: string): { path: string; label: string } | null {
+  const t = (orderType || "").toUpperCase();
+  if (t === "LAB" || t === "LABORATORY") return { path: "/laboratory", label: "Lab workbench" };
+  if (t === "PHARMACY" || t === "RX") return { path: "/pharmacy", label: "Pharmacy" };
+  if (t === "IMAGING" || t === "RADIOLOGY") return { path: "/laboratory", label: "Imaging / diagnostics" };
+  return null;
+}
 
 export function ClinicalWorklistPage() {
   const [orderType, setOrderType] = useState("IMAGING");
@@ -79,7 +90,9 @@ export function ClinicalWorklistPage() {
             ← Dashboard
           </Link>
           <h1>Clinical worklist</h1>
-          <p className="muted">Department queue for LAB / PHARMACY / IMAGING — forward to dept or fulfill</p>
+          <p className="muted">
+            LAB → lab workbench · PHARMACY → pharmacy · IMAGING → diagnostics · forward or complete here
+          </p>
         </div>
         <div className="actions">
           <select value={orderType} onChange={(e) => setOrderType(e.target.value)} aria-label="Order type">
@@ -112,43 +125,51 @@ export function ClinicalWorklistPage() {
             Queue ({data.count ?? 0}) · {data.order_type || orderType || "ALL"}
           </h2>
           <ul className="plain-list">
-            {(data.items || []).map((o) => (
-              <li key={o.id} style={{ marginBottom: "0.75rem" }}>
-                <div>
-                  <strong>{o.order_type}</strong> {o.code || ""} — {o.description} · {o.priority || "ROUTINE"} ·{" "}
-                  <span className="status-pill">{o.status}</span>
-                </div>
-                <div className="actions" style={{ marginTop: "0.35rem" }}>
-                  {o.encounter_id && (
-                    <Link className="button secondary" to={`/encounters/${o.encounter_id}`}>
-                      Encounter
-                    </Link>
-                  )}
-                  {(o.status === "ORDERED" || o.status === "IN_PROGRESS") && (
-                    <>
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={busyId === o.id}
-                        onClick={() => void forwardOrder(o.id)}
-                      >
-                        Forward to dept
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === o.id}
-                        onClick={() => void fulfillOrder(o.id)}
-                      >
-                        Mark complete
-                      </button>
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
+            {(data.items || []).map((o) => {
+              const dept = departmentPath(o.order_type);
+              return (
+                <li key={o.id} style={{ marginBottom: "0.75rem" }}>
+                  <div>
+                    <strong>{o.order_type}</strong> {o.code || ""} — {o.description} · {o.priority || "ROUTINE"} ·{" "}
+                    <span className="status-pill">{o.status}</span>
+                  </div>
+                  <div className="actions" style={{ marginTop: "0.35rem", flexWrap: "wrap", gap: "0.35rem" }}>
+                    {o.encounter_id && (
+                      <Link className="button secondary" to={`/encounters/${o.encounter_id}`}>
+                        Encounter
+                      </Link>
+                    )}
+                    {dept && (
+                      <Link className="button secondary" to={dept.path}>
+                        {dept.label}
+                      </Link>
+                    )}
+                    {(o.status === "ORDERED" || o.status === "IN_PROGRESS") && (
+                      <>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busyId === o.id}
+                          onClick={() => void forwardOrder(o.id)}
+                        >
+                          Forward to dept
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyId === o.id}
+                          onClick={() => void fulfillOrder(o.id)}
+                        >
+                          Mark complete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
             {(data.items || []).length === 0 && <li className="muted">No open orders in this queue.</li>}
           </ul>
-          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 142</p>
+          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 143</p>
         </section>
       )}
     </div>
