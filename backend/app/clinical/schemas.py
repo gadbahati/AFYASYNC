@@ -33,6 +33,7 @@ class ConsultationCreate(BaseModel):
     assessment: str | None = None
     clinical_notes: str | None = None
     treatment_plan: str | None = None
+    status: str = Field(default="DRAFT", pattern="^(DRAFT|FINAL)$")
 
 
 class ConsultationResponse(ConsultationCreate):
@@ -41,6 +42,8 @@ class ConsultationResponse(ConsultationCreate):
     doctor_id: UUID
     created_at: datetime
     updated_at: datetime
+    signed_at: datetime | None
+    signed_by: UUID | None
 
 
 class DiagnosisCreate(BaseModel):
