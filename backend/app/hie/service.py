@@ -114,7 +114,7 @@ def build_patient_summary_bundle(
                     "resourceType": "AllergyIntolerance",
                     "id": str(a.id),
                     "clinicalStatus": {"coding": [{"code": "active"}]},
-                    "code": {"text": a.allergen},
+                    "code": {"text": a.substance},
                     "patient": {"reference": f"Patient/{person.id}"},
                     "criticality": (a.severity or "unknown").lower(),
                     "reaction": [{"description": a.reaction}] if getattr(a, "reaction", None) else [],
