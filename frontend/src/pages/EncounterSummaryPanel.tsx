@@ -1,10 +1,15 @@
-/** Phase 154 — print-ready summary: imaging, lab, pharmacy dispenses.
+/** Phase 158 — summary with critical lab flag highlighting.
  *  Developed by BAHATI GAD WANGWE
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, request } from "../api/client";
 
 type Props = { encounterId: string };
+
+function isCriticalFlag(flag?: string | null) {
+  const f = (flag || "").toUpperCase();
+  return f === "C" || f === "CRITICAL";
+}
 
 export function EncounterSummaryPanel({ encounterId }: Props) {
   const [summary, setSummary] = useState<any | null>(null);
@@ -43,6 +48,8 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
   const hasImaging = (summary?.imaging_reports?.length || 0) > 0;
   const hasLab = (summary?.lab_results?.length || 0) > 0;
   const hasRx = (summary?.pharmacy_dispenses?.length || 0) > 0;
+  const criticalLabs =
+    hasLab && summary.lab_results.some((r: any) => isCriticalFlag(r.flag));
   const hasClinical =
     hasOrders ||
     hasImaging ||
@@ -79,6 +86,23 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
 
       {summary && (
         <div className="summary-body">
+          {criticalLabs && (
+            <div
+              role="alert"
+              style={{
+                marginBottom: "1rem",
+                padding: "0.65rem 0.85rem",
+                border: "1px solid #b91c1c",
+                borderRadius: "6px",
+                background: "rgba(185, 28, 28, 0.08)",
+                color: "#7f1d1d",
+                fontWeight: 600,
+              }}
+            >
+              Critical lab result(s) present — review immediately (flag C).
+            </div>
+          )}
+
           <div className="detail-grid">
             <div>
               <div className="muted small">Facility</div>
@@ -186,22 +210,47 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
             <div style={{ marginTop: "1rem" }} className="lab-results-print">
               <h3>Lab results</h3>
               <ul className="plain-list">
-                {summary.lab_results.map((r: any) => (
-                  <li key={r.order_id} style={{ marginBottom: "0.5rem" }}>
-                    <strong>{r.code || "LAB"}</strong> — {r.description || "—"}
-                    {r.value != null && r.value !== "" && (
-                      <>
-                        {": "}
-                        <strong>
-                          {r.value}
-                          {r.units ? ` ${r.units}` : ""}
-                        </strong>
-                        {r.flag ? ` (${r.flag})` : ""}
-                      </>
-                    )}
-                    {!r.value && r.notes && <span className="muted small"> {r.notes}</span>}
-                  </li>
-                ))}
+                {summary.lab_results.map((r: any) => {
+                  const critical = isCriticalFlag(r.flag);
+                  return (
+                    <li
+                      key={r.order_id}
+                      style={{
+                        marginBottom: "0.5rem",
+                        padding: critical ? "0.4rem 0.5rem" : undefined,
+                        border: critical ? "1px solid #b91c1c" : undefined,
+                        borderRadius: critical ? "6px" : undefined,
+                        background: critical ? "rgba(185, 28, 28, 0.06)" : undefined,
+                      }}
+                    >
+                      <strong>{r.code || "LAB"}</strong> — {r.description || "—"}
+                      {r.value != null && r.value !== "" && (
+                        <>
+                          {": "}
+                          <strong>
+                            {r.value}
+                            {r.units ? ` ${r.units}` : ""}
+                          </strong>
+                          {r.flag ? (
+                            <span
+                              className="status-pill"
+                              style={{
+                                marginLeft: "0.35rem",
+                                background: critical ? "#b91c1c" : undefined,
+                                color: critical ? "#fff" : undefined,
+                                fontWeight: critical ? 700 : undefined,
+                              }}
+                            >
+                              {r.flag}
+                              {critical ? " CRITICAL" : ""}
+                            </span>
+                          ) : null}
+                        </>
+                      )}
+                      {!r.value && r.notes && <span className="muted small"> {r.notes}</span>}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
@@ -256,7 +305,7 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
           )}
 
           <p className="muted small" style={{ marginTop: "1.25rem" }}>
-            AfyaSync clinical summary · Developed by BAHATI GAD WANGWE · Phase 154
+            AfyaSync clinical summary · Developed by BAHATI GAD WANGWE · Phase 158
           </p>
         </div>
       )}

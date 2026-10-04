@@ -1,4 +1,4 @@
-/** Phase 157 — queue counters with 60s auto-refresh.
+/** Phase 158 — queue counters with attention when open work remains.
  *  Developed by BAHATI GAD WANGWE
  */
 import { useCallback, useEffect, useState } from "react";
@@ -41,11 +41,30 @@ export function ClinicalQueueStrip() {
     return () => window.clearInterval(id);
   }, [load]);
 
+  const attention = (counts?.total || 0) > 0;
+
   return (
-    <section className="card" style={{ marginBottom: "1rem" }}>
+    <section
+      className="card"
+      style={{
+        marginBottom: "1rem",
+        border: attention ? "1px solid #b45309" : undefined,
+        boxShadow: attention ? "0 0 0 1px rgba(180, 83, 9, 0.15)" : undefined,
+      }}
+    >
       <div className="report-card-header" style={{ marginBottom: "0.75rem" }}>
         <div>
-          <h3 style={{ margin: 0 }}>Clinical department queues</h3>
+          <h3 style={{ margin: 0 }}>
+            Clinical department queues
+            {attention && (
+              <span
+                className="status-pill"
+                style={{ marginLeft: "0.5rem", background: "#b45309", color: "#fff", fontWeight: 700 }}
+              >
+                ACTION NEEDED
+              </span>
+            )}
+          </h3>
           <p className="muted small">
             Open LAB, pharmacy, and imaging · auto-refresh every 60s
             {updatedAt ? ` · updated ${updatedAt.toLocaleTimeString("en-KE")}` : ""}
@@ -70,7 +89,9 @@ export function ClinicalQueueStrip() {
         <div className="stat-grid">
           <Link className="stat-card" to="/clinical-worklist?type=LAB" style={{ textDecoration: "none", color: "inherit" }}>
             <div className="muted small">Lab</div>
-            <div className="stat-value">{counts.LAB}</div>
+            <div className="stat-value" style={{ color: counts.LAB > 0 ? "#b45309" : undefined }}>
+              {counts.LAB}
+            </div>
           </Link>
           <Link
             className="stat-card"
@@ -78,20 +99,26 @@ export function ClinicalQueueStrip() {
             style={{ textDecoration: "none", color: "inherit" }}
           >
             <div className="muted small">Pharmacy</div>
-            <div className="stat-value">{counts.PHARMACY}</div>
+            <div className="stat-value" style={{ color: counts.PHARMACY > 0 ? "#b45309" : undefined }}>
+              {counts.PHARMACY}
+            </div>
           </Link>
           <Link className="stat-card" to="/radiology" style={{ textDecoration: "none", color: "inherit" }}>
             <div className="muted small">Imaging</div>
-            <div className="stat-value">{counts.IMAGING}</div>
+            <div className="stat-value" style={{ color: counts.IMAGING > 0 ? "#b45309" : undefined }}>
+              {counts.IMAGING}
+            </div>
           </Link>
           <div className="stat-card">
             <div className="muted small">Total open</div>
-            <div className="stat-value">{counts.total}</div>
+            <div className="stat-value" style={{ color: attention ? "#b45309" : undefined, fontWeight: attention ? 700 : undefined }}>
+              {counts.total}
+            </div>
           </div>
         </div>
       )}
       <p className="muted small" style={{ marginTop: "0.5rem" }}>
-        Developed by BAHATI GAD WANGWE · Phase 157
+        Developed by BAHATI GAD WANGWE · Phase 158
       </p>
     </section>
   );
