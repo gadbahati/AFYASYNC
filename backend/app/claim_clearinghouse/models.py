@@ -86,4 +86,4 @@ class ClearinghouseRemittance(Base):
     patient_amount: Mapped[Decimal] = mapped_column(Numeric(14,2), nullable=False, default=0)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    metadata: Mapped[dict | None] = mapped_column(JSONB)
+    event_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB)
