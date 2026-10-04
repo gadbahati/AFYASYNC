@@ -9,22 +9,20 @@ import logging
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy import text
 
 logger = logging.getLogger("afyasync")
 
 
-class SecurityHeadersMiddleware:
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Apply baseline security headers and a safe correlation/request ID."""
-
-    def __init__(self, app):
-        self.app = app
 
     async def dispatch(self, request, call_next):
         import uuid
 
         incoming = request.headers.get("X-Request-ID", "")
-        request_id = incoming.strip() if incoming and "\\r" not in incoming and "\\n" not in incoming and len(incoming) <= 128 else ""
+        request_id = incoming.strip() if incoming and "\r" not in incoming and "\n" not in incoming and len(incoming) <= 128 else ""
         if not request_id:
             request_id = str(uuid.uuid4())
         request.state.request_id = request_id
@@ -107,6 +105,11 @@ def _startup() -> None:
         run_clinical_startup_checks()
     except Exception:
         logger.exception("Clinical startup check failed")
+
+
+@app.get("/api/v1", tags=["System"])
+def api_root():
+    return {"success": True, "service": "afasync-api", "message": "AfyaSync API"}
 
 
 @app.get("/health", tags=["System"])
