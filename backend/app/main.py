@@ -16,6 +16,7 @@ from app.appointments import capacity_models as appointment_capacity_models  # n
 from app.appointments.router import router as appointments_router
 from app.audit import models as audit_models
 from app.auth import models as auth_models
+from app.auth import mfa_models as auth_mfa_models  # noqa: F401
 from app.auth import patient_models as patient_auth_models
 from app.auth import router as auth_router
 from app.auth.patient_router import router as patient_auth_router
@@ -314,6 +315,7 @@ _REQUIRED_PROD_TABLES = (
     "business_continuity_plans",
     "business_continuity_events",
     "government_access",
+    "mfa_challenges",
     "contract_compliance_guardrail_events",
 )
 
