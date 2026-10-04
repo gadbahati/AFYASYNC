@@ -51,14 +51,19 @@ def create_patient(
     from app.identity.confidence_service import assert_clear_to_create
     from app.identity.schemas import IdentityProbe
 
+    data = payload.model_dump(exclude={"national_id_number"})
+    first_name = data.get("first_name")
+    last_name = data.get("last_name")
+    phone = data.get("phone")
+    date_of_birth = data.get("date_of_birth")
     assert_clear_to_create(
         db,
         IdentityProbe(
             national_id_number=payload.national_id_number,
-            first_name=payload.first_name,
-            last_name=payload.last_name,
-            date_of_birth=getattr(payload, "date_of_birth", None),
-            phone=payload.phone,
+            first_name=first_name,
+            last_name=last_name,
+            date_of_birth=date_of_birth,
+            phone=phone,
         ),
         facility_id=facility_id,
         actor_user_id=actor_user_id,
@@ -66,22 +71,17 @@ def create_patient(
     )
 
     id_hash = _hash_id_number(payload.national_id_number)
-    existing_by_id = db.scalar(select(Person).where(Person.national_id_hash == id_hash))
-    if existing_by_id is not None:
-        raise ValueError("DUPLICATE_ID_NUMBER")
-
-    if payload.phone:
+    if phone:
         existing = db.scalar(
             select(Person).where(
-                Person.phone == payload.phone,
-                Person.first_name.ilike(payload.first_name),
-                Person.last_name.ilike(payload.last_name),
+                Person.phone == phone,
+                Person.first_name.ilike(first_name),
+                Person.last_name.ilike(last_name),
             )
         )
         if existing:
             raise ValueError("DUPLICATE_PATIENT")
 
-    data = payload.model_dump(exclude={"national_id_number"})
     try:
         person = Person(**data, national_id_hash=id_hash)
         db.add(person)
