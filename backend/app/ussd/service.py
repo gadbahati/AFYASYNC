@@ -211,9 +211,9 @@ def handle_ussd(
     if sess.state == "WELCOME":
         if person is None:
             return (
-                "AfyaSync\nPhone not linked to a patient.\n"
-                "Register at a facility or portal first.\n",
-                True,
+                "AfyaSync\nPhone not linked. Register at a facility first.\n"
+                "0. Exit",
+                False,
             )
         pin = _pin_row(db, person.id)
         if pin is None:
