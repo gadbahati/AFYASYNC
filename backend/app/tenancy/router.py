@@ -226,6 +226,8 @@ def grant_government_access(
     target = db.get(User, target_user_id)
     if target is None or target.status != ACTIVE:
         raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
+    # Government identities are privileged: require MFA enrollment before normal access.
+    target.mfa_required = True
     level = scope_level.strip().upper()
     expected = "COUNTY" if org.organization_type == "COUNTY_GOVERNMENT" else "NATIONAL"
     if level != expected:
