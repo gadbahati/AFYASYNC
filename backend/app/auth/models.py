@@ -14,6 +14,8 @@ class RefreshSession(Base):
     family_id: Mapped[UUID] = mapped_column(index=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
     facility_id: Mapped[UUID | None] = mapped_column(ForeignKey("facilities.id"), nullable=True, index=True)
+    portal_type: Mapped[str] = mapped_column(String(30), nullable=False, server_default="facility")
+    organization_id: Mapped[UUID | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
