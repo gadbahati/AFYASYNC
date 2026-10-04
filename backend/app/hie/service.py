@@ -15,6 +15,7 @@ from app.encounters.models import Encounter
 from app.hie.models import HieExportLog, HieInboundDocument, HieNode
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabTest
 from app.patients.models import AfyaIdentity, PatientFacility, Person
+from app.patients.mpi import _hash_id
 from app.pharmacy.models import Medication, Prescription, PrescriptionItem
 
 PURPOSE_OF_USE = {"TREATMENT", "PAYMENT", "PUBLICHEALTH", "OPERATIONS"}
@@ -427,6 +428,7 @@ def validate_inbound_bundle(
 
     patient_id = None
     has_patient = False
+    inbound_patient = None
     for e in entries[:200]:
         if not isinstance(e, dict):
             errors.append("BAD_ENTRY")
@@ -434,12 +436,7 @@ def validate_inbound_bundle(
         res = e.get("resource") or {}
         if res.get("resourceType") == "Patient":
             has_patient = True
-            rid = res.get("id")
-            if rid:
-                try:
-                    patient_id = UUID(str(rid))
-                except Exception:
-                    pass
+            inbound_patient = res
     if not has_patient:
         errors.append("MISSING_PATIENT_RESOURCE")
 
@@ -476,12 +473,14 @@ def validate_inbound_bundle(
         resource_count=len(entries) if isinstance(entries, list) else 0,
         validation_status=status,
         validation_errors=errors or None,
+        payload=payload,
         payload_meta={
             "type": btype,
             "total": payload.get("total"),
             "timestamp": payload.get("timestamp"),
         },
         received_by=actor_user_id,
+        match_status="UNRESOLVED" if not errors else "REJECTED",
     )
     db.add(row)
     db.flush()
@@ -508,6 +507,81 @@ def validate_inbound_bundle(
         "patient_id": str(patient_id) if patient_id else None,
     }
 
+def _inbound_patient_identifiers(resource: dict) -> dict:
+    result = {}
+    for item in resource.get("identifier") or []:
+        if not isinstance(item, dict):
+            continue
+        system = str(item.get("system") or "").lower()
+        value = str(item.get("value") or "").strip()
+        if not value:
+            continue
+        if "afya-id" in system:
+            result["afya_id"] = value
+        elif "national" in system or "national-id" in system:
+            result["national_id"] = value
+        elif "phone" in system:
+            result["phone"] = value
+    return result
+
+def resolve_inbound_patient(db: Session, *, inbound_id: UUID, facility_id: UUID, actor_user_id: UUID | None = None) -> dict:
+    row = db.get(HieInboundDocument, inbound_id)
+    if row is None or row.facility_id != facility_id:
+        raise ValueError("INBOUND_DOCUMENT_NOT_FOUND")
+    if row.validation_status != "ACCEPTED":
+        raise ValueError("INBOUND_DOCUMENT_NOT_ACCEPTED")
+    entries = row.payload.get("entry", []) if row.payload else []
+    patient_resource = next((e.get("resource") for e in entries if isinstance(e, dict) and isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") == "Patient"), None)
+    if not patient_resource:
+        raise ValueError("MISSING_PATIENT_RESOURCE")
+    ids = _inbound_patient_identifiers(patient_resource)
+    candidates = {}
+    if ids.get("afya_id"):
+        identity = db.scalar(select(AfyaIdentity).where(AfyaIdentity.afya_id == ids["afya_id"], AfyaIdentity.status == "ACTIVE"))
+        if identity:
+            person = db.get(Person, identity.person_id)
+            if person:
+                candidates[person.id] = (person, identity, ["AFYA_ID"])
+    if ids.get("national_id"):
+        person = db.scalar(select(Person).where(Person.national_id_hash == _hash_id(ids["national_id"]), Person.status == "ACTIVE"))
+        if person:
+            identity = db.scalar(select(AfyaIdentity).where(AfyaIdentity.person_id == person.id, AfyaIdentity.status == "ACTIVE"))
+            if identity:
+                candidates.setdefault(person.id, (person, identity, ["NATIONAL_ID"]))
+    names = patient_resource.get("name") or []
+    official = next((n for n in names if isinstance(n, dict) and n.get("use") == "official"), names[0] if names else {})
+    given = official.get("given") or []
+    first = str(given[0]).strip() if given else ""
+    last = str(official.get("family") or "").strip()
+    dob = None
+    if patient_resource.get("birthDate"):
+        try:
+            from datetime import date
+            dob = date.fromisoformat(str(patient_resource["birthDate"])[:10])
+        except ValueError:
+            pass
+    phone = ids.get("phone")
+    if first and last and dob:
+        stmt = select(Person, AfyaIdentity).join(AfyaIdentity, AfyaIdentity.person_id == Person.id).where(Person.status == "ACTIVE", Person.first_name.ilike(first), Person.last_name.ilike(last), Person.date_of_birth == dob, AfyaIdentity.status == "ACTIVE")
+        if phone:
+            stmt = stmt.where(Person.phone == phone)
+        for person, identity in db.execute(stmt.limit(10)).all():
+            reasons = ["FIRST_NAME", "LAST_NAME", "DATE_OF_BIRTH"]
+            if phone and person.phone == phone:
+                reasons.append("PHONE")
+            candidates.setdefault(person.id, (person, identity, reasons))
+    if len(candidates) == 1:
+        person, identity, reasons = next(iter(candidates.values()))
+        row.patient_id = person.id
+        row.match_status = "MATCHED"
+        row.match_reasons = reasons
+        row.matched_at = datetime.now(timezone.utc)
+        record_audit(db, action="HIE_INBOUND_MPI_MATCH", resource_type="HIE_INBOUND", resource_id=str(row.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=person.id, metadata={"match_reasons": reasons, "afya_id": identity.afya_id}, commit=False)
+        return {"status": "MATCHED", "patient_id": str(person.id), "afya_id": identity.afya_id, "match_reasons": reasons}
+    row.match_status = "AMBIGUOUS" if len(candidates) > 1 else "UNMATCHED"
+    row.match_reasons = ["MULTIPLE_CANDIDATES"] if len(candidates) > 1 else ["NO_SAFE_MATCH"]
+    record_audit(db, action="HIE_INBOUND_MPI_UNRESOLVED", resource_type="HIE_INBOUND", resource_id=str(row.id), result=row.match_status, user_id=actor_user_id, facility_id=facility_id, metadata={"candidate_count": len(candidates), "reason": row.match_reasons}, commit=False)
+    return {"status": row.match_status, "patient_id": None, "candidate_count": len(candidates), "match_reasons": row.match_reasons}
 
 def upsert_node(db: Session, *, data: dict) -> HieNode:
     code = (data.get("code") or "").strip().upper()
