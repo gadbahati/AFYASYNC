@@ -19,6 +19,8 @@ from app.referrals.schemas import (
     TransferOut,
     TransferStatusUpdate,
 )
+from app.hie.models import HieNode
+from app.hie.service import build_referral_package
 from app.referrals.service import (
     ReferralError,
     create_referral,
@@ -166,6 +168,51 @@ def transfer_status(
         return update_transfer_status(db, facility_id, transfer_id, payload.status, actor_user_id=user.id)
     except ReferralError as err:
         raise _error(err) from err
+
+
+@router.post("/{referral_id}/hie-package")
+def referral_hie_package(
+    referral_id: UUID,
+    destination_node_id: UUID = Query(...),
+    clinical_summary: str | None = Query(default=None, max_length=4000),
+    purpose_of_use: str = Query(default="TREATMENT", max_length=40),
+    user: User = Depends(require_permission("referrals.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+):
+    try:
+        referral = get_referral_for_facility(db, referral_id, facility_id)
+        if referral.source_facility_id != facility_id:
+            raise ReferralError("SOURCE_FACILITY_ACTION_REQUIRED")
+        if referral.status not in {"SENT", "ACCEPTED", "IN_PROGRESS"}:
+            raise ReferralError("REFERRAL_NOT_READY_FOR_HIE")
+        node = db.get(HieNode, destination_node_id)
+        if node is None or node.status != "ACTIVE":
+            raise ReferralError("HIE_DESTINATION_NOT_FOUND")
+        if node.facility_id is not None and node.facility_id != referral.destination_facility_id:
+            raise ReferralError("HIE_DESTINATION_MISMATCH")
+        package = build_referral_package(
+            db,
+            patient_id=referral.patient_id,
+            facility_id=facility_id,
+            encounter_id=referral.encounter_id,
+            clinical_summary=clinical_summary or referral.clinical_summary,
+            actor_user_id=user.id,
+            destination=node.code,
+            destination_node_id=node.id,
+            purpose_of_use=purpose_of_use,
+        )
+        db.commit()
+        return {
+            "referral_id": referral.referral_id,
+            "destination_facility_id": str(referral.destination_facility_id),
+            "destination_node_id": str(node.id),
+            "package": package,
+        }
+    except ReferralError as err:
+        raise _error(err) from err
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
 
 
 @router.get("/{referral_id}", response_model=ReferralOut)
