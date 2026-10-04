@@ -20,15 +20,11 @@ class Organization(Base):
     code: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(220))
     organization_type: Mapped[str] = mapped_column(String(40), default="PROVIDER_NETWORK")
-    parent_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True
-    )
+    parent_id: Mapped[UUID | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(30), default="ACTIVE", index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class OrganizationFacility(Base):
@@ -38,12 +34,8 @@ class OrganizationFacility(Base):
         Index("ix_org_facility_facility", "facility_id", "status"),
     )
 
-    organization_id: Mapped[UUID] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
-    )
-    facility_id: Mapped[UUID] = mapped_column(
-        ForeignKey("facilities.id", ondelete="CASCADE"), primary_key=True
-    )
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    facility_id: Mapped[UUID] = mapped_column(ForeignKey("facilities.id", ondelete="CASCADE"), primary_key=True)
     status: Mapped[str] = mapped_column(String(30), default="ACTIVE", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -55,12 +47,32 @@ class OrganizationUser(Base):
         Index("ix_org_user_user", "user_id", "status"),
     )
 
-    organization_id: Mapped[UUID] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
-    )
-    user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     access_level: Mapped[str] = mapped_column(String(30), default="MEMBER")
     status: Mapped[str] = mapped_column(String(30), default="ACTIVE", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GovernmentAccess(Base):
+    """Explicit government identity binding.
+
+    Government access is deliberately separate from facility staff membership.
+    A user cannot become a county/national user by selecting an operating scope.
+    """
+
+    __tablename__ = "government_access"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "user_id", name="uq_gov_access_org_user"),
+        Index("ix_gov_access_user_status", "user_id", "status"),
+        Index("ix_gov_access_org_status", "organization_id", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    scope_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="ACTIVE", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
