@@ -24,6 +24,7 @@ type AuthState = {
   governmentOrganization: GovernmentOrganizationOption | null;
   contextScope: "facility" | "network" | "county" | "national";
   pendingFacilities: FacilityOption[] | null;
+  pendingGovernmentOrganizations: GovernmentOrganizationOption[] | null;
   login: (username: string, password: string) => Promise<"ready" | "select_facility">;
   governmentLogin: (username: string, password: string) => Promise<"ready" | "select_organization">;
   selectGovernmentOrganization: (organization: GovernmentOrganizationOption) => Promise<void>;
