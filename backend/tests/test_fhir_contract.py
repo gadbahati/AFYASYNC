@@ -35,7 +35,7 @@ def test_inbound_fhir_patient_id_is_not_treated_as_local_identity():
     from app.hie.service import validate_inbound_bundle
 
     db = MagicMock()
-    node = type("Node", (), {"status": "ACTIVE", "trust_level": "HIGH", "code": "TRUSTED-A"})()
+    node = type("Node", (), {"status": "ACTIVE", "trust_level": "HIGH", "code": "TRUSTED-A", "facility_id": uuid4()})()
     db.get.return_value = node
     row = None
     def capture_add(value):
