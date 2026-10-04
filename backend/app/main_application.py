@@ -13,6 +13,36 @@ from sqlalchemy import text
 
 logger = logging.getLogger("afyasync")
 
+
+class SecurityHeadersMiddleware:
+    """Apply baseline security headers and a safe correlation/request ID."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def dispatch(self, request, call_next):
+        import uuid
+
+        incoming = request.headers.get("X-Request-ID", "")
+        request_id = incoming.strip() if incoming and "\\r" not in incoming and "\\n" not in incoming and len(incoming) <= 128 else ""
+        if not request_id:
+            request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        try:
+            response = await call_next(request)
+        except Exception:
+            response = Response("Internal server error", status_code=500)
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
 try:
     from app.config import settings
 except Exception:  # pragma: no cover
@@ -29,6 +59,8 @@ app = FastAPI(
     title=getattr(settings, "app_name", "AfyaSync API"),
     version=getattr(settings, "app_version", "0.0.0"),
 )
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
