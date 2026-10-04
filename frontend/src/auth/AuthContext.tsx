@@ -237,6 +237,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFacilityId(null);
       setFacilityName(null);
       setAccountType("patient");
+      setPortalType("patient");
+      setOrganizationId(null);
+      setGovernmentOrganization(null);
+      setPendingGovernmentOrganizations(null);
       setPendingFacilities(null);
       const me: AuthMe = await api.me();
       setUsername(me.data.username);
