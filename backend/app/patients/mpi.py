@@ -31,10 +31,12 @@ def find_mpi_candidates(
     normalized_first = (first_name or "").strip()
     normalized_last = (last_name or "").strip()
     normalized_phone = (phone or "").strip()
+
     if national_id_number:
         if not re.fullmatch(r"\d{7,9}", national_id_number.strip()):
             raise ValueError("INVALID_ID_NUMBER")
         conditions.append(Person.national_id_hash == _hash_id(national_id_number))
+
     if normalized_first:
         conditions.append(Person.first_name.ilike(normalized_first))
     if normalized_last:
@@ -43,10 +45,13 @@ def find_mpi_candidates(
         conditions.append(Person.date_of_birth == date_of_birth)
     if normalized_phone:
         conditions.append(Person.phone == normalized_phone)
+
     if not conditions:
         raise ValueError("MPI_SEARCH_REQUIRES_IDENTIFIER")
 
-    # Search is restricted to people already known to this facility/network.
+    # Phase 126 is facility-safe: this pre-registration search only surfaces
+    # identities already known to the active facility. Cross-facility/national
+    # MPI discovery belongs to the governed interoperability layer.
     stmt = (
         select(Person, AfyaIdentity)
         .join(AfyaIdentity, AfyaIdentity.person_id == Person.id)
@@ -57,24 +62,58 @@ def find_mpi_candidates(
             Person.status == "ACTIVE",
             or_(*conditions),
         )
-        .order_by(Person.last_name, Person.first_name, Person.id)
-        .limit(limit)
+        .limit(limit * 3)
     )
+
     rows = db.execute(stmt).all()
     results = []
+
     for person, identity in rows:
         reasons = []
-        if normalized_first and person.first_name.casefold() == normalized_first.casefold():
-            reasons.append("FIRST_NAME")
-        if normalized_last and person.last_name.casefold() == normalized_last.casefold():
-            reasons.append("LAST_NAME")
-        if date_of_birth and person.date_of_birth == date_of_birth:
-            reasons.append("DATE_OF_BIRTH")
-        if normalized_phone and person.phone == normalized_phone:
-            reasons.append("PHONE")
         if national_id_number and person.national_id_hash == _hash_id(national_id_number):
             reasons.append("NATIONAL_ID")
-        score = min(100, len(reasons) * 20 + (50 if "NATIONAL_ID" in reasons else 0))
+
+        first_matches = bool(
+            normalized_first
+            and person.first_name.casefold() == normalized_first.casefold()
+        )
+        last_matches = bool(
+            normalized_last
+            and person.last_name.casefold() == normalized_last.casefold()
+        )
+        dob_matches = bool(date_of_birth and person.date_of_birth == date_of_birth)
+        phone_matches = bool(normalized_phone and person.phone == normalized_phone)
+
+        if first_matches:
+            reasons.append("FIRST_NAME")
+        if last_matches:
+            reasons.append("LAST_NAME")
+        if dob_matches:
+            reasons.append("DATE_OF_BIRTH")
+        if phone_matches:
+            reasons.append("PHONE")
+
+        if "NATIONAL_ID" in reasons:
+            score = 100
+        elif phone_matches and first_matches and last_matches:
+            score = 90
+        elif dob_matches and first_matches and last_matches:
+            score = 80
+        elif first_matches and last_matches:
+            score = 55
+        elif phone_matches and last_matches:
+            score = 50
+        elif phone_matches and first_matches:
+            score = 50
+        elif dob_matches and (first_matches or last_matches):
+            score = 45
+        else:
+            score = 0
+
+        # A single demographic field is too weak to interrupt registration.
+        if score < 45:
+            continue
+
         results.append({
             "patient_id": person.id,
             "afya_id": identity.afya_id,
@@ -84,6 +123,10 @@ def find_mpi_candidates(
             "match_score": score,
             "match_reasons": reasons,
         })
+
+    results.sort(key=lambda item: (-item["match_score"], item["full_name"], str(item["patient_id"])))
+    results = results[:limit]
+
     record_audit(
         db,
         action="MPI_CANDIDATE_SEARCH",
@@ -91,7 +134,12 @@ def find_mpi_candidates(
         resource_id=str(facility_id),
         result="SUCCESS",
         facility_id=facility_id,
-        metadata={"candidate_count": len(results), "searched_national_id": bool(national_id_number), "searched_phone": bool(normalized_phone), "searched_dob": bool(date_of_birth)},
+        metadata={
+            "candidate_count": len(results),
+            "searched_national_id": bool(national_id_number),
+            "searched_phone": bool(normalized_phone),
+            "searched_dob": bool(date_of_birth),
+        },
         commit=True,
     )
     return results
