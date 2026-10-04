@@ -657,3 +657,255 @@ def capability_statement() -> dict:
             ]
         },
     }
+
+SUPPORTED_INBOUND_RESOURCE_TYPES = {
+    "Condition",
+    "Observation",
+    "AllergyIntolerance",
+    "MedicationRequest",
+    "MedicationStatement",
+    "Encounter",
+    "DiagnosticReport",
+    "DocumentReference",
+}
+
+
+def _bundle_purpose_of_use(payload: dict) -> str:
+    for tag in (payload.get("meta") or {}).get("tag") or []:
+        if not isinstance(tag, dict):
+            continue
+        system = str(tag.get("system") or "").lower()
+        code = str(tag.get("code") or "").strip().upper()
+        if "purpose-of-use" in system and code in PURPOSE_OF_USE:
+            return code
+    return "TREATMENT"
+
+
+def _parse_effective_at(resource: dict) -> datetime | None:
+    for key in ("effectiveDateTime", "issued", "recordedDate", "authoredOn"):
+        value = resource.get(key)
+        if not value:
+            continue
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    period = resource.get("period")
+    if isinstance(period, dict):
+        value = period.get("start") or period.get("end")
+        if value:
+            try:
+                parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
+    return None
+
+
+def _resource_code_and_text(resource: dict) -> tuple[str | None, str | None]:
+    codeable = resource.get("code") or resource.get("medicationCodeableConcept") or {}
+    codings = codeable.get("coding") if isinstance(codeable, dict) else None
+    code = None
+    if isinstance(codings, list):
+        for coding in codings:
+            if isinstance(coding, dict) and coding.get("code"):
+                code = str(coding["code"])[:100]
+                break
+    text = codeable.get("text") if isinstance(codeable, dict) else None
+    if text is None:
+        text = resource.get("description") or resource.get("title")
+    return code, str(text)[:4000] if text is not None else None
+
+
+def _inbound_consent_allows_sensitive(payload: dict, patient_id: UUID, purpose: str) -> bool:
+    for entry in payload.get("entry") or []:
+        resource = entry.get("resource") if isinstance(entry, dict) else None
+        if not isinstance(resource, dict) or resource.get("resourceType") != "Consent":
+            continue
+        subject = resource.get("patient") or resource.get("subject") or {}
+        reference = subject.get("reference") if isinstance(subject, dict) else None
+        if reference and str(reference).split("/")[-1] != str(patient_id):
+            continue
+        provision = resource.get("provision") or {}
+        if str(provision.get("type") or "").lower() != "permit":
+            continue
+        purposes = provision.get("purpose") or []
+        if not purposes:
+            return True
+        for item in purposes:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("code") or "").upper() == purpose:
+                return True
+            for coding in item.get("coding") or []:
+                if isinstance(coding, dict) and str(coding.get("code") or "").upper() == purpose:
+                    return True
+    return False
+
+
+def import_inbound_clinical_resources(
+    db: Session,
+    *,
+    inbound_id: UUID,
+    facility_id: UUID,
+    actor_user_id: UUID | None = None,
+) -> dict:
+    row = db.get(HieInboundDocument, inbound_id)
+    if row is None or row.facility_id != facility_id:
+        raise ValueError("INBOUND_DOCUMENT_NOT_FOUND")
+    if row.validation_status != "ACCEPTED":
+        raise ValueError("INBOUND_DOCUMENT_NOT_ACCEPTED")
+    if row.match_status != "MATCHED" or row.patient_id is None:
+        raise ValueError("INBOUND_PATIENT_NOT_MATCHED")
+
+    node = db.get(HieNode, row.source_node_id) if row.source_node_id else None
+    if node is None or node.status != "ACTIVE" or node.trust_level not in {"HIGH", "NATIONAL"}:
+        raise ValueError("INBOUND_SOURCE_NOT_TRUSTED")
+
+    from app.consent.models import SensitiveCategory
+    from app.hie.import_models import HieImportedResource
+
+    purpose = _bundle_purpose_of_use(row.payload or {})
+    sensitive_codes = {
+        str(code).strip().upper()
+        for code in db.scalars(
+            select(SensitiveCategory.code).where(SensitiveCategory.is_active.is_(True))
+        )
+        if code
+    }
+    consent_allows_sensitive = _inbound_consent_allows_sensitive(
+        row.payload or {}, row.patient_id, purpose
+    )
+
+    imported = []
+    duplicates = []
+    blocked = []
+    skipped = []
+
+    for entry in (row.payload or {}).get("entry") or []:
+        resource = entry.get("resource") if isinstance(entry, dict) else None
+        if not isinstance(resource, dict):
+            continue
+        resource_type = str(resource.get("resourceType") or "")
+        if resource_type in {"Patient", "Consent"}:
+            continue
+        if resource_type not in SUPPORTED_INBOUND_RESOURCE_TYPES:
+            skipped.append(resource_type or "UNKNOWN")
+            continue
+
+        remote_id = str(resource.get("id") or "").strip()
+        if not remote_id:
+            skipped.append(f"{resource_type}:MISSING_ID")
+            continue
+
+        existing = db.scalar(
+            select(HieImportedResource).where(
+                HieImportedResource.source_node_id == row.source_node_id,
+                HieImportedResource.resource_type == resource_type,
+                HieImportedResource.remote_resource_id == remote_id,
+            )
+        )
+        if existing is not None:
+            duplicates.append(str(existing.id))
+            continue
+
+        normalized_code, normalized_text = _resource_code_and_text(resource)
+        sensitivity = "NORMAL"
+        if resource_type == "Condition" and normalized_code and normalized_code.upper() in sensitive_codes:
+            sensitivity = "SENSITIVE"
+            if not consent_allows_sensitive:
+                blocked.append(remote_id)
+                continue
+
+        imported_row = HieImportedResource(
+            inbound_document_id=row.id,
+            facility_id=facility_id,
+            patient_id=row.patient_id,
+            source_node_id=row.source_node_id,
+            resource_type=resource_type,
+            remote_resource_id=remote_id,
+            status="IMPORTED",
+            purpose_of_use=purpose,
+            sensitivity=sensitivity,
+            normalized_code=normalized_code,
+            normalized_text=normalized_text,
+            effective_at=_parse_effective_at(resource),
+            source_provenance={
+                "source_node_id": str(row.source_node_id),
+                "source_code": row.source_code,
+                "bundle_id": row.bundle_id,
+                "inbound_document_id": str(row.id),
+                "remote_resource_id": remote_id,
+            },
+            payload=resource,
+            imported_by=actor_user_id,
+        )
+        db.add(imported_row)
+        db.flush()
+        imported.append({
+            "id": str(imported_row.id),
+            "resource_type": resource_type,
+            "remote_resource_id": remote_id,
+            "sensitivity": sensitivity,
+        })
+
+    result = {
+        "inbound_id": str(row.id),
+        "patient_id": str(row.patient_id),
+        "purpose_of_use": purpose,
+        "imported_count": len(imported),
+        "duplicate_count": len(duplicates),
+        "blocked_sensitive_count": len(blocked),
+        "skipped_count": len(skipped),
+        "imported": imported,
+        "duplicates": duplicates,
+        "blocked_sensitive": blocked,
+        "skipped": skipped,
+    }
+    record_audit(
+        db,
+        action="HIE_INBOUND_CLINICAL_IMPORT",
+        resource_type="HIE_INBOUND",
+        resource_id=str(row.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=row.patient_id,
+        metadata={
+            "purpose_of_use": purpose,
+            "imported_count": len(imported),
+            "duplicate_count": len(duplicates),
+            "blocked_sensitive_count": len(blocked),
+            "skipped_count": len(skipped),
+        },
+        commit=False,
+    )
+    return result
+
+
+def list_imported_patient_resources(
+    db: Session,
+    *,
+    patient_id: UUID,
+    facility_id: UUID,
+    limit: int = 100,
+) -> list:
+    from app.hie.import_models import HieImportedResource
+
+    limit = min(max(limit, 1), 200)
+    return list(
+        db.scalars(
+            select(HieImportedResource)
+            .where(
+                HieImportedResource.patient_id == patient_id,
+                HieImportedResource.facility_id == facility_id,
+                HieImportedResource.status == "IMPORTED",
+            )
+            .order_by(
+                HieImportedResource.effective_at.desc().nullslast(),
+                HieImportedResource.imported_at.desc(),
+            )
+            .limit(limit)
+        )
+    )
