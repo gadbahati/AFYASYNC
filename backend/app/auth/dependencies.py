@@ -50,7 +50,7 @@ def require_patient_identity(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PATIENT_IDENTITY_REQUIRED",
         )
-    if payload.get("facility_id"):
+    if payload.get("portal_type") != "patient" or payload.get("facility_id"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PATIENT_PORTAL_REQUIRES_PATIENT_TOKEN",
@@ -82,6 +82,8 @@ def get_facility_context(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> UUID:
+    if payload.get("portal_type", "facility") != "facility":
+        raise HTTPException(status_code=403, detail="FACILITY_PORTAL_TOKEN_REQUIRED")
     raw = payload.get("facility_id")
     if not raw:
         raise HTTPException(status_code=403, detail="FACILITY_CONTEXT_REQUIRED")
@@ -187,3 +189,35 @@ def require_national_permission(permission_code: str):
         return user
 
     return dependency
+
+
+
+def get_government_context(
+    payload: dict = Depends(get_token_payload),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Require an explicit government portal token and active government membership."""
+    from app.tenancy.models import GovernmentAccess, Organization
+    from uuid import UUID
+
+    if payload.get("portal_type") != "government" or not payload.get("organization_id"):
+        raise HTTPException(status_code=403, detail="GOVERNMENT_PORTAL_TOKEN_REQUIRED")
+    try:
+        organization_id = UUID(payload["organization_id"])
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=403, detail="INVALID_GOVERNMENT_CONTEXT") from exc
+    row = db.execute(
+        select(GovernmentAccess, Organization)
+        .join(Organization, Organization.id == GovernmentAccess.organization_id)
+        .where(
+            GovernmentAccess.user_id == user.id,
+            GovernmentAccess.organization_id == organization_id,
+            GovernmentAccess.status == "ACTIVE",
+            Organization.status == "ACTIVE",
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=403, detail="GOVERNMENT_ACCESS_REVOKED")
+    access, organization = row
+    return {"user": user, "organization": organization, "access": access}
