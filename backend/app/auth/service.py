@@ -22,16 +22,16 @@ def authenticate_user(db: Session, username: str, password: str) -> tuple[User, 
     return user, staff
 
 
-def issue_access_token(user: User, facility_id: UUID | None = None) -> str:
-    return create_access_token(user.id, facility_id=facility_id)
+def issue_access_token(user: User, facility_id: UUID | None = None, portal_type: str = "facility", organization_id: UUID | None = None) -> str:
+    return create_access_token(user.id, facility_id=facility_id, portal_type=portal_type, organization_id=organization_id)
 
 
-def issue_refresh_token(db: Session, user: User, facility_id: UUID | None = None) -> str:
+def issue_refresh_token(db: Session, user: User, facility_id: UUID | None = None, portal_type: str = "facility", organization_id: UUID | None = None) -> str:
     session_id = uuid4()
     family_id = uuid4()
-    token = create_refresh_token(user.id, facility_id=facility_id, jti=session_id, family_id=family_id)
+    token = create_refresh_token(user.id, facility_id=facility_id, jti=session_id, family_id=family_id, portal_type=portal_type, organization_id=organization_id)
     now = datetime.now(timezone.utc)
-    db.add(RefreshSession(id=session_id, family_id=family_id, user_id=user.id, facility_id=facility_id, token_hash=hash_refresh_token(token), expires_at=now + timedelta(days=settings.refresh_token_days)))
+    db.add(RefreshSession(id=session_id, family_id=family_id, user_id=user.id, facility_id=facility_id, portal_type=portal_type, organization_id=organization_id, token_hash=hash_refresh_token(token), expires_at=now + timedelta(days=settings.refresh_token_days)))
     db.commit()
     return token
 
@@ -41,6 +41,8 @@ def rotate_tokens_from_refresh(db: Session, refresh_token: str) -> tuple[User, U
     try:
         user_id = UUID(payload["sub"])
         facility_id = UUID(payload["facility_id"]) if payload.get("facility_id") else None
+        portal_type = payload.get("portal_type") or "facility"
+        organization_id = UUID(payload["organization_id"]) if payload.get("organization_id") else None
         session_id = UUID(payload["jti"])
         family_id = UUID(payload["family_id"])
     except (ValueError, TypeError):
@@ -65,7 +67,7 @@ def rotate_tokens_from_refresh(db: Session, refresh_token: str) -> tuple[User, U
         session.revoked_at = now
         db.commit()
         return None
-    if facility_id != session.facility_id:
+    if facility_id != session.facility_id or portal_type != session.portal_type or organization_id != session.organization_id:
         session.revoked_at = now
         db.commit()
         return None
@@ -78,8 +80,8 @@ def rotate_tokens_from_refresh(db: Session, refresh_token: str) -> tuple[User, U
             return None
 
     new_session_id = uuid4()
-    new_token = create_refresh_token(user.id, facility_id=facility_id, jti=new_session_id, family_id=family_id)
-    new_session = RefreshSession(id=new_session_id, family_id=family_id, user_id=user.id, facility_id=facility_id, token_hash=hash_refresh_token(new_token), expires_at=now + timedelta(days=settings.refresh_token_days))
+    new_token = create_refresh_token(user.id, facility_id=facility_id, jti=new_session_id, family_id=family_id, portal_type=portal_type, organization_id=organization_id)
+    new_session = RefreshSession(id=new_session_id, family_id=family_id, user_id=user.id, facility_id=facility_id, portal_type=portal_type, organization_id=organization_id, token_hash=hash_refresh_token(new_token), expires_at=now + timedelta(days=settings.refresh_token_days))
     db.add(new_session)
     # The replaced_by_id foreign key must only be written after the new row
     # exists. Explicitly flushing here prevents PostgreSQL from seeing the
