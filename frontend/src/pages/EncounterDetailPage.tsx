@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { ClinicalTimeline, Triage } from "../api/types";
+import { EncounterOrdersPanel } from "./EncounterOrdersPanel";
 
 export function EncounterDetailPage() {
   const { encounterId } = useParams();
@@ -367,18 +368,12 @@ export function EncounterDetailPage() {
             )}
           </section>
 
-          <section className="card">
-            <h2>Linked orders</h2>
-            <p className="muted small">Lab orders: {timeline.lab_orders.length} · Prescriptions: {timeline.prescriptions.length}</p>
-            <ul className="plain-list">
-              {timeline.lab_orders.map((o) => (
-                <li key={o.id}>Lab {o.order_id} · {o.status} · {o.priority}</li>
-              ))}
-              {timeline.prescriptions.map((p) => (
-                <li key={p.id}>Rx {p.prescription_id} · {p.status}</li>
-              ))}
-            </ul>
-          </section>
+          <EncounterOrdersPanel
+            encounterId={encounterId!}
+            open={!!open}
+            legacyLabCount={timeline.lab_orders?.length ?? 0}
+            legacyRxCount={timeline.prescriptions?.length ?? 0}
+          />
         </div>
       )}
     </div>
