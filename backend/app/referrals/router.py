@@ -19,12 +19,11 @@ from app.referrals.schemas import (
     TransferOut,
     TransferStatusUpdate,
 )
-from app.hie.models import HieNode
-from app.hie.service import build_referral_package
 from app.referrals.service import (
     ReferralError,
     create_referral,
     create_transfer,
+    build_referral_hie_package,
     get_referral_for_facility,
     get_transfer_for_facility,
     list_referrals_for_facility,
@@ -185,32 +184,20 @@ def referral_hie_package(
     db: Session = Depends(get_db),
 ):
     try:
-        referral = get_referral_for_facility(db, referral_id, facility_id)
-        if referral.source_facility_id != facility_id:
-            raise ReferralError("SOURCE_FACILITY_ACTION_REQUIRED")
-        if referral.status not in {"SENT", "ACCEPTED", "IN_PROGRESS"}:
-            raise ReferralError("REFERRAL_NOT_READY_FOR_HIE")
-        node = db.get(HieNode, destination_node_id)
-        if node is None or node.status != "ACTIVE":
-            raise ReferralError("HIE_DESTINATION_NOT_FOUND")
-        if node.facility_id is not None and node.facility_id != referral.destination_facility_id:
-            raise ReferralError("HIE_DESTINATION_MISMATCH")
-        package = build_referral_package(
+        package = build_referral_hie_package(
             db,
-            patient_id=referral.patient_id,
+            referral_id=referral_id,
             facility_id=facility_id,
-            encounter_id=referral.encounter_id,
-            clinical_summary=clinical_summary or referral.clinical_summary,
+            destination_node_id=destination_node_id,
             actor_user_id=user.id,
-            destination=node.code,
-            destination_node_id=node.id,
+            clinical_summary=clinical_summary,
             purpose_of_use=purpose_of_use,
         )
         db.commit()
+        referral = get_referral_for_facility(db, referral_id, facility_id)
         return {
             "referral_id": referral.referral_id,
-            "destination_facility_id": str(referral.destination_facility_id),
-            "destination_node_id": str(node.id),
+            "destination_node_id": str(destination_node_id),
             "package": package,
         }
     except ReferralError as err:
