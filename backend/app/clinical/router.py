@@ -8,6 +8,7 @@ from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
 from app.clinical.discharge_models import ClinicalDischarge
 from app.clinical.discharge_service import DischargeError, discharge_encounter, get_discharge
+from app.clinical.orders_routes import orders_router
 from app.clinical.models import Allergy, CarePlan, Procedure, ClinicalNote
 from app.clinical.triage import latest_triage, record_triage
 from app.clinical.schemas import (
@@ -375,6 +376,7 @@ def check_medication_allergy_safety(
     }
 
 
+encounter_router.include_router(orders_router)
 router.include_router(encounter_router)
 router.include_router(care_plan_router)
 router.include_router(allergy_router)
