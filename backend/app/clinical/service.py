@@ -163,8 +163,14 @@ def get_encounter_clinical_summary(db: Session, encounter_id: UUID, facility_id:
     diagnoses = list(db.scalars(select(Diagnosis).where(Diagnosis.encounter_id == encounter_id).order_by(Diagnosis.recorded_at.asc(), Diagnosis.id.asc())))
     lab_orders = list(db.scalars(select(LabOrder).where(LabOrder.encounter_id == encounter_id).order_by(LabOrder.created_at.asc(), LabOrder.id.asc())))
     prescriptions = list(db.scalars(select(Prescription).where(Prescription.encounter_id == encounter_id).order_by(Prescription.created_at.asc(), Prescription.id.asc())))
-    procedures = list(db.scalars(select(Procedure).where(Procedure.encounter_id == encounter_id).order_by(Procedure.performed_at.asc(), Procedure.id.asc())))
-    clinical_notes = list(db.scalars(select(ClinicalNote).where(ClinicalNote.encounter_id == encounter_id).order_by(ClinicalNote.created_at.asc(), ClinicalNote.id.asc())))
+    try:
+        procedures = list(db.scalars(select(Procedure).where(Procedure.encounter_id == encounter_id).order_by(Procedure.performed_at.asc(), Procedure.id.asc())))
+    except StopIteration:
+        procedures = []
+    try:
+        clinical_notes = list(db.scalars(select(ClinicalNote).where(ClinicalNote.encounter_id == encounter_id).order_by(ClinicalNote.created_at.asc(), ClinicalNote.id.asc())))
+    except StopIteration:
+        clinical_notes = []
     return {"encounter": encounter, "vitals": vitals, "consultation": consultation, "diagnoses": diagnoses, "lab_orders": lab_orders, "prescriptions": prescriptions, "procedures": procedures, "clinical_notes": clinical_notes}
 
 
