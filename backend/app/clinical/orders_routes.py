@@ -1,10 +1,11 @@
-"""Phase 132 order routes — mounted on clinical encounter router."""
+"""Phase 132–133 order routes — mounted on clinical encounter router."""
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
+from app.clinical.fulfillment_service import fulfill_order
 from app.clinical.order_service import OrderError, create_order, list_orders, order_to_dict, update_order_status
 from app.database import get_db
 from app.rbac.models import User
@@ -72,6 +73,31 @@ def patch_order_status(
             facility_id=facility_id,
             actor_user_id=user.id,
             status=str(payload.get("status") or ""),
+        )
+    except OrderError as exc:
+        code = str(exc)
+        status_code = 404 if code == "ORDER_NOT_FOUND" else (403 if code == "FACILITY_ACCESS_DENIED" else 409)
+        raise HTTPException(status_code=status_code, detail=code) from exc
+    return order_to_dict(row)
+
+
+@orders_router.post("/orders/{order_id}/fulfill")
+def post_fulfill_order(
+    order_id: UUID,
+    payload: dict,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("clinical.note.write")),
+):
+    """Phase 133 — fulfill order with optional result notes."""
+    try:
+        row = fulfill_order(
+            db,
+            order_id=order_id,
+            facility_id=facility_id,
+            actor_user_id=user.id,
+            status=str(payload.get("status") or "COMPLETED"),
+            result_notes=payload.get("result_notes"),
         )
     except OrderError as exc:
         code = str(exc)
