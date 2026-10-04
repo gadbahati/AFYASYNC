@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { ClinicalTimeline, Triage } from "../api/types";
 import { EncounterOrdersPanel } from "./EncounterOrdersPanel";
+import { EncounterDischargePanel } from "./EncounterDischargePanel";
 
 export function EncounterDetailPage() {
   const { encounterId } = useParams();
@@ -373,6 +374,11 @@ export function EncounterDetailPage() {
             open={!!open}
             legacyLabCount={timeline.lab_orders?.length ?? 0}
             legacyRxCount={timeline.prescriptions?.length ?? 0}
+          />
+          <EncounterDischargePanel
+            encounterId={encounterId!}
+            open={!!open}
+            onDischarged={() => void reload()}
           />
         </div>
       )}
