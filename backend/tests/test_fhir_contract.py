@@ -28,3 +28,47 @@ def test_fhir_encounter_uses_canonical_period_and_subject():
     assert payload["period"]["end"] is None
     assert payload["subject"] == {"reference": f"Patient/{patient_id}"}
     assert "period_start" not in payload
+
+
+def test_inbound_fhir_patient_id_is_not_treated_as_local_identity():
+    from unittest.mock import MagicMock
+    from app.hie.service import validate_inbound_bundle
+
+    db = MagicMock()
+    node = type("Node", (), {"status": "ACTIVE", "trust_level": "HIGH", "code": "TRUSTED-A"})()
+    db.get.return_value = node
+    row = None
+    def capture_add(value):
+        nonlocal row
+        row = value
+    db.add.side_effect = capture_add
+    db.flush.side_effect = lambda: None
+
+    remote_id = str(uuid4())
+    bundle = {
+        "resourceType": "Bundle",
+        "type": "document",
+        "id": "remote-bundle-1",
+        "entry": [{
+            "resource": {
+                "resourceType": "Patient",
+                "id": remote_id,
+                "identifier": [{"system": "https://afyasync.health.ke/identifier/afya-id", "value": "AFYA-REMOTE-1"}],
+                "name": [{"use": "official", "family": "Doe", "given": ["Jane"]}],
+            }
+        }],
+    }
+    result = validate_inbound_bundle(
+        db,
+        facility_id=uuid4(),
+        payload=bundle,
+        source_code="TRUSTED-A",
+        source_node_id=uuid4(),
+        actor_user_id=uuid4(),
+    )
+
+    assert result["validation_status"] == "ACCEPTED"
+    assert result["patient_id"] is None
+    assert row is not None
+    assert row.patient_id is None
+    assert row.payload == bundle
