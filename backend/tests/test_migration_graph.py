@@ -21,7 +21,7 @@ def _load_revisions() -> dict[str, tuple[str, ...]]:
         if not rev_match:
             continue
         revision = rev_match.group(1)
-        down_match = re.search(r'(?<![\w.])down_revision\s*=\s*(.+?)(?:;|$)', text, re.M)
+        down_match = re.search(r'(?<![\w.])down_revision(?:\s*:\s*[^=]+)?\s*=\s*(.+?)(?:;|$)', text, re.M)
         if not down_match or down_match.group(1).strip() == "None":
             revisions[revision] = ()
             continue
