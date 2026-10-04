@@ -195,6 +195,14 @@ const _apiCore: any = {
     if (appointment_date) q.set("appointment_date", appointment_date);
     return request(`/api/v1/appointments?${q.toString()}`);
   },
+  getClinicalTimeline: (encounterId: string) => request(`/api/v1/encounters/${encounterId}/clinical`),
+  recordVitals: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/vitals`, { method: "POST", body: JSON.stringify(payload) }),
+  saveConsultation: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/consultation`, { method: "POST", body: JSON.stringify(payload) }),
+  addDiagnosis: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/diagnoses`, { method: "POST", body: JSON.stringify(payload) }),
+  getProcedures: (encounterId: string) => request(`/api/v1/encounters/${encounterId}/procedures`),
+  addProcedure: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/procedures`, { method: "POST", body: JSON.stringify(payload) }),
+  getClinicalNotes: (encounterId: string) => request(`/api/v1/encounters/${encounterId}/clinical-notes`),
+  addClinicalNote: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/clinical-notes`, { method: "POST", body: JSON.stringify(payload) }),
   getLatestTriage: (encounterId: string) => request(`/api/v1/encounters/${encounterId}/triage`),
   recordTriage: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/triage`, { method: "POST", body: JSON.stringify(payload) }),
   updateAppointmentStatus: (appointmentId: string, status: string) => request(`/api/v1/appointments/${appointmentId}/${encodeURIComponent(status)}`, { method: "PATCH" }),
