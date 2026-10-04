@@ -4,7 +4,7 @@ from typing import Any
 
 ALLOWED_BUNDLE_TYPES = {"document", "collection", "transaction", "searchset"}
 
-def validate_bundle(bundle: Any, *, require_patient: bool = True) -> list[str]:
+def validate_bundle(bundle: Any, *, require_patient: bool = True, require_provenance: bool = False) -> list[str]:
     errors: list[str] = []
     if not isinstance(bundle, dict):
         return ["INVALID_BUNDLE"]
@@ -21,6 +21,7 @@ def validate_bundle(bundle: Any, *, require_patient: bool = True) -> list[str]:
     if len(entries) > 200:
         errors.append("BUNDLE_TOO_LARGE")
     patient_count = 0
+    provenance_count = 0
     for index, entry in enumerate(entries[:200]):
         if not isinstance(entry, dict):
             errors.append(f"BAD_ENTRY_{index}")
@@ -37,8 +38,12 @@ def validate_bundle(bundle: Any, *, require_patient: bool = True) -> list[str]:
             errors.append(f"MISSING_FULL_URL_{index}")
         if resource.get("resourceType") == "Patient":
             patient_count += 1
+        if resource.get("resourceType") == "Provenance":
+            provenance_count += 1
     if require_patient and patient_count != 1:
         errors.append("PATIENT_RESOURCE_COUNT_INVALID")
+    if require_provenance and provenance_count != 1:
+        errors.append("PROVENANCE_RESOURCE_COUNT_INVALID")
     if bundle.get("type") == "document":
         first = entries[0].get("resource") if isinstance(entries[0], dict) else None
         if not isinstance(first, dict) or first.get("resourceType") != "Composition":
@@ -46,6 +51,6 @@ def validate_bundle(bundle: Any, *, require_patient: bool = True) -> list[str]:
     return errors
 
 def assert_valid_bundle(bundle: dict) -> None:
-    errors = validate_bundle(bundle)
+    errors = validate_bundle(bundle, require_provenance=True)
     if errors:
         raise ValueError("HIE_FHIR_CONFORMANCE_FAILED:" + ",".join(errors))
