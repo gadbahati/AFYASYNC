@@ -4,7 +4,6 @@ app.reports.router|router|reports_router
 app.insight.router|router|insight_router
 app.interoperability.router|router|interoperability_router
 app.interoperability.allergy_router|router|interoperability_allergy_router
-app.interoperability.patient_router|router|interoperability_patient_router
 app.national_supply.router|router|national_supply_router
 app.national_supply.planning_router|router|national_supply_planning_router
 app.national_referrals.router|router|national_referrals_router
@@ -43,3 +42,4 @@ app.ambulance.router|router|ambulance_router
 app.surveillance.router|router|surveillance_router
 app.quality_scorecard.router|router|quality_scorecard_router
 app.fraud_integrity.router|router|fraud_integrity_router
+
