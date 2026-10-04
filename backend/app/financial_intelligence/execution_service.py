@@ -21,7 +21,7 @@ def request_execution(db,facility_id,contract_id,negotiation_case_id,actor_id,te
     a=ContractExecutionApproval(facility_id=facility_id,contract_id=c.id,negotiation_case_id=negotiation_case_id,requested_by=actor_id,requested_terms=terms,review_notes=notes)
     c.execution_status="PENDING_APPROVAL"
     db.add(a);db.flush()
-    db.add(ContractExecutionEvent(contract_id=c.id,approval_id=a.id,event_type="EXECUTION_REQUESTED",actor_id=actor_id,notes=notes,metadata={"terms":terms or {}}))
+    db.add(ContractExecutionEvent(contract_id=c.id,approval_id=a.id,event_type="EXECUTION_REQUESTED",actor_id=actor_id,notes=notes,event_metadata={"terms":terms or {}}))
     db.commit();db.refresh(a);return a
 
 def review_execution(db,facility_id,approval_id,actor_id,status,notes=None):
