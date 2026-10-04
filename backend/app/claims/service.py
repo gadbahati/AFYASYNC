@@ -23,14 +23,15 @@ def _contract_operational_gate(db: Session, facility_id: UUID, payer: Payer, ser
     """Enforce activated payer contract controls when a facility has an active contract for the payer."""
     from app.provider_network.models import ProviderNetworkContract, ProviderNetworkMembership, ProviderNetworkService
     code = (payer.code or "").strip()
-    contract = db.scalar(select(ProviderNetworkContract).where(
+    contract_result = db.execute(select(ProviderNetworkContract).where(
         ProviderNetworkContract.facility_id == facility_id,
         ProviderNetworkContract.network_code == code,
         ProviderNetworkContract.status == "ACTIVE",
         ProviderNetworkContract.execution_status == "EXECUTED",
         ProviderNetworkContract.activation_status.in_({"ACTIVATED", "PARTIAL"}),
     ).order_by(ProviderNetworkContract.effective_from.desc().nullslast(), ProviderNetworkContract.created_at.desc()))
-    if contract is None or not isinstance(contract, ProviderNetworkContract):
+    contract = contract_result.scalar_one_or_none()
+    if contract is None:
         return
     membership = db.scalar(select(ProviderNetworkMembership).where(
         ProviderNetworkMembership.facility_id == facility_id,
