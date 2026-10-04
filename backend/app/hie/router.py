@@ -17,6 +17,8 @@ from app.hie.service import (
     upsert_node,
     validate_inbound_bundle,
     resolve_inbound_patient,
+    import_inbound_clinical_resources,
+    list_imported_patient_resources,
 )
 from app.rbac.models import User
 
@@ -271,4 +273,62 @@ def exports(
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in rows
+    ]
+
+
+@router.post("/inbound/{inbound_id}/import")
+def import_inbound(
+    inbound_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("patients.record.write")),
+):
+    try:
+        result = import_inbound_clinical_resources(
+            db,
+            inbound_id=inbound_id,
+            facility_id=facility_id,
+            actor_user_id=user.id,
+        )
+        db.commit()
+        return result
+    except ValueError as exc:
+        code = str(exc)
+        status_code = 404 if "NOT_FOUND" in code else 409 if code in {
+            "INBOUND_DOCUMENT_NOT_ACCEPTED",
+            "INBOUND_PATIENT_NOT_MATCHED",
+            "INBOUND_SOURCE_NOT_TRUSTED",
+        } else 400
+        raise HTTPException(status_code=status_code, detail=code) from exc
+
+
+@router.get("/patients/{patient_id}/imported-resources")
+def imported_patient_resources(
+    patient_id: UUID,
+    limit: int = Query(default=100, ge=1, le=200),
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("patients.record.read")),
+):
+    _ = user
+    rows = list_imported_patient_resources(
+        db,
+        patient_id=patient_id,
+        facility_id=facility_id,
+        limit=limit,
+    )
+    return [
+        {
+            "id": str(row.id),
+            "resource_type": row.resource_type,
+            "remote_resource_id": row.remote_resource_id,
+            "purpose_of_use": row.purpose_of_use,
+            "sensitivity": row.sensitivity,
+            "normalized_code": row.normalized_code,
+            "normalized_text": row.normalized_text,
+            "effective_at": row.effective_at.isoformat() if row.effective_at else None,
+            "source_provenance": row.source_provenance or {},
+            "imported_at": row.imported_at.isoformat() if row.imported_at else None,
+        }
+        for row in rows
     ]
