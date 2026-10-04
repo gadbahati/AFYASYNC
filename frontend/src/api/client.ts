@@ -247,6 +247,13 @@ const _apiCore: any = {
     request(`/api/v1/claims?limit=${limit}&scope=${encodeURIComponent(scope)}`),
   getPatient: (id: string) => request(`/api/v1/patients/${id}`),
   createPatient: (payload: any) => request("/api/v1/patients", { method: "POST", body: JSON.stringify(payload) }),
+  crossFacilityMpiCandidates: (params: { first_name?: string; last_name?: string; date_of_birth?: string; phone?: string; national_id_number?: string }) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
+    return request("/api/v1/patients/mpi/cross-facility/candidates?" + query.toString());
+  },
+  crossFacilityPatientRecord: (patientId: string, accessReason: string) =>
+    request(`/api/v1/patients/cross-facility/${encodeURIComponent(patientId)}/record?access_reason=${encodeURIComponent(accessReason)}`),
   mpiCandidates: (params: { first_name?: string; last_name?: string; date_of_birth?: string; phone?: string; national_id_number?: string }) => {
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
