@@ -1,4 +1,4 @@
-/** Phase 151 — print-ready clinical summary: imaging + lab results.
+/** Phase 154 — print-ready summary: imaging, lab, pharmacy dispenses.
  *  Developed by BAHATI GAD WANGWE
  */
 import { useCallback, useEffect, useState } from "react";
@@ -39,12 +39,26 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
     summary?.patient?.identifier ||
     "—";
 
+  const hasOrders = (summary?.clinical_orders?.length || 0) > 0;
+  const hasImaging = (summary?.imaging_reports?.length || 0) > 0;
+  const hasLab = (summary?.lab_results?.length || 0) > 0;
+  const hasRx = (summary?.pharmacy_dispenses?.length || 0) > 0;
+  const hasClinical =
+    hasOrders ||
+    hasImaging ||
+    hasLab ||
+    hasRx ||
+    (summary?.diagnoses?.length || 0) > 0 ||
+    summary?.consultation ||
+    (summary?.clinical_notes?.length || 0) > 0 ||
+    summary?.discharge;
+
   return (
     <section className="card clinical-summary-print" id="clinical-summary-print">
       <div className="report-card-header">
         <div>
           <h2 style={{ margin: 0 }}>Clinical summary</h2>
-          <p className="muted small">Print-ready · imaging + lab results</p>
+          <p className="muted small">Print-ready · imaging · lab · pharmacy</p>
         </div>
         <div className="actions">
           <button type="button" className="secondary" disabled={loading} onClick={() => void reload()}>
@@ -95,6 +109,12 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
             </div>
           </div>
 
+          {!hasClinical && (
+            <p className="muted" style={{ marginTop: "1rem" }}>
+              No diagnoses, orders, results, or discharge recorded yet for this encounter.
+            </p>
+          )}
+
           {summary.diagnoses?.length > 0 && (
             <div style={{ marginTop: "1rem" }}>
               <h3>Diagnoses</h3>
@@ -121,7 +141,7 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
             </div>
           )}
 
-          {summary.clinical_orders?.length > 0 && (
+          {hasOrders && (
             <div style={{ marginTop: "1rem" }}>
               <h3>Orders</h3>
               <ul className="plain-list">
@@ -134,7 +154,7 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
             </div>
           )}
 
-          {summary.imaging_reports?.length > 0 && (
+          {hasImaging && (
             <div style={{ marginTop: "1rem" }} className="imaging-reports-print">
               <h3>Imaging reports</h3>
               <ul className="plain-list">
@@ -162,7 +182,7 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
             </div>
           )}
 
-          {summary.lab_results?.length > 0 && (
+          {hasLab && (
             <div style={{ marginTop: "1rem" }} className="lab-results-print">
               <h3>Lab results</h3>
               <ul className="plain-list">
@@ -180,6 +200,27 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
                       </>
                     )}
                     {!r.value && r.notes && <span className="muted small"> {r.notes}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {hasRx && (
+            <div style={{ marginTop: "1rem" }} className="pharmacy-dispenses-print">
+              <h3>Pharmacy dispenses</h3>
+              <ul className="plain-list">
+                {summary.pharmacy_dispenses.map((r: any) => (
+                  <li key={r.order_id} style={{ marginBottom: "0.5rem" }}>
+                    <strong>{r.code || "RX"}</strong> — {r.description || "—"}
+                    {r.dispense_qty && (
+                      <>
+                        {": "}
+                        <strong>{r.dispense_qty}</strong>
+                      </>
+                    )}
+                    {r.batch_no && <span className="muted"> · Batch {r.batch_no}</span>}
+                    {!r.dispense_qty && r.notes && <span className="muted small"> {r.notes}</span>}
                   </li>
                 ))}
               </ul>
@@ -215,7 +256,7 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
           )}
 
           <p className="muted small" style={{ marginTop: "1.25rem" }}>
-            AfyaSync clinical summary · Developed by BAHATI GAD WANGWE · Phase 151
+            AfyaSync clinical summary · Developed by BAHATI GAD WANGWE · Phase 154
           </p>
         </div>
       )}
