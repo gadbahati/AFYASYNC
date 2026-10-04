@@ -95,7 +95,20 @@ def get_clinical_timeline(
 ):
     _ = user
     _encounter(db, encounter_id, facility_id)
-    return get_encounter_clinical_summary(db, encounter_id)
+    return get_encounter_clinical_summary(db, encounter_id, facility_id)
+
+
+@encounter_router.get("/{encounter_id}/clinical", response_model=ClinicalTimelineSummary)
+def get_clinical_timeline_alias(
+    encounter_id: UUID,
+    user: User = Depends(require_permission("clinical.record.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+):
+    """Phase 138 — alias for client path /clinical."""
+    _ = user
+    _encounter(db, encounter_id, facility_id)
+    return get_encounter_clinical_summary(db, encounter_id, facility_id)
 
 
 @encounter_router.post("/{encounter_id}/vitals", response_model=VitalResponse, status_code=201)
@@ -190,6 +203,32 @@ def post_note(
     facility_id: UUID = Depends(get_facility_context),
     db: Session = Depends(get_db),
 ):
+    _encounter(db, encounter_id, facility_id)
+    return save_clinical_note(db, encounter_id, payload, actor_user_id=user.id)
+
+
+@encounter_router.get("/{encounter_id}/clinical-notes", response_model=list[ClinicalNoteResponse])
+def get_notes_alias(
+    encounter_id: UUID,
+    user: User = Depends(require_permission("clinical.record.read")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+):
+    """Phase 138 — alias for client path /clinical-notes."""
+    _ = user
+    _encounter(db, encounter_id, facility_id)
+    return list_clinical_notes(db, encounter_id)
+
+
+@encounter_router.post("/{encounter_id}/clinical-notes", response_model=ClinicalNoteResponse, status_code=201)
+def post_note_alias(
+    encounter_id: UUID,
+    payload: ClinicalNoteCreate,
+    user: User = Depends(require_permission("clinical.note.write")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+):
+    """Phase 138 — alias for client path /clinical-notes."""
     _encounter(db, encounter_id, facility_id)
     return save_clinical_note(db, encounter_id, payload, actor_user_id=user.id)
 
