@@ -1,6 +1,6 @@
-"""Phase 137/149 — printable clinical encounter summary.
+"""Phase 137/149/151 — printable clinical encounter summary.
 
-Phase 149 extracts imaging reports (modality + impression) from clinical orders.
+Imaging reports + lab results extracted from fulfilled clinical orders.
 Developed by BAHATI GAD WANGWE.
 """
 from datetime import datetime, timezone
@@ -20,6 +20,35 @@ class SummaryError(ValueError):
     pass
 
 
+def _parse_lab_result(o: ClinicalOrder) -> dict:
+    """Phase 151 — extract Result: value units (FLAG) from order notes."""
+    value = units = flag = None
+    notes = o.notes or ""
+    for line in str(notes).splitlines():
+        sline = line.strip()
+        if sline.lower().startswith("result:"):
+            rest = sline.split(":", 1)[1].strip()
+            if "(" in rest and rest.endswith(")"):
+                main, fl = rest.rsplit("(", 1)
+                flag = fl.rstrip(")").strip()
+                rest = main.strip()
+            parts = rest.split()
+            if parts:
+                value = parts[0]
+                if len(parts) > 1:
+                    units = " ".join(parts[1:])
+    return {
+        "order_id": str(o.id),
+        "code": o.code,
+        "description": o.description,
+        "status": o.status,
+        "value": value,
+        "units": units,
+        "flag": flag,
+        "notes": o.notes,
+    }
+
+
 def _parse_imaging_report(notes: str | None) -> dict:
     """Pull Modality / Impression lines from fulfilled order notes."""
     modality = None
@@ -32,9 +61,6 @@ def _parse_imaging_report(notes: str | None) -> dict:
             modality = s.split(":", 1)[1].strip() or modality
         elif s.lower().startswith("impression:"):
             impression = s.split(":", 1)[1].strip() or impression
-        elif "[COMPLETED]" in s and "Impression:" in s:
-            # fallback single-line formats
-            pass
     return {
         "modality": modality,
         "impression": impression,
@@ -48,7 +74,6 @@ def build_encounter_summary(
     encounter_id: UUID,
     facility_id: UUID,
 ) -> dict:
-    """Aggregate encounter clinical data into a print-ready summary payload."""
     enc = db.get(Encounter, encounter_id)
     if enc is None:
         raise SummaryError("ENCOUNTER_NOT_FOUND")
@@ -93,6 +118,7 @@ def build_encounter_summary(
 
     order_payload = []
     imaging_reports = []
+    lab_results = []
     for o in clinical_orders:
         item = {
             "id": str(o.id),
@@ -118,6 +144,8 @@ def build_encounter_summary(
                     "notes": o.notes,
                 }
             )
+        if (o.order_type or "").upper() in {"LAB", "LABORATORY"} and o.status == "COMPLETED":
+            lab_results.append(_parse_lab_result(o))
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -152,6 +180,7 @@ def build_encounter_summary(
         "prescriptions_legacy": _rows("prescriptions"),
         "clinical_orders": order_payload,
         "imaging_reports": imaging_reports,
+        "lab_results": lab_results,
         "discharge": (
             {
                 "disposition": discharge.disposition,
