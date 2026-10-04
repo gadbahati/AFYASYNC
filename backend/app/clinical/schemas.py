@@ -56,6 +56,41 @@ class DiagnosisCreate(BaseModel):
     is_sensitive: bool = False
 
 
+class ProcedureCreate(BaseModel):
+    procedure_code: str | None = Field(default=None, max_length=50)
+    procedure_name: str = Field(min_length=1, max_length=250)
+    procedure_type: str = Field(default="CLINICAL", max_length=40)
+    status: str = Field(default="COMPLETED", pattern="^(PLANNED|IN_PROGRESS|COMPLETED|CANCELLED)$")
+    outcome: str | None = Field(default=None, max_length=10000)
+    notes: str | None = Field(default=None, max_length=10000)
+
+
+class ProcedureResponse(ProcedureCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    encounter_id: UUID
+    performed_by: UUID
+    performed_at: datetime
+    created_at: datetime
+
+
+class ClinicalNoteCreate(BaseModel):
+    note_type: str = Field(default="PROGRESS", pattern="^(PROGRESS|NURSING|SPECIALIST|DISCHARGE|REFERRAL|OTHER)$")
+    content: str = Field(min_length=1, max_length=20000)
+    status: str = Field(default="DRAFT", pattern="^(DRAFT|FINAL)$")
+
+
+class ClinicalNoteResponse(ClinicalNoteCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    encounter_id: UUID
+    author_id: UUID
+    signed_at: datetime | None
+    signed_by: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class DiagnosisResponse(DiagnosisCreate):
     id: UUID
     encounter_id: UUID
@@ -91,6 +126,8 @@ class ClinicalTimelineSummary(BaseModel):
     diagnoses: list[DiagnosisResponse]
     lab_orders: list[LabOrderSummary]
     prescriptions: list[PrescriptionSummary]
+    procedures: list[ProcedureResponse]
+    clinical_notes: list[ClinicalNoteResponse]
 
 
 class CarePlanCreate(BaseModel):
