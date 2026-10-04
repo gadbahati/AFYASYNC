@@ -55,7 +55,6 @@ def forward_clinical_order(
     elif row.order_type == "PHARMACY":
         linked = _forward_pharmacy(db, row=row, enc=enc, staff=staff, actor_user_id=actor_user_id)
     elif row.order_type == "IMAGING":
-        # Imaging department module may exist separately — mark in progress for worklist
         row.status = "IN_PROGRESS"
         note = "[FORWARDED:IMAGING] Awaiting radiology worklist"
         row.notes = f"{row.notes}\n{note}".strip() if row.notes else note
@@ -105,7 +104,6 @@ def _forward_lab(
     if code:
         test = db.scalar(select(LabTest).where(func.upper(LabTest.code) == code, LabTest.status == "ACTIVE"))
     if test is None and row.description:
-        # fuzzy name match
         test = db.scalar(
             select(LabTest).where(
                 LabTest.status == "ACTIVE",
@@ -205,33 +203,28 @@ def _forward_pharmacy(
     if staff is None:
         raise OrderError("STAFF_REQUIRED_FOR_PHARMACY_FORWARD")
 
-    # Minimal prescription shell for dispense queue
     rx = Prescription(
+        prescription_id=f"RX-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{str(uuid4())[:6].upper()}",
         encounter_id=enc.id,
         patient_id=enc.patient_id,
         prescribed_by=staff.id,
         status="ACTIVE",
     )
-    # Some schemas use prescription_id string — set if column exists
-    if hasattr(Prescription, "prescription_id"):
-        setattr(rx, "prescription_id", f"RX-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{str(uuid4())[:6].upper()}")
     db.add(rx)
     db.flush()
-    item_kwargs = {"prescription_id": rx.id, "medication_id": med.id}
-    # quantity / dose fields vary — set safe defaults if present
-    if hasattr(PrescriptionItem, "quantity"):
-        item_kwargs["quantity"] = 1
-    if hasattr(PrescriptionItem, "dose"):
-        item_kwargs["dose"] = row.description[:80] if row.description else "As directed"
-    if hasattr(PrescriptionItem, "instructions"):
-        item_kwargs["instructions"] = row.notes or "From clinical order"
-    try:
-        db.add(PrescriptionItem(**item_kwargs))
-    except Exception:
-        # Fallback: prescription header only
-        pass
+    db.add(
+        PrescriptionItem(
+            prescription_id=rx.id,
+            medication_id=med.id,
+            dose=(row.description or "As directed")[:100],
+            frequency="As directed",
+            duration="As directed",
+            quantity=1,
+            instructions=row.notes or "From clinical order",
+        )
+    )
 
-    note = f"[FORWARDED:PHARMACY] linked_prescription={rx.id} medication={getattr(med, 'name', med.id)}"
+    note = f"[FORWARDED:PHARMACY] linked_prescription={rx.id} medication={med.name}"
     row.notes = f"{row.notes}\n{note}".strip() if row.notes else note
     if actor_user_id:
         record_audit(
@@ -249,7 +242,7 @@ def _forward_pharmacy(
     return {
         "department": "PHARMACY",
         "linked_id": str(rx.id),
-        "medication": getattr(med, "name", None),
+        "medication": med.name,
         "matched": True,
-        "message": f"Prescription created for {getattr(med, 'name', med.id)}",
+        "message": f"Prescription created for {med.name}",
     }
