@@ -32,7 +32,7 @@ class RuntimeMetrics:
     ) -> None:
         with self._lock:
             self._total_events += 1
-            if status_code is None or status_code < 400:
+            if status_code is None or status_code < 400 or status_code >= 500:
                 self._requests += 1
             if error:
                 self._errors += 1
