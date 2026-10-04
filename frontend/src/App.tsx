@@ -27,6 +27,14 @@ import { AppointmentsPage } from "./pages/AppointmentsPage";
 import { MCHPage } from "./pages/MCHPage";
 import { FacilityMessagesPage } from "./pages/FacilityMessagesPage";
 import { ReferralsPage } from "./pages/ReferralsPage";
+import { PatientPortalHomePage } from "./pages/PatientPortalHomePage";
+import { PatientVisitsPage } from "./pages/PatientVisitsPage";
+import { PatientBookAppointmentPage } from "./pages/PatientBookAppointmentPage";
+import { PatientMessagesPage } from "./pages/PatientMessagesPage";
+import { PatientConsentsPage } from "./pages/PatientConsentsPage";
+import { PatientCoveragePage } from "./pages/PatientCoveragePage";
+import { PatientContinuityCardPage } from "./pages/PatientContinuityCardPage";
+import { PatientResultsPage } from "./pages/PatientResultsPage";
 
 /** Phase 149+ — facility routes and workspace architecture. */
 export default function App() {
@@ -66,6 +74,14 @@ export default function App() {
             <Route path="/login/patient" element={<PatientLoginPage />} />
             <Route path="/login/facility" element={<LoginPage />} />
             <Route path="/login/government" element={<GovernmentLoginPage />} />
+            <Route path="/portal" element={<PatientPortalHomePage />} />
+            <Route path="/portal/results" element={<PatientResultsPage />} />
+            <Route path="/portal/encounters" element={<PatientVisitsPage />} />
+            <Route path="/portal/book" element={<PatientBookAppointmentPage />} />
+            <Route path="/portal/messages" element={<PatientMessagesPage />} />
+            <Route path="/portal/consents" element={<PatientConsentsPage />} />
+            <Route path="/portal/coverage" element={<PatientCoveragePage />} />
+            <Route path="/portal/continuity-card" element={<PatientContinuityCardPage />} />
             <Route
               path="/*"
               element={createElement(ProtectedRoute, null, facilityShell)}
