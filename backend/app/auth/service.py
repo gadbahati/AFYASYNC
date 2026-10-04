@@ -8,6 +8,7 @@ from app.auth.models import RefreshSession
 from app.auth.security import create_access_token, create_refresh_token, decode_refresh_token, hash_refresh_token, verify_password
 from app.config import settings
 from app.rbac.models import Staff, User
+from app.tenancy.models import GovernmentAccess
 
 
 def authenticate_user(db: Session, username: str, password: str) -> tuple[User, list[Staff]] | None:
@@ -72,9 +73,15 @@ def rotate_tokens_from_refresh(db: Session, refresh_token: str) -> tuple[User, U
         db.commit()
         return None
 
-    if facility_id is not None:
+    if portal_type == "facility" and facility_id is not None:
         staff = db.scalar(select(Staff.id).where(Staff.person_id == user.person_id, Staff.facility_id == facility_id, Staff.status == "ACTIVE"))
         if staff is None:
+            session.revoked_at = now
+            db.commit()
+            return None
+    if portal_type == "government":
+        access = db.scalar(select(GovernmentAccess.id).where(GovernmentAccess.user_id == user.id, GovernmentAccess.organization_id == organization_id, GovernmentAccess.status == "ACTIVE"))
+        if access is None:
             session.revoked_at = now
             db.commit()
             return None
