@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { WorkspaceProvider } from "./workspaces/WorkspaceContext";
 import { GlobalCommand } from "./components/GlobalCommand";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { GovernmentProtectedRoute } from "./components/GovernmentProtectedRoute";
 import { ModuleAccessProvider } from "./auth/ModuleAccessContext";
 import { ModuleGuard } from "./components/ModuleGuard";
 import { AppointmentsPage } from "./pages/AppointmentsPage";
@@ -124,15 +125,28 @@ import WorkspaceHomePage from "./pages/WorkspaceHomePage";
 import TenancyPage from "./pages/TenancyPage";
 import ProductReadinessPage from "./pages/ProductReadinessPage";
 import BusinessContinuityPage from "./pages/BusinessContinuityPage";
+import { GovernmentLoginPage } from "./pages/GovernmentLoginPage";
+import { GovernmentPortalHomePage } from "./pages/GovernmentPortalHomePage";
+import { GovernmentModulePage } from "./pages/GovernmentModulePage";
 
 export default function App() {
   return <AuthProvider><WorkspaceProvider><BrowserRouter><GlobalCommand /><Routes>
     <Route path="/login" element={<EntryPage />} />
     <Route path="/login/facility" element={<LoginPage />} />
     <Route path="/login/patient" element={<PatientLoginPage />} />
+    <Route path="/login/government" element={<GovernmentLoginPage />} />
     <Route path="/login/patient/register" element={<PatientRegisterPage />} />
     <Route path="/login/patient/reset" element={<PatientResetPage />} />
     <Route path="/select-facility" element={<FacilitySelectPage />} />
+    <Route element={<GovernmentProtectedRoute />}>
+      <Route path="/government" element={<GovernmentPortalHomePage />} />
+      <Route path="/government/facilities" element={<GovernmentModulePage />} />
+      <Route path="/government/analytics" element={<GovernmentModulePage />} />
+      <Route path="/government/reporting" element={<GovernmentModulePage />} />
+      <Route path="/government/interoperability" element={<GovernmentModulePage />} />
+      <Route path="/government/public-health" element={<GovernmentModulePage />} />
+      <Route path="/government/compliance" element={<GovernmentModulePage />} />
+    </Route>
     <Route path="/portal" element={<PatientPortalHomePage />} />
     <Route path="/portal/citizen" element={<AfyaCitizenPage />} />
     <Route path="/portal/wallet" element={<CitizenWalletPage />} />
