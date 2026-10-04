@@ -58,7 +58,7 @@ def find_mpi_candidates(
             or_(*conditions),
         )
         .order_by(Person.last_name, Person.first_name, Person.id)
-        .limit(limit),
+        .limit(limit)
     )
     rows = db.execute(stmt).all()
     results = []
