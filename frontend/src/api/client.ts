@@ -261,6 +261,10 @@ const _apiCore: any = {
     }),
   hieInboundResolve: (inboundId: string) =>
     request(`/api/v1/hie/inbound/${encodeURIComponent(inboundId)}/resolve`, { method: "POST" }),
+  hieInboundImport: (inboundId: string) =>
+    request(`/api/v1/hie/inbound/${encodeURIComponent(inboundId)}/import`, { method: "POST" }),
+  hieImportedPatientResources: (patientId: string, limit = 100) =>
+    request(`/api/v1/hie/patients/${encodeURIComponent(patientId)}/imported-resources?limit=${limit}`),
   crossFacilityMpiCandidates: (params: { first_name?: string; last_name?: string; date_of_birth?: string; phone?: string; national_id_number?: string }) => {
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
