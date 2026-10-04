@@ -23,3 +23,14 @@ def test_bundle_requires_resource_ids_and_full_urls():
     errors = validate_bundle(bundle)
     assert "MISSING_RESOURCE_ID_1" in errors
     assert "MISSING_FULL_URL_1" in errors
+
+
+def test_outbound_conformance_requires_provenance():
+    from app.hie.conformance import assert_valid_bundle
+    bundle = _bundle()
+    try:
+        assert_valid_bundle(bundle)
+    except ValueError as exc:
+        assert "PROVENANCE_RESOURCE_COUNT_INVALID" in str(exc)
+    else:
+        raise AssertionError("bundle without Provenance must be rejected for outbound HIE")
