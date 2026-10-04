@@ -1,4 +1,4 @@
-/** Phase 137/150 — print-ready clinical encounter summary + imaging reports.
+/** Phase 151 — print-ready clinical summary: imaging + lab results.
  *  Developed by BAHATI GAD WANGWE
  */
 import { useCallback, useEffect, useState } from "react";
@@ -44,7 +44,7 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
       <div className="report-card-header">
         <div>
           <h2 style={{ margin: 0 }}>Clinical summary</h2>
-          <p className="muted small">Print-ready handout · includes imaging reports</p>
+          <p className="muted small">Print-ready · imaging + lab results</p>
         </div>
         <div className="actions">
           <button type="button" className="secondary" disabled={loading} onClick={() => void reload()}>
@@ -162,6 +162,30 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
             </div>
           )}
 
+          {summary.lab_results?.length > 0 && (
+            <div style={{ marginTop: "1rem" }} className="lab-results-print">
+              <h3>Lab results</h3>
+              <ul className="plain-list">
+                {summary.lab_results.map((r: any) => (
+                  <li key={r.order_id} style={{ marginBottom: "0.5rem" }}>
+                    <strong>{r.code || "LAB"}</strong> — {r.description || "—"}
+                    {r.value != null && r.value !== "" && (
+                      <>
+                        {": "}
+                        <strong>
+                          {r.value}
+                          {r.units ? ` ${r.units}` : ""}
+                        </strong>
+                        {r.flag ? ` (${r.flag})` : ""}
+                      </>
+                    )}
+                    {!r.value && r.notes && <span className="muted small"> {r.notes}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {summary.clinical_notes?.length > 0 && (
             <div style={{ marginTop: "1rem" }}>
               <h3>Clinical notes</h3>
@@ -191,7 +215,7 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
           )}
 
           <p className="muted small" style={{ marginTop: "1.25rem" }}>
-            AfyaSync clinical summary · Developed by BAHATI GAD WANGWE · Phase 150
+            AfyaSync clinical summary · Developed by BAHATI GAD WANGWE · Phase 151
           </p>
         </div>
       )}
