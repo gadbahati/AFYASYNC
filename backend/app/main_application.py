@@ -50,7 +50,7 @@ def _mount_routers() -> None:
             ("app.clinical.router", "router", "clinical_router"),
             ("app.clinical.worklist_routes", "worklist_router", "worklist_router"),
             ("app.encounters.router", "router", "encounters_router"),
-            ("app.auth", "router", "auth_router"),
+            ("app.auth.router", "router", "auth_router"),
         ]
     for mod_name, attr, label in ROUTERS:
         try:
