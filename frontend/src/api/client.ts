@@ -127,6 +127,8 @@ const _apiCore: any = {
     request(`/api/v1/tenancy/organizations/${organizationId}/facilities/${facilityId}`, { method: "POST" }),
   tenancyAttachUser: (organizationId: string, userId: string, accessLevel = "MEMBER") =>
     request(`/api/v1/tenancy/organizations/${organizationId}/users/${userId}?access_level=${encodeURIComponent(accessLevel)}`, { method: "POST" }),
+  tenancyGrantGovernmentAccess: (organizationId: string, userId: string, roleCode = "HEALTH_OFFICER", scopeLevel = "COUNTY") =>
+    request("/api/v1/tenancy/organizations/" + organizationId + "/government-access/" + userId + "?role_code=" + encodeURIComponent(roleCode) + "&scope_level=" + encodeURIComponent(scopeLevel), { method: "POST" }),
   tenancySelect: (organizationId: string) =>
     request(`/api/v1/tenancy/select?organization_id=${encodeURIComponent(organizationId)}`, { method: "POST" }),
   downloadWarehouseCsv: async (days = 30) => {
