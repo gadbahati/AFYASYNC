@@ -195,6 +195,8 @@ const _apiCore: any = {
     if (appointment_date) q.set("appointment_date", appointment_date);
     return request(`/api/v1/appointments?${q.toString()}`);
   },
+  getLatestTriage: (encounterId: string) => request(`/api/v1/encounters/${encounterId}/triage`),
+  recordTriage: (encounterId: string, payload: any) => request(`/api/v1/encounters/${encounterId}/triage`, { method: "POST", body: JSON.stringify(payload) }),
   updateAppointmentStatus: (appointmentId: string, status: string) => request(`/api/v1/appointments/${appointmentId}/${encodeURIComponent(status)}`, { method: "PATCH" }),
   listDepartments: () => request("/api/v1/facilities/me/departments"),
   listBillingServices: (scope = "facility") =>
