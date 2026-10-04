@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
-from app.clinical.models import Allergy
+from app.clinical.models import Allergy, Diagnosis
+from app.consent.models import SensitiveDiseaseConsent
 from app.encounters.models import Encounter
 from app.hie.models import HieExportLog, HieInboundDocument, HieNode
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabTest
@@ -69,21 +70,6 @@ def _patient_resource(db: Session, person: Person) -> dict:
         "gender": gender,
         "active": person.status == "ACTIVE",
     }
-
-
-def _sensitive_disclosure_allowed(db: Session, patient_id: UUID) -> bool:
-    try:
-        from app.consent.models import SensitiveDiseaseConsent
-
-        row = db.scalar(
-            select(SensitiveDiseaseConsent.id).where(
-                SensitiveDiseaseConsent.patient_id == patient_id,
-                SensitiveDiseaseConsent.consent_given.is_(True),
-            ).limit(1)
-        )
-        return row is not None
-    except Exception:
-        return False
 
 
 def build_patient_summary_bundle(
@@ -158,6 +144,43 @@ def build_patient_summary_bundle(
                         "start": enc.created_at.isoformat() if enc.created_at else None,
                     },
                     "serviceProvider": {"reference": f"Organization/{enc.facility_id}"},
+                },
+            }
+        )
+
+    diagnoses = list(
+        db.scalars(
+            select(Diagnosis)
+            .join(Encounter, Diagnosis.encounter_id == Encounter.id)
+            .where(Diagnosis.encounter_id.in_([enc.id for enc in encounters]))
+            .order_by(Diagnosis.recorded_at.desc(), Diagnosis.id.desc())
+            .limit(100)
+        )
+    )
+    for diagnosis in diagnoses:
+        consent = db.scalar(
+            select(SensitiveDiseaseConsent).where(
+                SensitiveDiseaseConsent.diagnosis_id == diagnosis.id,
+                SensitiveDiseaseConsent.patient_id == patient_id,
+            )
+        )
+        if consent is not None and not consent.consent_given:
+            redacted += 1
+            continue
+        entries.append(
+            {
+                "fullUrl": f"urn:uuid:{diagnosis.id}",
+                "resource": {
+                    "resourceType": "Condition",
+                    "id": str(diagnosis.id),
+                    "clinicalStatus": {"coding": [{"code": "active"}]},
+                    "code": {
+                        "coding": [{"code": diagnosis.code}] if diagnosis.code else [],
+                        "text": diagnosis.description,
+                    },
+                    "subject": {"reference": f"Patient/{person.id}"},
+                    "encounter": {"reference": f"Encounter/{diagnosis.encounter_id}"},
+                    "recordedDate": diagnosis.recorded_at.isoformat() if diagnosis.recorded_at else None,
                 },
             }
         )
@@ -243,9 +266,6 @@ def build_patient_summary_bundle(
                         },
                     }
                 )
-
-    if not _sensitive_disclosure_allowed(db, patient_id):
-        redacted = 1
 
     bundle_id = str(uuid4())
     bundle = {
