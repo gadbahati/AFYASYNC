@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_facility_context, require_permission
 from app.context.service import resolve_facility_ids
 from app.database import get_db
+from app.hie.service import list_nodes
 from app.rbac.models import Staff, User
 from app.referrals.schemas import (
     ReferralCreate,
@@ -72,6 +73,27 @@ def _error(exc: ReferralError) -> HTTPException:
         "INVALID_TRANSFER_TRANSITION": 409,
     }
     return HTTPException(status_code=mapping.get(code, 400), detail=code)
+
+
+@router.get("/hie-nodes")
+def referral_hie_nodes(
+    user: User = Depends(require_permission("referrals.read")),
+    db: Session = Depends(get_db),
+):
+    _ = user
+    return [
+        {
+            "id": str(node.id),
+            "code": node.code,
+            "name": node.name,
+            "node_type": node.node_type,
+            "facility_id": str(node.facility_id) if node.facility_id else None,
+            "trust_level": node.trust_level,
+            "status": node.status,
+        }
+        for node in list_nodes(db)
+        if node.trust_level in {"HIGH", "NATIONAL"}
+    ]
 
 
 @router.post("", response_model=ReferralOut, status_code=status.HTTP_201_CREATED)
