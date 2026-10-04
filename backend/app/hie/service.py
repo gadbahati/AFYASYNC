@@ -14,6 +14,7 @@ from app.clinical.models import Allergy, Diagnosis
 from app.consent.models import SensitiveDiseaseConsent
 from app.encounters.models import Encounter
 from app.hie.models import HieExportLog, HieInboundDocument, HieNode
+from app.hie.conformance import validate_bundle
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabTest
 from app.patients.models import AfyaIdentity, PatientFacility, Person
 from app.patients.mpi import _hash_id
@@ -417,19 +418,9 @@ def validate_inbound_bundle(
     source_node_id: UUID | None = None,
     actor_user_id: UUID | None = None,
 ) -> dict:
-    errors: list[str] = []
-    if not isinstance(payload, dict):
-        raise ValueError("INVALID_BUNDLE")
-    if payload.get("resourceType") != "Bundle":
-        errors.append("NOT_A_BUNDLE")
-    btype = payload.get("type")
-    if btype not in {"document", "collection", "transaction", "searchset"}:
-        errors.append("UNSUPPORTED_BUNDLE_TYPE")
+    errors = validate_bundle(payload)
     entries = payload.get("entry") or []
-    if not isinstance(entries, list) or len(entries) == 0:
-        errors.append("EMPTY_BUNDLE")
-    if len(entries) > 200:
-        errors.append("BUNDLE_TOO_LARGE")
+
 
     patient_id = None
     has_patient = False
