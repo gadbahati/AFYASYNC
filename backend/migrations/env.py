@@ -14,6 +14,7 @@ from app.consent import models as consent_models
 from app.treat_abroad import models as treat_abroad_models
 from app.portal import messaging_models as portal_messaging_models
 from app.hie import import_models as hie_import_models
+from app.hie import delivery_models as hie_delivery_models
 
 _ = (
     patient_models,
@@ -25,6 +26,7 @@ _ = (
     treat_abroad_models,
     portal_messaging_models,
     hie_import_models,
+    hie_delivery_models,
 )
 
 config = context.config
