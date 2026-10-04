@@ -160,6 +160,9 @@ const _apiCore: any = {
   selectGovernmentOrganization: (organizationId: string) =>
     request("/api/v1/auth/government/select-organization?organization_id=" + encodeURIComponent(organizationId), { method: "POST" }),
   governmentMe: () => request("/api/v1/auth/government/me"),
+  governmentMFASetup: () => request("/api/v1/auth/government/mfa/setup", { method: "POST" }),
+  governmentMFAConfirmSetup: (code: string) => request("/api/v1/auth/government/mfa/confirm-setup", { method: "POST", body: JSON.stringify({ code }) }, false),
+  governmentMFAVerify: (challengeId: string, code: string) => request(`/api/v1/auth/government/mfa/verify?challenge_id=${encodeURIComponent(challengeId)}&code=${encodeURIComponent(code)}`, { method: "POST" }, false),
   governmentOverview: () => request("/api/v1/government/overview"),
   patientLogin: (identifier: string, password: string) =>
     request("/api/v1/auth/patient/login", { method: "POST", body: JSON.stringify({ identifier, password }) }, false),
