@@ -112,6 +112,7 @@ export default function App() {
         <Route path="/claims" element={<ClaimsPage />} />
         <Route path="/messages" element={<FacilityMessagesPage />} />
         <Route path="/referrals" element={<ReferralsPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/queue" element={<QueuePage />} />
         <Route path="/patients/new" element={<NewPatientPage />} />
         <Route path="/household-wallet" element={<HouseholdWalletPage />} />
