@@ -1,4 +1,4 @@
-/** Phase 152 — clinical worklist with LAB result entry + dept deep-links.
+/** Phase 153 — worklist: LAB results + pharmacy dispense + imaging links.
  *  Developed by BAHATI GAD WANGWE
  */
 import { useCallback, useEffect, useState } from "react";
@@ -30,17 +30,19 @@ function departmentLink(o: WorkItem): { path: string; label: string } | null {
 }
 
 export function ClinicalWorklistPage() {
-  const [orderType, setOrderType] = useState("LAB");
+  const [orderType, setOrderType] = useState("PHARMACY");
   const [data, setData] = useState<{ count?: number; order_type?: string; items?: WorkItem[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [labValue, setLabValue] = useState("");
   const [labUnits, setLabUnits] = useState("");
   const [labFlag, setLabFlag] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dispenseQty, setDispenseQty] = useState("");
+  const [batchNo, setBatchNo] = useState("");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -80,6 +82,7 @@ export function ClinicalWorklistPage() {
     setActionMsg(null);
     const t = (order.order_type || "").toUpperCase();
     const isLab = t === "LAB" || t === "LABORATORY";
+    const isRx = t === "PHARMACY" || t === "RX";
 
     if (isLab && !labValue.trim()) {
       setActionMsg("Enter a lab result value before completing");
@@ -87,15 +90,29 @@ export function ClinicalWorklistPage() {
       setSelectedId(order.id);
       return;
     }
+    if (isRx && !dispenseQty.trim()) {
+      setActionMsg("Enter dispense quantity before completing");
+      setBusyId(null);
+      setSelectedId(order.id);
+      return;
+    }
 
     const body: Record<string, string> = {
       status: "COMPLETED",
-      result_notes: isLab ? "Lab result entered from clinical worklist" : "Completed from clinical worklist",
+      result_notes: isLab
+        ? "Lab result entered from clinical worklist"
+        : isRx
+          ? "Pharmacy dispense from clinical worklist"
+          : "Completed from clinical worklist",
     };
     if (isLab) {
       body.lab_value = labValue.trim();
       if (labUnits.trim()) body.lab_units = labUnits.trim();
       if (labFlag.trim()) body.lab_flag = labFlag.trim();
+    }
+    if (isRx) {
+      body.dispense_qty = dispenseQty.trim();
+      if (batchNo.trim()) body.batch_no = batchNo.trim();
     }
 
     try {
@@ -104,14 +121,20 @@ export function ClinicalWorklistPage() {
         body: JSON.stringify(body),
       });
       setActionMsg(
-        isLab
-          ? `Lab result saved for ${order.id.slice(0, 8)}… (${labValue}${labUnits ? " " + labUnits : ""}${labFlag ? " " + labFlag : ""})`
-          : `Fulfilled order ${order.id.slice(0, 8)}…`,
+        isRx
+          ? `Dispensed ${dispenseQty} for ${order.id.slice(0, 8)}…`
+          : isLab
+            ? `Lab result saved for ${order.id.slice(0, 8)}…`
+            : `Fulfilled order ${order.id.slice(0, 8)}…`,
       );
       if (isLab) {
         setLabValue("");
         setLabUnits("");
         setLabFlag("");
+      }
+      if (isRx) {
+        setDispenseQty("");
+        setBatchNo("");
       }
       await reload();
     } catch (err) {
@@ -122,6 +145,7 @@ export function ClinicalWorklistPage() {
   }
 
   const showLabForm = orderType === "LAB" || orderType === "" || orderType === "LABORATORY";
+  const showRxForm = orderType === "PHARMACY" || orderType === "" || orderType === "RX";
 
   return (
     <div>
@@ -131,13 +155,13 @@ export function ClinicalWorklistPage() {
             ← Dashboard
           </Link>
           <h1>Clinical worklist</h1>
-          <p className="muted">LAB results, pharmacy, imaging queues with department links</p>
+          <p className="muted">Lab results · pharmacy dispense · imaging · department links</p>
         </div>
         <div className="actions">
           <select value={orderType} onChange={(e) => setOrderType(e.target.value)} aria-label="Order type">
+            <option value="PHARMACY">PHARMACY</option>
             <option value="LAB">LAB</option>
             <option value="IMAGING">IMAGING</option>
-            <option value="PHARMACY">PHARMACY</option>
             <option value="">All types</option>
           </select>
           <button type="button" className="secondary" onClick={() => void reload()} disabled={loading}>
@@ -149,39 +173,54 @@ export function ClinicalWorklistPage() {
       {showLabForm && (
         <section className="card" style={{ marginBottom: "1rem" }}>
           <h2>Lab result entry</h2>
-          <p className="muted small">Select a LAB order below, enter result, then Mark complete.</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}>
             <label>
               Value{" "}
-              <input
-                value={labValue}
-                onChange={(e) => setLabValue(e.target.value)}
-                placeholder="e.g. 5.2"
-                aria-label="Lab value"
-              />
+              <input value={labValue} onChange={(e) => setLabValue(e.target.value)} placeholder="e.g. 5.2" />
             </label>
             <label>
               Units{" "}
-              <input
-                value={labUnits}
-                onChange={(e) => setLabUnits(e.target.value)}
-                placeholder="mmol/L"
-                aria-label="Lab units"
-              />
+              <input value={labUnits} onChange={(e) => setLabUnits(e.target.value)} placeholder="mmol/L" />
             </label>
             <label>
               Flag{" "}
-              <select value={labFlag} onChange={(e) => setLabFlag(e.target.value)} aria-label="Lab flag">
+              <select value={labFlag} onChange={(e) => setLabFlag(e.target.value)}>
                 <option value="">—</option>
-                <option value="N">N (normal)</option>
-                <option value="H">H (high)</option>
-                <option value="L">L (low)</option>
-                <option value="A">A (abnormal)</option>
-                <option value="C">C (critical)</option>
+                <option value="N">N</option>
+                <option value="H">H</option>
+                <option value="L">L</option>
+                <option value="A">A</option>
+                <option value="C">C</option>
               </select>
             </label>
           </div>
-          {selectedId && <p className="muted small">Selected order: {selectedId.slice(0, 8)}…</p>}
+        </section>
+      )}
+
+      {showRxForm && (
+        <section className="card" style={{ marginBottom: "1rem" }}>
+          <h2>Pharmacy dispense</h2>
+          <p className="muted small">Select a PHARMACY order, enter quantity (± batch), then Mark complete.</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}>
+            <label>
+              Quantity{" "}
+              <input
+                value={dispenseQty}
+                onChange={(e) => setDispenseQty(e.target.value)}
+                placeholder="e.g. 30 tablets"
+                aria-label="Dispense quantity"
+              />
+            </label>
+            <label>
+              Batch / lot{" "}
+              <input
+                value={batchNo}
+                onChange={(e) => setBatchNo(e.target.value)}
+                placeholder="optional"
+                aria-label="Batch number"
+              />
+            </label>
+          </div>
         </section>
       )}
 
@@ -279,7 +318,7 @@ export function ClinicalWorklistPage() {
             })}
             {(data.items || []).length === 0 && <li className="muted">No open orders in this queue.</li>}
           </ul>
-          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 152</p>
+          <p className="muted small">Developed by BAHATI GAD WANGWE · Phase 153</p>
         </section>
       )}
     </div>
