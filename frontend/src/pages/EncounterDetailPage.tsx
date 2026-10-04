@@ -112,6 +112,9 @@ export function EncounterDetailPage() {
     setBusy(true);
     setError(null);
     try {
+      const status = String(fd.get("status") || "DRAFT");
+      if (status === "FINAL" && !text("assessment")) { setError("ASSESSMENT_REQUIRED_FOR_FINAL"); return; }
+      if (status === "FINAL" && !text("treatment_plan")) { setError("TREATMENT_PLAN_REQUIRED_FOR_FINAL"); return; }
       await api.saveConsultation(encounterId, {
         chief_complaint: text("chief_complaint"),
         history: text("history"),
@@ -119,6 +122,7 @@ export function EncounterDetailPage() {
         assessment: text("assessment"),
         clinical_notes: text("clinical_notes"),
         treatment_plan: text("treatment_plan"),
+        status,
       });
       await reload();
     } catch (err) {
@@ -261,8 +265,9 @@ export function EncounterDetailPage() {
                 <label className="full">Assessment <textarea name="assessment" rows={2} defaultValue={timeline.consultation?.assessment || ""} /></label>
                 <label className="full">Clinical notes <textarea name="clinical_notes" rows={2} defaultValue={timeline.consultation?.clinical_notes || ""} /></label>
                 <label className="full">Treatment plan <textarea name="treatment_plan" rows={2} defaultValue={timeline.consultation?.treatment_plan || ""} /></label>
+                <label>Status<select name="status" defaultValue={timeline.consultation?.status || "DRAFT"} disabled={timeline.consultation?.status === "FINAL"}><option value="DRAFT">Draft</option><option value="FINAL">Final / sign</option></select></label>
                 <div className="full actions">
-                  <button type="submit" disabled={busy}>Save consultation</button>
+                  <button type="submit" disabled={busy || timeline.consultation?.status === "FINAL"}>{timeline.consultation?.status === "FINAL" ? "Consultation signed" : "Save consultation"}</button>
                 </div>
               </form>
             )}
@@ -290,6 +295,74 @@ export function EncounterDetailPage() {
                 <div className="full actions">
                   <button type="submit" disabled={busy}>Add diagnosis</button>
                 </div>
+              </form>
+            )}
+          </section>
+
+          <section className="card">
+            <h2>Procedures</h2>
+            {timeline.procedures.length === 0 && <p className="muted">No procedures recorded.</p>}
+            <ul className="plain-list">
+              {timeline.procedures.map((p) => (
+                <li key={p.id}>{p.procedure_name}{p.procedure_code ? ` (${p.procedure_code})` : ""} · {p.status} · {new Date(p.performed_at).toLocaleString()}</li>
+              ))}
+            </ul>
+            {open && (
+              <form className="form-grid" onSubmit={async (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                setBusy(true); setError(null);
+                try {
+                  await api.addProcedure(encounterId!, {
+                    procedure_name: String(fd.get("procedure_name") || "").trim(),
+                    procedure_code: String(fd.get("procedure_code") || "").trim() || null,
+                    procedure_type: String(fd.get("procedure_type") || "CLINICAL"),
+                    status: String(fd.get("procedure_status") || "COMPLETED"),
+                    outcome: String(fd.get("outcome") || "").trim() || null,
+                    notes: String(fd.get("procedure_notes") || "").trim() || null,
+                  });
+                  e.currentTarget.reset(); await reload();
+                } catch (err) { setError(err instanceof ApiError ? err.code : "PROCEDURE_FAILED"); }
+                finally { setBusy(false); }
+              }}>
+                <label>Name <input name="procedure_name" required /></label>
+                <label>Code <input name="procedure_code" /></label>
+                <label>Type <input name="procedure_type" defaultValue="CLINICAL" /></label>
+                <label>Status<select name="procedure_status"><option value="COMPLETED">Completed</option><option value="PLANNED">Planned</option><option value="IN_PROGRESS">In progress</option><option value="CANCELLED">Cancelled</option></select></label>
+                <label className="full">Outcome <textarea name="outcome" rows={2} /></label>
+                <label className="full">Procedure notes <textarea name="procedure_notes" rows={2} /></label>
+                <div className="full actions"><button type="submit" disabled={busy}>Record procedure</button></div>
+              </form>
+            )}
+          </section>
+
+          <section className="card">
+            <h2>Clinical notes</h2>
+            {timeline.clinical_notes.length === 0 && <p className="muted">No clinical notes recorded.</p>}
+            <ul className="plain-list">
+              {timeline.clinical_notes.map((n) => (
+                <li key={n.id}><strong>{n.note_type}</strong> · {n.status} · {n.content} · {new Date(n.created_at).toLocaleString()}</li>
+              ))}
+            </ul>
+            {open && (
+              <form className="form-grid" onSubmit={async (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                setBusy(true); setError(null);
+                try {
+                  await api.addClinicalNote(encounterId!, {
+                    note_type: String(fd.get("note_type") || "PROGRESS"),
+                    content: String(fd.get("content") || "").trim(),
+                    status: String(fd.get("note_status") || "DRAFT"),
+                  });
+                  e.currentTarget.reset(); await reload();
+                } catch (err) { setError(err instanceof ApiError ? err.code : "CLINICAL_NOTE_FAILED"); }
+                finally { setBusy(false); }
+              }}>
+                <label>Type<select name="note_type"><option value="PROGRESS">Progress</option><option value="NURSING">Nursing</option><option value="SPECIALIST">Specialist</option><option value="DISCHARGE">Discharge</option><option value="REFERRAL">Referral</option><option value="OTHER">Other</option></select></label>
+                <label>Status<select name="note_status"><option value="DRAFT">Draft</option><option value="FINAL">Final / sign</option></select></label>
+                <label className="full">Note <textarea name="content" rows={4} required maxLength={20000} /></label>
+                <div className="full actions"><button type="submit" disabled={busy}>Save clinical note</button></div>
               </form>
             )}
           </section>
