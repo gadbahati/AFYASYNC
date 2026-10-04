@@ -144,6 +144,42 @@ def inbound_document(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/inbound")
+def inbound_documents(
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("patients.record.read")),
+):
+    _ = user
+    from sqlalchemy import select
+    from app.hie.models import HieInboundDocument
+    rows = list(
+        db.scalars(
+            select(HieInboundDocument)
+            .where(HieInboundDocument.facility_id == facility_id)
+            .order_by(HieInboundDocument.created_at.desc())
+            .limit(limit)
+        )
+    )
+    return [
+        {
+            "id": str(row.id),
+            "patient_id": str(row.patient_id) if row.patient_id else None,
+            "source_node_id": str(row.source_node_id) if row.source_node_id else None,
+            "source_code": row.source_code,
+            "bundle_id": row.bundle_id,
+            "document_type": row.document_type,
+            "resource_count": row.resource_count,
+            "validation_status": row.validation_status,
+            "match_status": row.match_status,
+            "match_reasons": row.match_reasons or [],
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
+
+
 @router.post("/inbound/{inbound_id}/resolve")
 def resolve_inbound(
     inbound_id: UUID,
