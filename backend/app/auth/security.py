@@ -32,12 +32,16 @@ def _create_token(
     facility_id: UUID | None = None,
     jti: UUID | None = None,
     family_id: UUID | None = None,
+    portal_type: str = "facility",
+    organization_id: UUID | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
         "facility_id": str(facility_id) if facility_id else None,
         "type": token_type,
+        "portal_type": portal_type,
+        "organization_id": str(organization_id) if organization_id else None,
         "iat": now,
         "exp": now + timedelta(minutes=expires_minutes),
     }
@@ -47,8 +51,8 @@ def _create_token(
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(user_id: UUID, facility_id: UUID | None = None) -> str:
-    return _create_token(user_id, "access", settings.access_token_minutes, facility_id)
+def create_access_token(user_id: UUID, facility_id: UUID | None = None, portal_type: str = "facility", organization_id: UUID | None = None) -> str:
+    return _create_token(user_id, "access", settings.access_token_minutes, facility_id, portal_type=portal_type, organization_id=organization_id)
 
 
 def create_refresh_token(
@@ -56,6 +60,8 @@ def create_refresh_token(
     facility_id: UUID | None = None,
     jti: UUID | None = None,
     family_id: UUID | None = None,
+    portal_type: str = "facility",
+    organization_id: UUID | None = None,
 ) -> str:
     return _create_token(
         user_id,
@@ -64,6 +70,8 @@ def create_refresh_token(
         facility_id,
         jti=jti,
         family_id=family_id,
+        portal_type=portal_type,
+        organization_id=organization_id,
     )
 
 
