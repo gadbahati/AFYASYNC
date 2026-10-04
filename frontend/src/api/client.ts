@@ -210,6 +210,11 @@ const _apiCore: any = {
     request(`/api/v1/claims?limit=${limit}&scope=${encodeURIComponent(scope)}`),
   getPatient: (id: string) => request(`/api/v1/patients/${id}`),
   createPatient: (payload: any) => request("/api/v1/patients", { method: "POST", body: JSON.stringify(payload) }),
+  mpiCandidates: (params: { first_name?: string; last_name?: string; date_of_birth?: string; phone?: string; national_id_number?: string }) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
+    return request("/api/v1/patients/mpi/candidates?" + query.toString());
+  },
   benefitQuote: (payload: any) =>
     request("/api/v1/benefit-engine/quote", { method: "POST", body: JSON.stringify(payload) }),
   benefitQuoteBatch: (payload: any) =>
