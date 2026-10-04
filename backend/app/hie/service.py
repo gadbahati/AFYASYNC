@@ -288,6 +288,21 @@ def build_patient_summary_bundle(
         "section": [{"title": "Clinical record", "entry": [{"reference": e["resource"]["resourceType"] + "/" + str(e["resource"]["id"])} for e in entries if isinstance(e, dict) and isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") != "Patient" and e["resource"].get("id")]}],
     }
     entries.insert(0, {"fullUrl": f"urn:uuid:{composition_id}", "resource": composition})
+    provenance_id = str(uuid4())
+    provenance = {
+        "resourceType": "Provenance",
+        "id": provenance_id,
+        "target": [
+            {"reference": f"{e['resource']['resourceType']}/{e['resource']['id']}"}
+            for e in entries
+            if isinstance(e, dict) and isinstance(e.get("resource"), dict)
+            and e["resource"].get("resourceType") and e["resource"].get("id")
+        ],
+        "recorded": datetime.now(timezone.utc).isoformat(),
+        "agent": [{"type": {"text": "author"}, "who": {"reference": f"Organization/{facility_id}"}}],
+        "activity": {"text": "HIE patient summary export"},
+    }
+    entries.insert(1, {"fullUrl": f"urn:uuid:{provenance_id}", "resource": provenance})
     bundle = {
         "resourceType": "Bundle",
         "id": bundle_id,
