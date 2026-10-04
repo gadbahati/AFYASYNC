@@ -11,6 +11,8 @@ from app.database import get_db
 from app.encounters.schemas import EncounterListResponse
 from app.encounters.service import list_patient_encounters_for_facility
 from app.patients.record_schemas import PatientRecordSummaryResponse
+from app.patients.mpi import find_mpi_candidates
+from app.patients.mpi_schemas import MPIResponse
 from app.patients.record_service import get_patient_record_summary
 from app.patients.schemas import PatientCreate, PatientFacilityResponse, PatientFacilityStatusUpdate, PatientListResponse, PatientResponse, PatientSearchResult, PatientUpdate
 from app.patients.service import create_patient, enroll_patient_in_facility, get_patient_facility_enrollments, get_patient_for_facility, list_patients_for_facility, search_patients, update_patient, update_patient_facility_status
@@ -58,6 +60,42 @@ def _degraded_patient_record(db: Session, patient_id: UUID, facility_id: UUID) -
         "billing": {"charges": [], "invoices": [], "payments": []}, "claims": [], "appointments": [],
         "queue_history": [], "referrals": [], "transfers": [],
     }
+
+
+@router.get("/mpi/candidates", response_model=MPIResponse)
+def mpi_candidates(
+    first_name: str | None = Query(default=None, max_length=100),
+    last_name: str | None = Query(default=None, max_length=100),
+    date_of_birth: str | None = Query(default=None),
+    phone: str | None = Query(default=None, max_length=30),
+    national_id_number: str | None = Query(default=None, min_length=7, max_length=9),
+    limit: int = Query(default=20, ge=1, le=50),
+    user: User = Depends(require_permission("patients.create")),
+    facility_id: UUID = Depends(get_facility_context),
+    db: Session = Depends(get_db),
+) -> MPIResponse:
+    from datetime import date
+    parsed_dob = None
+    if date_of_birth:
+        try:
+            parsed_dob = date.fromisoformat(date_of_birth)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"code": "INVALID_DATE_OF_BIRTH", "message": "Use YYYY-MM-DD."}) from exc
+    try:
+        candidates = find_mpi_candidates(
+            db,
+            facility_id=facility_id,
+            first_name=first_name,
+            last_name=last_name,
+            date_of_birth=parsed_dob,
+            phone=phone,
+            national_id_number=national_id_number,
+            limit=limit,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=422, detail={"code": code, "message": "Provide at least one identity or demographic identifier."}) from exc
+    return MPIResponse(candidates=candidates, requires_review_before_registration=bool(candidates))
 
 
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
