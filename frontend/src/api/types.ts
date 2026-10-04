@@ -44,6 +44,19 @@ export type LabOrderSummary = { id: string; order_id: string; encounter_id: stri
 export type LabOrderDetail = LabOrderSummary & { items: LabOrderItem[]; total_amount: number };
 export type LabForwardResponse = { order_id: string; status: string; forwarded_at: string; message: string };
 export type PrescriptionSummary = { id: string; prescription_id: string; encounter_id: string; patient_id: string; status: string; created_at: string };
+export type Triage = {
+  id: string;
+  encounter_id: string;
+  assessed_by: string;
+  vital_id: string | null;
+  acuity: number;
+  priority: string;
+  chief_complaint: string | null;
+  red_flags: string[];
+  disposition: string | null;
+  notes: string | null;
+  assessed_at: string;
+};
 export type ClinicalTimeline = { encounter: Encounter; vitals: Vital[]; consultation: Consultation | null; diagnoses: Diagnosis[]; lab_orders: LabOrderSummary[]; prescriptions: PrescriptionSummary[] };
 export type Appointment = { id: string; patient_id: string; facility_id: string; department_id: string; provider_id: string | null; appointment_at: string; reason: string | null; status: string };
 export type Queue = { id: string; facility_id: string; department_id: string; name: string; status: string };
