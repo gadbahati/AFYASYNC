@@ -56,6 +56,11 @@ def create_patient(
     last_name = data.get("last_name")
     phone = data.get("phone")
     date_of_birth = data.get("date_of_birth")
+    data = payload.model_dump(exclude={"national_id_number"})
+    first_name = data.get("first_name")
+    last_name = data.get("last_name")
+    phone = data.get("phone")
+    date_of_birth = data.get("date_of_birth")
     assert_clear_to_create(
         db,
         IdentityProbe(
