@@ -21,9 +21,14 @@ import { WorkspacePage } from "./pages/WorkspacePage";
 import { LaboratoryWorkflowPage } from "./pages/LaboratoryWorkflowPage";
 import { PharmacyPage } from "./pages/PharmacyPage";
 import { RadiologyPage } from "./pages/RadiologyPage";
+import { ClaimsPage } from "./pages/ClaimsPage";
+import { BillingPage } from "./pages/BillingPage";
+import { AppointmentsPage } from "./pages/AppointmentsPage";
+import { MCHPage } from "./pages/MCHPage";
+import { FacilityMessagesPage } from "./pages/FacilityMessagesPage";
 
-/** Phase 144 — core clinical routes including lab/pharmacy/radiology.
- *  For the full historical route tree run: bash scripts/restore_app_tsx.sh
+/** Phase 148 — expanded facility routes (clinical + finance + MCH).
+ *  Full historical tree: python3 scripts/merge_app_routes.py
  *  Developed by BAHATI GAD WANGWE.
  */
 export default function App() {
@@ -55,6 +60,12 @@ export default function App() {
                       <Route path="/radiology" element={<RadiologyPage />} />
                       <Route path="/encounters" element={<EncountersPage />} />
                       <Route path="/encounters/:encounterId" element={<EncounterDetailPage />} />
+                      <Route path="/appointments" element={<AppointmentsPage />} />
+                      <Route path="/mch" element={<MCHPage />} />
+                      <Route path="/billing" element={<BillingPage />} />
+                      <Route path="/claims" element={<ClaimsPage />} />
+                      <Route path="/messages" element={<FacilityMessagesPage />} />
+                      <Route path="/referrals" element={<FacilityMessagesPage />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </Layout>
