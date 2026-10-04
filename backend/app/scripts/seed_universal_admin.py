@@ -18,6 +18,7 @@ from app.database import SessionLocal
 from app.facilities.models import Facility
 from app.patients.models import Person
 from app.rbac.models import Permission, Role, RolePermission, Staff, StaffRole, User
+from app.tenancy.models import GovernmentAccess, Organization
 
 DEFAULT_USERNAME = "afyasync.admin"
 DEFAULT_FACILITY_CODE = "AFYA-DEMO-001"
@@ -104,6 +105,55 @@ def seed_universal_admin(*, username: str | None = None, password: str | None = 
             ) is None:
                 db.add(RolePermission(role_id=role.id, permission_id=permission.id))
 
+        # Optional temporary government access for the development operator.
+        # Disabled unless explicitly requested through a Railway/local environment variable.
+        government_requested = os.getenv("UNIVERSAL_ADMIN_GOVERNMENT_ACCESS", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if government_requested:
+            if os.getenv("ENVIRONMENT", "development").strip().lower() == "production" and not os.getenv("BOOTSTRAP_UNIVERSAL_ADMIN_ONCE"):
+                raise RuntimeError("UNIVERSAL_ADMIN_GOVERNMENT_ACCESS requires one-shot bootstrap in production")
+            government = db.scalar(
+                select(Organization).where(Organization.code == "AFYASYNC:DEV-NATIONAL")
+            )
+            if government is None:
+                government = Organization(
+                    code="AFYASYNC:DEV-NATIONAL",
+                    name="AfyaSync Development National Authority",
+                    organization_type="NATIONAL_GOVERNMENT",
+                    status="ACTIVE",
+                    description="Temporary development organization. Remove before production handover.",
+                )
+                db.add(government)
+                db.flush()
+            else:
+                government.status = "ACTIVE"
+
+            access = db.scalar(
+                select(GovernmentAccess).where(
+                    GovernmentAccess.organization_id == government.id,
+                    GovernmentAccess.user_id == user.id,
+                )
+            )
+            if access is None:
+                db.add(
+                    GovernmentAccess(
+                        organization_id=government.id,
+                        user_id=user.id,
+                        role_code="SYSTEM_ADMINISTRATOR",
+                        scope_level="NATIONAL",
+                        status="ACTIVE",
+                    )
+                )
+            else:
+                access.role_code = "SYSTEM_ADMINISTRATOR"
+                access.scope_level = "NATIONAL"
+                access.status = "ACTIVE"
+
+            user.mfa_required = True
+
         db.commit()
         return {
             "username": username,
@@ -112,6 +162,7 @@ def seed_universal_admin(*, username: str | None = None, password: str | None = 
             "created_user": created_user,
             "password_reset": bool(reset_password or created_user),
             "role": DEFAULT_ADMIN_ROLE,
+            "government_access": government_requested,
         }
     except Exception:
         db.rollback()
