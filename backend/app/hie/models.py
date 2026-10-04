@@ -77,6 +77,10 @@ class HieInboundDocument(Base):
     validation_status: Mapped[str] = mapped_column(String(30), nullable=False, default="ACCEPTED")
     # ACCEPTED | REJECTED | PARTIAL
     validation_errors: Mapped[list | None] = mapped_column(JSONB)
+    payload: Mapped[dict | None] = mapped_column(JSONB)
     payload_meta: Mapped[dict | None] = mapped_column(JSONB)
     received_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    match_status: Mapped[str] = mapped_column(String(30), nullable=False, default="UNRESOLVED", index=True)
+    match_reasons: Mapped[list | None] = mapped_column(JSONB)
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
