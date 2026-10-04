@@ -36,7 +36,7 @@ def _route(db, facility_id, payer_id, source_type):
     return db.scalar(q.order_by(ClearinghouseRoute.priority.asc()).limit(1))
 
 def _event(db, case, event_type, actor_id=None, to_status=None, message=None, metadata=None):
-    db.add(ClearinghouseEvent(case_id=case.id,event_type=event_type,from_status=case.status,to_status=to_status,actor_id=actor_id,message=message,metadata=metadata))
+    db.add(ClearinghouseEvent(case_id=case.id,event_type=event_type,from_status=case.status,to_status=to_status,actor_id=actor_id,message=message,event_metadata=metadata))
     if to_status: case.status=to_status
 
 def create_case(db:Session, facility_id:UUID, claim_id:UUID|None, idempotency_key:str, actor_id:UUID|None=None, invoice_id:UUID|None=None)->ClearinghouseCase:
@@ -134,7 +134,7 @@ def record_remittance(db:Session,case_id:UUID,facility_id:UUID,payload,actor_id:
     case=db.scalar(select(ClearinghouseCase).where(ClearinghouseCase.id==case_id).with_for_update())
     if case is None:raise ClearinghouseError("CASE_NOT_FOUND")
     if case.facility_id!=facility_id:raise ClearinghouseError("FACILITY_ACCESS_DENIED")
-    rem=ClearinghouseRemittance(case_id=case.id,external_reference=payload.external_reference,status=payload.status.strip().upper(),approved_amount=payload.approved_amount,paid_amount=payload.paid_amount,patient_amount=payload.patient_amount,currency=payload.currency.upper(),metadata=payload.metadata)
+    rem=ClearinghouseRemittance(case_id=case.id,external_reference=payload.external_reference,status=payload.status.strip().upper(),approved_amount=payload.approved_amount,paid_amount=payload.paid_amount,patient_amount=payload.patient_amount,currency=payload.currency.upper(),event_metadata=payload.metadata)
     db.add(rem);case.approved_amount=payload.approved_amount;case.paid_amount=payload.paid_amount
     target="PAID" if payload.paid_amount>0 and payload.paid_amount>=payload.approved_amount else ("PARTIALLY_PAID" if payload.paid_amount>0 else case.status)
     _event(db,case,"REMITTANCE_RECEIVED",actor_id,to_status=target,metadata={"paid_amount":str(payload.paid_amount)})
