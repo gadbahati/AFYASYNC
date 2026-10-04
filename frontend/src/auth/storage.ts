@@ -3,6 +3,8 @@ const REFRESH_KEY = "afyasync.refresh_token";
 const FACILITY_KEY = "afyasync.facility_id";
 const FACILITY_NAME_KEY = "afyasync.facility_name";
 const ACCOUNT_TYPE_KEY = "afyasync.account_type";
+const PORTAL_TYPE_KEY = "afyasync.portal_type";
+const ORGANIZATION_ID_KEY = "afyasync.organization_id";
 const REMEMBER_KEY = "afyasync.remember";
 const REMEMBERED_USER_KEY = "afyasync.remembered_username";
 
@@ -18,6 +20,11 @@ export function getAccessToken(): string | null { return read(ACCESS_KEY); }
 export function getRefreshToken(): string | null { return read(REFRESH_KEY); }
 export function getFacilityId(): string | null { return read(FACILITY_KEY); }
 export function getFacilityName(): string | null { return read(FACILITY_NAME_KEY); }
+export function getPortalType(): "patient" | "facility" | "government" | null {
+  const v = read(PORTAL_TYPE_KEY);
+  return v === "patient" || v === "facility" || v === "government" ? v : null;
+}
+export function getOrganizationId(): string | null { return read(ORGANIZATION_ID_KEY); }
 export function getAccountType(): "patient" | "staff" | null {
   const v = read(ACCOUNT_TYPE_KEY);
   return v === "patient" || v === "staff" ? v : null;
@@ -44,6 +51,8 @@ export function setSession(tokens: {
   facility_id?: string | null;
   facility_name?: string | null;
   account_type?: "patient" | "staff" | null;
+  portal_type?: "patient" | "facility" | "government" | null;
+  organization_id?: string | null;
 }): void {
   const s = store();
   for (const storage of [sessionStorage, localStorage]) {
@@ -52,12 +61,16 @@ export function setSession(tokens: {
     storage.removeItem(FACILITY_KEY);
     storage.removeItem(FACILITY_NAME_KEY);
     storage.removeItem(ACCOUNT_TYPE_KEY);
+    storage.removeItem(PORTAL_TYPE_KEY);
+    storage.removeItem(ORGANIZATION_ID_KEY);
   }
   s.setItem(ACCESS_KEY, tokens.access_token);
   if (tokens.refresh_token) s.setItem(REFRESH_KEY, tokens.refresh_token);
   if (tokens.facility_id) s.setItem(FACILITY_KEY, tokens.facility_id);
   if (tokens.facility_name) s.setItem(FACILITY_NAME_KEY, tokens.facility_name);
   if (tokens.account_type) s.setItem(ACCOUNT_TYPE_KEY, tokens.account_type);
+  if (tokens.portal_type) s.setItem(PORTAL_TYPE_KEY, tokens.portal_type);
+  if (tokens.organization_id) s.setItem(ORGANIZATION_ID_KEY, tokens.organization_id);
 }
 
 export function clearSession(): void {
