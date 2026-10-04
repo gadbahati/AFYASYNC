@@ -51,8 +51,6 @@ def seed_dev_universal_admin(*, username: str | None = None, password: str | Non
     db = SessionLocal()
     advisory_lock = False
     try:
-        # PostgreSQL advisory lock prevents two accidental invocations from
-        # racing if the command is ever invoked concurrently.
         if db.get_bind().dialect.name == "postgresql":
             db.execute(text("SELECT pg_advisory_lock(:lock_key)"), {"lock_key": LOCK_KEY})
             advisory_lock = True
@@ -204,3 +202,5 @@ def seed_dev_universal_admin(*, username: str | None = None, password: str | Non
 
 if __name__ == "__main__":
     print("DEV_UNIVERSAL_ADMIN_BOOTSTRAP:", seed_dev_universal_admin())
+
+# Temporary repair trigger: this file change intentionally forces one Railway deployment.
