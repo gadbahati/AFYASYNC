@@ -32,3 +32,28 @@ def test_get_transfer_allows_destination_facility() -> None:
 
     result = get_transfer_for_facility(db, transfer.id, dest)
     assert result is transfer
+
+
+def test_build_referral_hie_package_rejects_destination_node_for_wrong_facility() -> None:
+    from app.referrals.service import build_referral_hie_package, ReferralError
+
+    db = MagicMock()
+    referral_id = uuid4()
+    source = uuid4()
+    destination = uuid4()
+    node = SimpleNamespace(id=uuid4(), status="ACTIVE", facility_id=uuid4())
+    referral = SimpleNamespace(
+        id=referral_id,
+        source_facility_id=source,
+        destination_facility_id=destination,
+        status="ACCEPTED",
+    )
+    db.get.side_effect = lambda model, key: referral if key == referral_id else node
+
+    with pytest.raises(ReferralError, match="HIE_DESTINATION_MISMATCH"):
+        build_referral_hie_package(
+            db,
+            referral_id=referral_id,
+            facility_id=source,
+            destination_node_id=node.id,
+        )
