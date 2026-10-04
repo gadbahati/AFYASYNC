@@ -17,7 +17,7 @@ def _load_revisions() -> dict[str, tuple[str, ...]]:
     revisions: dict[str, tuple[str, ...]] = {}
     for path in sorted(VERSIONS_DIR.glob("*.py")):
         text = path.read_text()
-        rev_match = re.search(r'(?<![\w.])revision\s*=\s*["\']([^"\']+)["\']', text)
+        rev_match = re.search(r'(?<![\w.])revision(?:\s*:\s*[^=]+)?\s*=\s*["\']([^"\']+)["\']', text)
         if not rev_match:
             continue
         revision = rev_match.group(1)
