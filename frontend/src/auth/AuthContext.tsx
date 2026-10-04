@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, ApiError } from "../api/client";
-import type { AuthMe, FacilityOption, FacilitySelectionRequired, GovernmentOrganizationOption, GovernmentSelectionRequired, LoginResult, TokenResponse } from "../api/types";
+import type { AuthMe, FacilityOption, FacilitySelectionRequired, GovernmentOrganizationOption, GovernmentSelectionRequired, GovernmentMFARequired, GovernmentMFASetupRequired, GovernmentMFASetup, LoginResult, TokenResponse } from "../api/types";
 import {
   clearSession,
   getAccessToken,
@@ -25,6 +25,11 @@ type AuthState = {
   contextScope: "facility" | "network" | "county" | "national";
   pendingFacilities: FacilityOption[] | null;
   pendingGovernmentOrganizations: GovernmentOrganizationOption[] | null;
+  pendingGovernmentMFA: { challengeId: string; expiresIn: number } | null;
+  governmentMFASetup: GovernmentMFASetup | null;
+  verifyGovernmentMFA: (code: string) => Promise<"ready" | "select_organization">;
+  setupGovernmentMFA: () => Promise<GovernmentMFASetup>;
+  confirmGovernmentMFASetup: (code: string) => Promise<"ready" | "select_organization">;
   login: (username: string, password: string) => Promise<"ready" | "select_facility">;
   governmentLogin: (username: string, password: string) => Promise<"ready" | "select_organization">;
   selectGovernmentOrganization: (organization: GovernmentOrganizationOption) => Promise<void>;
@@ -58,6 +63,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [organizationId, setOrganizationId] = useState<string | null>(getOrganizationId());
   const [governmentOrganization, setGovernmentOrganization] = useState<GovernmentOrganizationOption | null>(null);
   const [pendingGovernmentOrganizations, setPendingGovernmentOrganizations] = useState<GovernmentOrganizationOption[] | null>(null);
+  const [pendingGovernmentMFA, setPendingGovernmentMFA] = useState<{ challengeId: string; expiresIn: number } | null>(null);
+  const [governmentMFASetup, setGovernmentMFASetup] = useState<GovernmentMFASetup | null>(null);
   const [contextScope, setContextScope] = useState<"facility" | "network" | "county" | "national">("facility");
   const [pendingFacilities, setPendingFacilities] = useState<FacilityOption[] | null>(null);
 
@@ -72,6 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setOrganizationId(null);
       setGovernmentOrganization(null);
       setPendingGovernmentOrganizations(null);
+      setPendingGovernmentMFA(null);
+      setGovernmentMFASetup(null);
       setContextScope("facility");
       setPendingFacilities(null);
     };
@@ -153,7 +162,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const governmentLogin = useCallback(async (user: string, password: string) => {
-    const result = await api.governmentLogin(user, password) as TokenResponse | GovernmentSelectionRequired;
+    const result = await api.governmentLogin(user, password) as TokenResponse | GovernmentSelectionRequired | GovernmentMFARequired | GovernmentMFASetupRequired;
+    if ("mfa_setup_required" in result && result.mfa_setup_required) {
+      setSession({ access_token: result.access_token, account_type: "staff", portal_type: "government" });
+      setUsername(user);
+      setAccountType("staff");
+      setPortalType("government");
+      setPendingGovernmentMFA(null);
+      setGovernmentMFASetup(null);
+      return "select_organization";
+    }
+    if ("mfa_required" in result && result.mfa_required) {
+      setUsername(user);
+      setAccountType("staff");
+      setPortalType("government");
+      setPendingGovernmentMFA({ challengeId: result.challenge_id, expiresIn: result.expires_in });
+      return "select_organization";
+    }
     if ("requires_government_organization_selection" in result && result.requires_government_organization_selection) {
       setSession({ access_token: result.access_token, account_type: "staff", portal_type: "government" });
       setUsername(user);
@@ -162,6 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setOrganizationId(null);
       setGovernmentOrganization(null);
       setPendingGovernmentOrganizations(result.organizations);
+      setPendingGovernmentMFA(null);
+      setGovernmentMFASetup(null);
       return "select_organization";
     }
     const tokens = result as TokenResponse;
@@ -181,10 +208,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOrganizationId(data.organization_id);
     setGovernmentOrganization(org);
     setPendingGovernmentOrganizations(null);
+    setPendingGovernmentMFA(null);
+    setGovernmentMFASetup(null);
     setFacilityId(null);
     setFacilityName(null);
     return "ready";
   }, []);
+
+
+  const setupGovernmentMFA = useCallback(async () => {
+    const result = await api.governmentMFASetup();
+    setGovernmentMFASetup(result);
+    return result;
+  }, []);
+
+  const confirmGovernmentMFASetup = useCallback(async (code: string) => {
+    const result = await api.governmentMFAConfirmSetup(code) as TokenResponse | GovernmentSelectionRequired;
+    if ("requires_government_organization_selection" in result && result.requires_government_organization_selection) {
+      setSession({ access_token: result.access_token, account_type: "staff", portal_type: "government" });
+      setPendingGovernmentOrganizations(result.organizations);
+      setPendingGovernmentMFA(null);
+      setGovernmentMFASetup(null);
+      return "select_organization";
+    }
+    const tokens = result as TokenResponse;
+    setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, account_type: "staff", portal_type: "government" });
+    const me = await api.governmentMe();
+    setOrganizationId(me.data.organization_id);
+    setGovernmentOrganization({ organization_id: me.data.organization_id, organization_name: me.data.organization_name, organization_type: me.data.organization_type, scope_level: me.data.scope_level, role_code: me.data.role_code });
+    setPendingGovernmentMFA(null);
+    setGovernmentMFASetup(null);
+    return "ready";
+  }, []);
+
+  const verifyGovernmentMFA = useCallback(async (code: string) => {
+    if (!pendingGovernmentMFA) throw new Error("MFA_CHALLENGE_REQUIRED");
+    const result = await api.governmentMFAVerify(pendingGovernmentMFA.challengeId, code) as TokenResponse | GovernmentSelectionRequired;
+    if ("requires_government_organization_selection" in result && result.requires_government_organization_selection) {
+      setSession({ access_token: result.access_token, account_type: "staff", portal_type: "government" });
+      setPendingGovernmentOrganizations(result.organizations);
+      setPendingGovernmentMFA(null);
+      return "select_organization";
+    }
+    const tokens = result as TokenResponse;
+    setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, account_type: "staff", portal_type: "government" });
+    const me = await api.governmentMe();
+    setOrganizationId(me.data.organization_id);
+    setGovernmentOrganization({ organization_id: me.data.organization_id, organization_name: me.data.organization_name, organization_type: me.data.organization_type, scope_level: me.data.scope_level, role_code: me.data.role_code });
+    setPendingGovernmentMFA(null);
+    return "ready";
+  }, [pendingGovernmentMFA]);
 
   const selectGovernmentOrganization = useCallback(async (organization: GovernmentOrganizationOption) => {
     const tokens = await api.selectGovernmentOrganization(organization.organization_id);
@@ -303,6 +376,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       organizationId,
       governmentOrganization,
       pendingGovernmentOrganizations,
+      pendingGovernmentMFA,
+      governmentMFASetup,
+      verifyGovernmentMFA,
+      setupGovernmentMFA,
+      confirmGovernmentMFASetup,
       login,
       governmentLogin,
       selectGovernmentOrganization,
@@ -323,6 +401,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       organizationId,
       governmentOrganization,
       pendingGovernmentOrganizations,
+      pendingGovernmentMFA,
+      governmentMFASetup,
+      verifyGovernmentMFA,
+      setupGovernmentMFA,
+      confirmGovernmentMFASetup,
       login,
       governmentLogin,
       selectGovernmentOrganization,
