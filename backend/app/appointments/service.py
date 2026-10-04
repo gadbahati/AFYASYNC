@@ -141,7 +141,6 @@ def list_queue_entries(db: Session, facility_id: UUID, queue_id: UUID | None = N
 
 
 def add_to_queue(db: Session, data: dict, created_by: UUID, actor_user_id: UUID | None = None) -> QueueEntry:
-    _require_patient(db, data["patient_id"], db.scalar(select(Queue.facility_id).join(QueueEntry, QueueEntry.queue_id == Queue.id).where(QueueEntry.id == data["queue_id"])) if False else None)
     queue = db.get(Queue, data["queue_id"])
     if queue is None or queue.status != "ACTIVE":
         raise ValueError("QUEUE_NOT_FOUND")
