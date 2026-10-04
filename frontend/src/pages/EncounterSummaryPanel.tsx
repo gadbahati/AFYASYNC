@@ -1,6 +1,6 @@
 /** Phase 137 — print-ready clinical encounter summary. Developed by BAHATI GAD WANGWE */
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError } from "../api/client";
+import { ApiError, request } from "../api/client";
 
 type Props = { encounterId: string };
 
@@ -13,7 +13,7 @@ export function EncounterSummaryPanel({ encounterId }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getEncounterSummary(encounterId);
+      const data = await request(`/api/v1/encounters/${encounterId}/summary`);
       setSummary(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.code : "SUMMARY_FAILED");
