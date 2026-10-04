@@ -1,4 +1,4 @@
-"""Phase 133/146/147/151 — fulfill clinical orders + structured report fields.
+"""Phase 133–153 — fulfill clinical orders + structured imaging/lab/pharmacy fields.
 
 Developed by BAHATI GAD WANGWE.
 """
@@ -20,8 +20,9 @@ def _format_result_block(
     lab_value: str | None = None,
     lab_units: str | None = None,
     lab_flag: str | None = None,
+    dispense_qty: str | None = None,
+    batch_no: str | None = None,
 ) -> str | None:
-    """Combine free text + structured radiology/lab fields."""
     parts: list[str] = []
     if modality and str(modality).strip():
         parts.append(f"Modality: {str(modality).strip()[:80]}")
@@ -37,6 +38,14 @@ def _format_result_block(
         if flag:
             line += f" ({flag})"
         parts.append(line)
+    if dispense_qty is not None and str(dispense_qty).strip() != "":
+        qty = str(dispense_qty).strip()[:40]
+        line = f"Dispensed: {qty}"
+        if batch_no and str(batch_no).strip():
+            line += f" · Batch: {str(batch_no).strip()[:60]}"
+        parts.append(line)
+    elif batch_no and str(batch_no).strip():
+        parts.append(f"Batch: {str(batch_no).strip()[:60]}")
     if result_notes and str(result_notes).strip():
         parts.append(str(result_notes).strip()[:2000])
     if not parts:
@@ -66,7 +75,11 @@ def _append_encounter_note(
     if len(body) > 20000:
         body = body[:19997] + "..."
 
-    note_type = "SPECIALIST" if row.order_type in {"IMAGING", "LAB", "LABORATORY"} else "PROGRESS"
+    note_type = (
+        "SPECIALIST"
+        if row.order_type in {"IMAGING", "LAB", "LABORATORY"}
+        else "PROGRESS"
+    )
     try:
         note = ClinicalNote(
             encounter_id=row.encounter_id,
@@ -105,8 +118,9 @@ def fulfill_order(
     lab_value: str | None = None,
     lab_units: str | None = None,
     lab_flag: str | None = None,
+    dispense_qty: str | None = None,
+    batch_no: str | None = None,
 ) -> ClinicalOrder:
-    """Mark order complete with optional structured imaging/lab results."""
     status = (status or "COMPLETED").strip().upper()
     if status not in STATUSES:
         raise OrderError("INVALID_STATUS")
@@ -130,6 +144,8 @@ def fulfill_order(
         lab_value=lab_value,
         lab_units=lab_units,
         lab_flag=lab_flag,
+        dispense_qty=dispense_qty,
+        batch_no=batch_no,
     )
 
     row.status = status
@@ -155,6 +171,8 @@ def fulfill_order(
             "has_impression": bool(impression and str(impression).strip()),
             "has_lab_value": bool(lab_value and str(lab_value).strip()),
             "lab_flag": (lab_flag or "")[:20] or None,
+            "dispense_qty": (dispense_qty or "")[:40] or None,
+            "has_batch": bool(batch_no and str(batch_no).strip()),
             "encounter_note": bool(notes_text and status == "COMPLETED"),
         },
         commit=False,

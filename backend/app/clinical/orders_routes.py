@@ -1,6 +1,5 @@
-"""Clinical orders routes — list/create/status/fulfill/forward.
+"""Clinical orders routes — Phase 153: pharmacy dispense_qty / batch_no.
 
-Phase 151: lab_value / lab_units / lab_flag on fulfill.
 Developed by BAHATI GAD WANGWE.
 """
 from uuid import UUID
@@ -112,7 +111,6 @@ def post_fulfill_order(
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission("clinical.note.write")),
 ):
-    """Accepts imaging modality/impression and lab value/units/flag."""
     try:
         row = fulfill_order(
             db,
@@ -126,6 +124,8 @@ def post_fulfill_order(
             lab_value=payload.get("lab_value"),
             lab_units=payload.get("lab_units"),
             lab_flag=payload.get("lab_flag"),
+            dispense_qty=payload.get("dispense_qty"),
+            batch_no=payload.get("batch_no"),
         )
     except OrderError as exc:
         raise _http(exc) from exc
