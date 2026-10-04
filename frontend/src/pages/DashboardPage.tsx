@@ -5,6 +5,7 @@ import type { FacilityReport, Referral, Transfer } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { getAccessToken } from "../auth/storage";
 import { KenyaFlag } from "../components/KenyaFlag";
+import { ClinicalQueueStrip } from "../components/ClinicalQueueStrip";
 
 export function DashboardPage() {
   const auth = useAuth();
@@ -69,6 +70,8 @@ export function DashboardPage() {
           {error}
         </div>
       )}
+
+      <ClinicalQueueStrip />
 
       {report && (
         <>
@@ -216,6 +219,8 @@ export function DashboardPage() {
               <Link to="/laboratory">Lab</Link>
               {" · "}
               <Link to="/pharmacy">Pharmacy</Link>
+              {" · "}
+              <Link to="/radiology">Radiology</Link>
               {" · "}
               <Link to="/billing">Billing</Link>
               {" · "}
