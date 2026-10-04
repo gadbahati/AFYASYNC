@@ -5,12 +5,13 @@ from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.auth.dependencies import get_current_user
 from app.auth.rate_limit import enforce_auth_rate_limit
-from app.auth.schemas import FacilityOption, FacilitySelectionRequest, FacilitySelectionRequired, LoginRequest, RefreshTokenRequest, TokenResponse
+from app.auth.schemas import FacilityOption, FacilitySelectionRequest, FacilitySelectionRequired, GovernmentOrganizationOption, GovernmentSelectionRequired, LoginRequest, RefreshTokenRequest, TokenResponse
 from app.auth.service import authenticate_user, issue_access_token, issue_refresh_token, revoke_refresh_token, rotate_tokens_from_refresh
 from app.config import settings
 from app.database import get_db
 from app.facilities.models import Facility
 from app.rbac.models import Role, Staff, StaffRole, User
+from app.tenancy.models import GovernmentAccess, Organization
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 
@@ -19,8 +20,12 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _token_response(db: Session, user: User, facility_id) -> TokenResponse:
-    return TokenResponse(access_token=issue_access_token(user, facility_id), refresh_token=issue_refresh_token(db, user, facility_id), expires_in=settings.access_token_minutes * 60)
+def _token_response(db: Session, user: User, facility_id, portal_type: str = "facility", organization_id=None) -> TokenResponse:
+    return TokenResponse(
+        access_token=issue_access_token(user, facility_id, portal_type=portal_type, organization_id=organization_id),
+        refresh_token=issue_refresh_token(db, user, facility_id, portal_type=portal_type, organization_id=organization_id),
+        expires_in=settings.access_token_minutes * 60,
+    )
 
 
 def _is_system_administrator(db: Session, user: User) -> bool:
@@ -75,6 +80,84 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
     record_audit(db, action="AUTH_LOGIN", resource_type="USER", result="FACILITY_SELECTION_REQUIRED", user_id=user.id, ip_address=_client_ip(request))
     return FacilitySelectionRequired(access_token=issue_access_token(user, None), facilities=options)
+
+
+@router.post("/government/login", response_model=TokenResponse | GovernmentSelectionRequired)
+def government_login(payload: LoginRequest, request: Request, db: Session = Depends(get_db), _: None = Depends(enforce_auth_rate_limit)):
+    result = authenticate_user(db, payload.username, payload.password)
+    if result is None:
+        record_audit(db, action="GOV_AUTH_LOGIN", resource_type="USER", result="FAILURE", ip_address=_client_ip(request), metadata={"username": payload.username})
+        raise HTTPException(status_code=401, detail="INVALID_CREDENTIALS", headers={"WWW-Authenticate": "Bearer"})
+    user, _ = result
+    rows = list(db.execute(
+        select(GovernmentAccess, Organization)
+        .join(Organization, Organization.id == GovernmentAccess.organization_id)
+        .where(GovernmentAccess.user_id == user.id, GovernmentAccess.status == "ACTIVE", Organization.status == "ACTIVE", Organization.organization_type.in_(["COUNTY_GOVERNMENT", "NATIONAL_GOVERNMENT"]))
+        .order_by(Organization.organization_type, Organization.name)
+    ).all())
+    if not rows:
+        record_audit(db, action="GOV_AUTH_LOGIN", resource_type="USER", result="NO_GOVERNMENT_ACCESS", user_id=user.id, ip_address=_client_ip(request))
+        raise HTTPException(status_code=403, detail="NO_GOVERNMENT_ACCESS")
+    if len(rows) == 1:
+        access, org = rows[0]
+        record_audit(db, action="GOV_AUTH_LOGIN", resource_type="ORGANIZATION", resource_id=str(org.id), result="SUCCESS", user_id=user.id, ip_address=_client_ip(request), metadata={"scope_level": access.scope_level, "role_code": access.role_code})
+        return _token_response(db, user, None, portal_type="government", organization_id=org.id)
+    return GovernmentSelectionRequired(
+        access_token=issue_access_token(user, None, portal_type="government"),
+        organizations=[GovernmentOrganizationOption(organization_id=org.id, organization_name=org.name, organization_type=org.organization_type, scope_level=access.scope_level, role_code=access.role_code) for access, org in rows],
+    )
+
+
+@router.get("/government/organizations", response_model=list[GovernmentOrganizationOption])
+def government_organizations(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = list(db.execute(
+        select(GovernmentAccess, Organization)
+        .join(Organization, Organization.id == GovernmentAccess.organization_id)
+        .where(GovernmentAccess.user_id == user.id, GovernmentAccess.status == "ACTIVE", Organization.status == "ACTIVE")
+        .order_by(Organization.organization_type, Organization.name)
+    ).all())
+    return [GovernmentOrganizationOption(organization_id=org.id, organization_name=org.name, organization_type=org.organization_type, scope_level=access.scope_level, role_code=access.role_code) for access, org in rows]
+
+
+@router.post("/government/select-organization", response_model=TokenResponse)
+def select_government_organization(organization_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from uuid import UUID
+    try:
+        org_id = UUID(organization_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="INVALID_GOVERNMENT_ORGANIZATION")
+    row = db.execute(
+        select(GovernmentAccess, Organization)
+        .join(Organization, Organization.id == GovernmentAccess.organization_id)
+        .where(GovernmentAccess.user_id == user.id, GovernmentAccess.organization_id == org_id, GovernmentAccess.status == "ACTIVE", Organization.status == "ACTIVE")
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=403, detail="GOVERNMENT_ORGANIZATION_ACCESS_DENIED")
+    access, org = row
+    if org.organization_type not in ("COUNTY_GOVERNMENT", "NATIONAL_GOVERNMENT"):
+        raise HTTPException(status_code=403, detail="NOT_A_GOVERNMENT_ORGANIZATION")
+    record_audit(db, action="GOV_AUTH_ORGANIZATION_SELECT", resource_type="ORGANIZATION", resource_id=str(org.id), result="SUCCESS", user_id=user.id, metadata={"scope_level": access.scope_level, "role_code": access.role_code})
+    return _token_response(db, user, None, portal_type="government", organization_id=org.id)
+
+
+@router.get("/government/me")
+def government_me(user: User = Depends(get_current_user), payload: dict = Depends(get_token_payload), db: Session = Depends(get_db)):
+    from uuid import UUID
+    if payload.get("portal_type") != "government" or not payload.get("organization_id"):
+        raise HTTPException(status_code=403, detail="GOVERNMENT_PORTAL_TOKEN_REQUIRED")
+    try:
+        org_id = UUID(payload["organization_id"])
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=403, detail="INVALID_GOVERNMENT_CONTEXT")
+    row = db.execute(
+        select(GovernmentAccess, Organization)
+        .join(Organization, Organization.id == GovernmentAccess.organization_id)
+        .where(GovernmentAccess.user_id == user.id, GovernmentAccess.organization_id == org_id, GovernmentAccess.status == "ACTIVE", Organization.status == "ACTIVE")
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=403, detail="GOVERNMENT_ACCESS_REVOKED")
+    access, org = row
+    return {"success": True, "data": {"user_id": str(user.id), "username": user.username, "portal_type": "government", "organization_id": str(org.id), "organization_name": org.name, "organization_type": org.organization_type, "scope_level": access.scope_level, "role_code": access.role_code}}
 
 
 @router.post("/refresh", response_model=TokenResponse)
