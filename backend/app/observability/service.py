@@ -16,6 +16,7 @@ class RuntimeMetrics:
         self._lock = Lock()
         self._started_at = datetime.now(timezone.utc)
         self._requests = 0
+        self._total_events = 0
         self._errors = 0
         self._client_errors = 0
         self._server_errors = 0
@@ -30,7 +31,9 @@ class RuntimeMetrics:
         duration_seconds: float = 0.0,
     ) -> None:
         with self._lock:
-            self._requests += 1
+            self._total_events += 1
+            if status_code is None or status_code < 400:
+                self._requests += 1
             if error:
                 self._errors += 1
             if status_code is not None and 400 <= status_code < 500:
@@ -54,7 +57,7 @@ class RuntimeMetrics:
                 "errors": errors,
                 "client_errors": self._client_errors,
                 "server_errors": self._server_errors,
-                "error_rate": round(errors / requests, 4) if requests else 0.0,
+                "error_rate": round(errors / self._total_events, 4) if self._total_events else 0.0,
                 "server_error_rate": round(self._server_errors / requests, 4) if requests else 0.0,
                 "timed_requests": timed,
                 "average_duration_seconds": round(self._total_duration_seconds / timed, 4)
