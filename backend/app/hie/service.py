@@ -419,6 +419,7 @@ def validate_inbound_bundle(
     actor_user_id: UUID | None = None,
 ) -> dict:
     errors = validate_bundle(payload)
+    btype = payload.get("type")
     entries = payload.get("entry") or []
 
 
