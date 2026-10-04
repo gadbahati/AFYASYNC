@@ -28,6 +28,8 @@ export function NewPatientPage() {
 
   function update<K extends keyof typeof form>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    setMpiChecked(false);
+    setMpiCandidates([]);
   }
 
   async function checkMpi() {
