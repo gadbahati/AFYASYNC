@@ -31,7 +31,7 @@ def _contract_operational_gate(db: Session, facility_id: UUID, payer: Payer, ser
         ProviderNetworkContract.activation_status.in_({"ACTIVATED", "PARTIAL"}),
     ).order_by(ProviderNetworkContract.effective_from.desc().nullslast(), ProviderNetworkContract.created_at.desc()))
     contract = contract_result.scalar_one_or_none()
-    if contract is None:
+    if not isinstance(contract, ProviderNetworkContract):
         return
     membership = db.scalar(select(ProviderNetworkMembership).where(
         ProviderNetworkMembership.facility_id == facility_id,
