@@ -41,17 +41,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Cache-Control"] = "no-store"
         return response
 
-try:
-    from app.config import settings
-except Exception:  # pragma: no cover
-
-    class _S:
-        app_name = "AfyaSync API"
-        app_version = "0.0.0"
-        environment = "development"
-        cors_origins = ["*"]
-
-    settings = _S()  # type: ignore
+from app.config import settings
 
 app = FastAPI(
     title=getattr(settings, "app_name", "AfyaSync API"),
@@ -73,15 +63,7 @@ _failed: list[str] = []
 
 
 def _mount_routers() -> None:
-    try:
-        from app.router_registry import ROUTERS
-    except Exception:
-        ROUTERS = [
-            ("app.clinical.router", "router", "clinical_router"),
-            ("app.clinical.worklist_routes", "worklist_router", "worklist_router"),
-            ("app.encounters.router", "router", "encounters_router"),
-            ("app.auth.router", "router", "auth_router"),
-        ]
+    from app.router_registry import ROUTERS
     for mod_name, attr, label in ROUTERS:
         try:
             mod = __import__(mod_name, fromlist=[attr])
@@ -144,6 +126,21 @@ def ready(response: Response):
 
         with SessionLocal() as db:
             db.execute(text("SELECT 1"))
+        if _failed:
+            response.status_code = 503
+            return {
+                "success": False,
+                "data": {
+                    "service": "afasync-api",
+                    "status": "not_ready",
+                    "clinical_departments": clinical_departments,
+                    "database": "ok",
+                    "bootstrap": "main_application",
+                    "routers_mounted": _mounted[:50],
+                    "routers_failed": _failed[:50],
+                },
+                "message": "AfyaSync API has failed router mounts",
+            }
         return {
             "success": True,
             "data": {
@@ -153,7 +150,7 @@ def ready(response: Response):
                 "database": "ok",
                 "bootstrap": "main_application",
                 "routers_mounted": _mounted[:50],
-                "routers_failed": _failed[:20],
+                "routers_failed": [],
             },
             "message": "AfyaSync API is ready",
         }
