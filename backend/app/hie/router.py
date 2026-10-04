@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
 from app.hie.delivery_service import deliver_job, list_jobs, queue_bundle
+from app.hie.consent_service import create_consent, list_consents, revoke_consent
 from app.hie.service import (
     build_patient_summary_bundle,
     build_referral_package,
@@ -250,6 +251,48 @@ def get_nodes(
         for n in list_nodes(db)
     ]
 
+
+@router.post("/consents")
+def grant_hie_consent(
+    patient_id: UUID,
+    purpose: str = Query(default="HOPERAT"),
+    recipient_node_id: UUID | None = None,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("patients.record.write")),
+):
+    try:
+        c=create_consent(db,patient_id=patient_id,facility_id=facility_id,recipient_node_id=recipient_node_id,purpose=purpose,period_start=period_start,period_end=period_end,created_by=user.id)
+        db.commit()
+        return {"id":str(c.id),"patient_id":str(c.patient_id),"recipient_node_id":str(c.recipient_node_id) if c.recipient_node_id else None,"status":c.status,"decision":c.decision,"purpose":c.purpose,"fhir_resource":c.fhir_resource}
+    except ValueError as exc:
+        raise HTTPException(status_code=400,detail=str(exc)) from exc
+
+@router.post("/consents/{consent_id}/revoke")
+def revoke_hie_consent(
+    consent_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("patients.record.write")),
+):
+    try:
+        c=revoke_consent(db,consent_id=consent_id,facility_id=facility_id,actor_user_id=user.id)
+        db.commit()
+        return {"id":str(c.id),"status":c.status,"revoked_at":c.revoked_at.isoformat() if c.revoked_at else None}
+    except ValueError as exc:
+        raise HTTPException(status_code=404,detail=str(exc)) from exc
+
+@router.get("/consents")
+def get_hie_consents(
+    patient_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("reports.read")),
+):
+    _=user
+    return [{"id":str(c.id),"patient_id":str(c.patient_id),"recipient_node_id":str(c.recipient_node_id) if c.recipient_node_id else None,"status":c.status,"decision":c.decision,"purpose":c.purpose,"scope":c.scope,"period_start":c.period_start.isoformat() if c.period_start else None,"period_end":c.period_end.isoformat() if c.period_end else None,"fhir_resource":c.fhir_resource} for c in list_consents(db,patient_id=patient_id,facility_id=facility_id)]
 
 @router.post("/deliver")
 def queue_delivery(patient_id: UUID, destination_node_id: UUID, bundle: dict, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
