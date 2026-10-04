@@ -44,6 +44,10 @@ def deliver_job(db: Session, *, job_id: UUID, facility_id: UUID, actor_user_id: 
     if token is None:
         token = os.getenv("HIE_OUTBOUND_BEARER_TOKEN", "").strip()
     headers = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json", "Idempotency-Key": job.idempotency_key}
+    facility_registry_code = os.getenv("HIE_FACILITY_REGISTRY_CODE", "").strip()
+    if facility_registry_code:
+        headers["X-Facility-Id"] = facility_registry_code
+        headers["X-Facility-Id-Type"] = "fr-code"
     if token: headers["Authorization"] = f"Bearer {token}"
     timeout = float(os.getenv("HIE_OUTBOUND_TIMEOUT_SECONDS", "15"))
     try:
