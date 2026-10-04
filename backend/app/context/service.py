@@ -63,8 +63,13 @@ def user_role_names(db: Session, user: User) -> list[str]:
 
 
 def available_scopes(db: Session, user: User) -> list[str]:
-    if _is_system_administrator(db, user):
-        return ["facility", "network", "county", "national"]
+    """Scopes available inside the Facility Portal.
+
+    County and national government authority is intentionally not represented
+    here. Those scopes belong to the dedicated Government Portal and require
+    an explicit GovernmentAccess membership.
+    """
+    _ = db, user
     return ["facility", "network"]
 
 
