@@ -149,7 +149,7 @@ def list_patients_for_facility(
     limit = min(max(limit, 1), 100)
     offset = max(offset, 0)
     scope_ids = facility_ids if facility_ids else [facility_id]
-    base_filters = [PatientFacility.facility_id.in_(scope_ids)]
+    base_filters = [PatientFacility.facility_id == scope_ids[0] if len(scope_ids) == 1 else PatientFacility.facility_id.in_(scope_ids)]
     if enrollment_status is not None:
         if enrollment_status not in _ALLOWED_PATIENT_STATUSES:
             raise ValueError("INVALID_ENROLLMENT_STATUS")
