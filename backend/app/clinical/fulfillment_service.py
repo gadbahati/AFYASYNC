@@ -1,4 +1,4 @@
-"""Phase 133/146 — fulfill clinical orders + encounter clinical note.
+"""Phase 133/146/147 — fulfill clinical orders + structured report fields.
 
 Developed by BAHATI GAD WANGWE.
 """
@@ -12,6 +12,25 @@ from app.clinical.order_models import ClinicalOrder
 from app.clinical.order_service import OrderError, STATUSES
 
 
+def _format_result_block(
+    *,
+    result_notes: str | None,
+    modality: str | None,
+    impression: str | None,
+) -> str | None:
+    """Phase 147 — combine free text + structured radiology fields."""
+    parts: list[str] = []
+    if modality and str(modality).strip():
+        parts.append(f"Modality: {str(modality).strip()[:80]}")
+    if impression and str(impression).strip():
+        parts.append(f"Impression: {str(impression).strip()[:4000]}")
+    if result_notes and str(result_notes).strip():
+        parts.append(str(result_notes).strip()[:2000])
+    if not parts:
+        return None
+    return "\n".join(parts)
+
+
 def _append_encounter_note(
     db: Session,
     *,
@@ -20,7 +39,7 @@ def _append_encounter_note(
     status: str,
     result_notes: str,
 ) -> None:
-    """Phase 146 — surface fulfillment on the encounter clinical record."""
+    """Surface fulfillment on the encounter clinical record."""
     try:
         from app.clinical.models import ClinicalNote
     except Exception:
@@ -30,7 +49,7 @@ def _append_encounter_note(
         f"Clinical order {row.order_type} "
         f"({row.code or 'n/a'}) marked {status}.\n"
         f"{row.description or ''}\n"
-        f"Result: {result_notes.strip()}"
+        f"{result_notes.strip()}"
     ).strip()
     if len(body) > 20000:
         body = body[:19997] + "..."
@@ -58,7 +77,6 @@ def _append_encounter_note(
             commit=False,
         )
     except Exception:
-        # Do not block order fulfillment if note write fails
         pass
 
 
@@ -70,8 +88,10 @@ def fulfill_order(
     actor_user_id: UUID | None,
     status: str = "COMPLETED",
     result_notes: str | None = None,
+    modality: str | None = None,
+    impression: str | None = None,
 ) -> ClinicalOrder:
-    """Mark order IN_PROGRESS / COMPLETED / CANCELLED with optional result notes."""
+    """Mark order IN_PROGRESS / COMPLETED / CANCELLED with optional structured results."""
     status = (status or "COMPLETED").strip().upper()
     if status not in STATUSES:
         raise OrderError("INVALID_STATUS")
@@ -88,11 +108,15 @@ def fulfill_order(
     if row.status == "COMPLETED" and status != "COMPLETED":
         raise OrderError("ORDER_ALREADY_COMPLETED")
 
+    notes_text = _format_result_block(
+        result_notes=result_notes,
+        modality=modality,
+        impression=impression,
+    )
+
     row.status = status
     row.updated_at = datetime.now(timezone.utc)
-    notes_text = None
-    if result_notes and str(result_notes).strip():
-        notes_text = str(result_notes).strip()[:2000]
+    if notes_text:
         prefix = f"[{status}] {notes_text}"
         row.notes = f"{row.notes}\n{prefix}".strip() if row.notes else prefix
 
@@ -108,7 +132,9 @@ def fulfill_order(
         metadata={
             "order_type": row.order_type,
             "code": row.code,
-            "has_result": bool(result_notes),
+            "has_result": bool(notes_text),
+            "modality": (modality or "")[:80] or None,
+            "has_impression": bool(impression and str(impression).strip()),
             "encounter_note": bool(notes_text and status == "COMPLETED"),
         },
         commit=False,
