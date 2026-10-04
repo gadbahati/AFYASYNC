@@ -164,6 +164,7 @@ const _apiCore: any = {
   governmentMFAConfirmSetup: (code: string) => request("/api/v1/auth/government/mfa/confirm-setup", { method: "POST", body: JSON.stringify({ code }) }, false),
   governmentMFAVerify: (challengeId: string, code: string) => request(`/api/v1/auth/government/mfa/verify?challenge_id=${encodeURIComponent(challengeId)}&code=${encodeURIComponent(code)}`, { method: "POST" }, false),
   governmentOverview: () => request("/api/v1/government/overview"),
+  portalResults: (limit = 50) => request(`/api/v1/portal/results?limit=${limit}`),
   patientLogin: (identifier: string, password: string) =>
     request("/api/v1/auth/patient/login", { method: "POST", body: JSON.stringify({ identifier, password }) }, false),
   patientRegister: (payload: {
