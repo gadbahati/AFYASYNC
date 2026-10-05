@@ -279,7 +279,7 @@ def patient_summary(patient_id: UUID, purpose: str | None = Query(default="care-
         code = str(exc); raise HTTPException(status_code=404 if "NOT_FOUND" in code or "FACILITY" in code else 400, detail=code) from exc
 
 @router.post("/referral-package")
-def referral_package(body: ReferralBody, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.read"))):
+def referral_package(body: ReferralBody, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     try:
         bundle = build_referral_package(db, patient_id=body.patient_id, facility_id=facility_id, encounter_id=body.encounter_id, clinical_summary=body.clinical_summary, actor_user_id=user.id, destination=body.destination, destination_node_id=body.destination_node_id, purpose_of_use=body.purpose_of_use); db.commit(); return bundle
     except ValueError as exc:
