@@ -41,7 +41,12 @@ def _calculate_bmi(weight_kg: float | None, height_cm: float | None) -> float | 
 def record_vitals(db: Session, encounter_id: UUID, staff_id: UUID, data: dict, *, actor_user_id: UUID | None = None) -> Vital:
     encounter = _open_encounter(db, encounter_id)
     _staff_at_facility(db, staff_id, encounter.facility_id)
-    vital = Vital(encounter_id=encounter_id, recorded_by=staff_id, bmi=_calculate_bmi(data.get("weight_kg"), data.get("height_cm")), **data)
+    vital = Vital(
+        encounter_id=encounter_id,
+        recorded_by=staff_id,
+        bmi=_calculate_bmi(data.get("weight_kg"), data.get("height_cm")),
+        **data,
+    )
     db.add(vital)
     db.flush()
     if actor_user_id:
@@ -65,8 +70,7 @@ def create_or_update_consultation(db: Session, encounter_id: UUID, doctor_id: UU
             raise ValueError("ASSESSMENT_REQUIRED_FOR_FINAL")
         if not (data.get("treatment_plan") or "").strip():
             raise ValueError("TREATMENT_PLAN_REQUIRED_FOR_FINAL")
-    payload = dict(data)
-    payload.pop("status", None)
+    payload = {key: value for key, value in data.items() if key != "status"}
     action = "CLINICAL_CONSULTATION_CREATED"
     if consultation is None:
         consultation = Consultation(encounter_id=encounter_id, doctor_id=doctor_id, status=requested_status, **payload)
@@ -168,17 +172,11 @@ def get_encounter_clinical_summary(db: Session, encounter_id: UUID, facility_id:
         raise ValueError("FACILITY_ACCESS_DENIED")
     vitals = list(db.scalars(select(Vital).where(Vital.encounter_id == encounter_id).order_by(Vital.recorded_at.asc(), Vital.id.asc())))
     consultation = db.scalar(select(Consultation).where(Consultation.encounter_id == encounter_id))
-    diagnoses = list(db.scalars(select(Diagnosis).where(Diagnosis.encounter_id == encounter_id).order_by(Diagnosis.recorded_at.asc(), Diagnosis.id.asc())))
+    diagnoses = list(db.scalars(select(Diagnosis).where(Diagnosis.encounter_id == encounter_id).order_by(Diagnosis.created_at.asc(), Diagnosis.id.asc())))
     lab_orders = list(db.scalars(select(LabOrder).where(LabOrder.encounter_id == encounter_id).order_by(LabOrder.created_at.asc(), LabOrder.id.asc())))
     prescriptions = list(db.scalars(select(Prescription).where(Prescription.encounter_id == encounter_id).order_by(Prescription.created_at.asc(), Prescription.id.asc())))
-    try:
-        procedures = list(db.scalars(select(Procedure).where(Procedure.encounter_id == encounter_id).order_by(Procedure.performed_at.asc(), Procedure.id.asc())))
-    except StopIteration:
-        procedures = []
-    try:
-        clinical_notes = list(db.scalars(select(ClinicalNote).where(ClinicalNote.encounter_id == encounter_id).order_by(ClinicalNote.created_at.asc(), ClinicalNote.id.asc())))
-    except StopIteration:
-        clinical_notes = []
+    procedures = list(db.scalars(select(Procedure).where(Procedure.encounter_id == encounter_id).order_by(Procedure.performed_at.asc(), Procedure.id.asc())))
+    clinical_notes = list(db.scalars(select(ClinicalNote).where(ClinicalNote.encounter_id == encounter_id).order_by(ClinicalNote.created_at.asc(), ClinicalNote.id.asc())))
     return {"encounter": encounter, "vitals": vitals, "consultation": consultation, "diagnoses": diagnoses, "lab_orders": lab_orders, "prescriptions": prescriptions, "procedures": procedures, "clinical_notes": clinical_notes}
 
 
