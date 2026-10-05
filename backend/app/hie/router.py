@@ -184,7 +184,18 @@ def care_coordination_case_care_plan(
     db: Session = Depends(get_db),
     facility_id: UUID = Depends(get_facility_context),
     user: User = Depends(require_permission("referrals.read")),
-):\n    try:\n        return build_care_plan_bundle(\n            db,\n            case_id=case_id,\n            facility_id=facility_id,\n            actor_user_id=user.id,\n        )\n    except CarePlanFhirError as exc:\n        code = str(exc)\n        status_code = 404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409\n        raise HTTPException(status_code=status_code, detail=code) from exc
+):
+    try:
+        return build_care_plan_bundle(
+            db,
+            case_id=case_id,
+            facility_id=facility_id,
+            actor_user_id=user.id,
+        )
+    except CarePlanFhirError as exc:
+        code = str(exc)
+        status_code = 404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409
+        raise HTTPException(status_code=status_code, detail=code) from exc
 
 
 @router.get("/metadata")
