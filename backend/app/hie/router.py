@@ -321,7 +321,7 @@ def get_nodes(db: Session = Depends(get_db), facility_id: UUID = Depends(get_fac
     return [{"id": str(n.id), "code": n.code, "name": n.name, "node_type": n.node_type, "endpoint_url": n.endpoint_url, "trust_level": n.trust_level, "status": n.status} for n in list_nodes(db)]
 
 @router.post("/consents")
-def grant_hie_consent(patient_id: UUID, purpose: str = Query(default="HOPERAT"), recipient_node_id: UUID | None = None, period_start: datetime | None = None, period_end: datetime | None = None, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
+def grant_hie_consent(patient_id: UUID, purpose: str = Query(default="OPERATIONS"), recipient_node_id: UUID | None = None, period_start: datetime | None = None, period_end: datetime | None = None, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     try:
         c=create_consent(db,patient_id=patient_id,facility_id=facility_id,recipient_node_id=recipient_node_id,purpose=purpose,period_start=period_start,period_end=period_end,created_by=user.id); db.commit(); return {"id":str(c.id),"patient_id":str(c.patient_id),"recipient_node_id":str(c.recipient_node_id) if c.recipient_node_id else None,"status":c.status,"decision":c.decision,"purpose":c.purpose,"fhir_resource":c.fhir_resource}
     except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
