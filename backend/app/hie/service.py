@@ -13,6 +13,7 @@ from app.audit.service import record_audit
 from app.clinical.models import Allergy, Diagnosis
 from app.consent.models import SensitiveDiseaseConsent
 from app.encounters.models import Encounter
+from app.facilities.models import Facility
 from app.hie.models import HieExportLog, HieInboundDocument, HieNode
 from app.hie.conformance import validate_bundle
 from app.hie.terminology_service import canonical_coding
@@ -38,6 +39,39 @@ def _require_enrollment(db: Session, patient_id: UUID, facility_id: UUID) -> Per
     if person is None or person.status not in {"ACTIVE", "INACTIVE"}:
         raise ValueError("PATIENT_NOT_FOUND")
     return person
+
+
+def _facility_organization_resource(db: Session, facility_id: UUID) -> dict:
+    facility = db.get(Facility, facility_id)
+    if facility is None:
+        raise ValueError("FACILITY_NOT_FOUND")
+    registry = facility.registry_record
+    identifiers = []
+    if registry and registry.mfl_code:
+        identifiers.append({
+            "use": "official",
+            "system": "https://fhir.dha.go.ke/core/identifier/facility",
+            "value": registry.mfl_code,
+        })
+    if facility.registration_number:
+        identifiers.append({
+            "use": "secondary",
+            "system": "https://afyasync.health.ke/identifier/facility-registration",
+            "value": facility.registration_number,
+        })
+    if not identifiers:
+        raise ValueError("FACILITY_REGISTRY_IDENTIFIER_REQUIRED")
+    return {
+        "resourceType": "Organization",
+        "id": str(facility.id),
+        "meta": {"profile": ["https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-organization|1.0.0"]},
+        "identifier": identifiers,
+        "active": facility.status == "ACTIVE",
+        "name": facility.name,
+        "type": [{"text": facility.facility_type}],
+        "address": [{"use": "work", "text": facility.address, "city": facility.sub_county, "district": facility.county}],
+        "telecom": ([{"system": "phone", "value": facility.phone, "use": "work"}] if facility.phone else []),
+    }
 
 
 def _normalize_purpose(purpose_of_use: str | None) -> str:
@@ -105,6 +139,8 @@ def build_patient_summary_bundle(
 
     patient = _patient_resource(db, person)
     entries.append({"fullUrl": f"urn:uuid:{person.id}", "resource": patient})
+    facility_resource = _facility_organization_resource(db, facility_id)
+    entries.append({"fullUrl": f"urn:uuid:{facility_id}", "resource": facility_resource})
 
     allergies = list(
         db.scalars(
