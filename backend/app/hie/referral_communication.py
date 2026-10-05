@@ -3,12 +3,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import UUID
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.encounters.models import Encounter
 from app.hie.conformance import assert_valid_bundle
 from app.hie.provider_identity import actor_provider_identity_resources
 from app.hie.referral_task import _get_referral, _PRIORITY, HL7_SERVICE_TYPE_SYSTEM, REFERRAL_SERVICE_TYPE_CODE
 from app.hie.service import _facility_organization_resource, _patient_resource
+from app.hie.consent_models import HieConsent
+from app.audit.service import record_audit
 from app.patients.models import Person
 
 KENYA_CORE_COMMUNICATION_PROFILE = "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-communication|1.0.0"
@@ -26,6 +29,18 @@ def build_referral_communication_bundle(db: Session, *, referral_id: UUID, facil
         raise ReferralCommunicationError("PATIENT_NOT_FOUND")
     if encounter is None or encounter.facility_id != referral.source_facility_id:
         raise ReferralCommunicationError("ENCOUNTER_NOT_FOUND")
+    if referral.source_facility_id != referral.destination_facility_id:
+        q = select(HieConsent).where(HieConsent.patient_id == referral.patient_id, HieConsent.facility_id == referral.source_facility_id, HieConsent.status == "ACTIVE", HieConsent.decision == "PERMIT", HieConsent.purpose == "TREATMENT", HieConsent.scope == "HIE_SHARE")
+        if referral.destination_node_id is not None:
+            q = q.where((HieConsent.recipient_node_id == referral.destination_node_id) | HieConsent.recipient_node_id.is_(None))
+        now = datetime.now(timezone.utc)
+        valid = False
+        for consent in db.scalars(q):
+            if consent.period_start and now < consent.period_start: continue
+            if consent.period_end and now > consent.period_end: continue
+            if consent.revoked_at and now >= consent.revoked_at: continue
+            valid = True; break
+        if not valid: raise ReferralCommunicationError("HIE_TREATMENT_CONSENT_REQUIRED")
     source_org = _facility_organization_resource(db, referral.source_facility_id)
     destination_org = _facility_organization_resource(db, referral.destination_facility_id)
     patient = _patient_resource(db, person)
@@ -59,6 +74,7 @@ def build_referral_communication_bundle(db: Session, *, referral_id: UUID, facil
         "reason": [{"text": "Referral follow-up and care coordination"}],
     }
     resources = [patient, source_org, destination_org, *provider_resources, communication, provenance]
+    record_audit(db, action="HIE_REFERRAL_COMMUNICATION_EXPORT", resource_type="REFERRAL", resource_id=str(referral.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=referral.patient_id, metadata={"destination_facility_id": str(referral.destination_facility_id), "medium": medium}, commit=False)
     bundle = {"resourceType": "Bundle", "id": f"referral-communication-fhir-{referral.id}", "type": "collection",
               "entry": [{"fullUrl": f"urn:uuid:{r['resourceType']}/{r['id']}", "resource": r} for r in resources]}
     try:
