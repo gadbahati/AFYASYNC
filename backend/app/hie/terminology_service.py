@@ -42,6 +42,14 @@ def upsert_concept(db: Session, *, data: dict, actor_user_id: UUID | None):
     db.add(row); db.flush(); return row
 
 def upsert_mapping(db: Session, *, data: dict, actor_user_id: UUID | None):
+    target = db.scalar(select(TerminologyConcept).where(
+        TerminologyConcept.system == data["target_system"],
+        TerminologyConcept.code == data["target_code"],
+        TerminologyConcept.status == "ACTIVE",
+    ))
+    if target is None:
+        raise ValueError("TARGET_TERMINOLOGY_CONCEPT_NOT_ACTIVE")
+
     existing=db.scalar(select(TerminologyMapping).where(
         TerminologyMapping.source_system==data["source_system"],
         TerminologyMapping.source_code==data["source_code"],
