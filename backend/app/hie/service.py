@@ -610,7 +610,7 @@ def validate_inbound_bundle(
     # same accepted Bundle from the same trusted source must be idempotent and
     # must not create a second clinical import opportunity.
     bundle_id = str(payload.get("id") or "").strip()[:80] or None
-    if status == "ACCEPTED" and source_node_id is not None and bundle_id is not None:
+    if source_node_id is not None and bundle_id is not None:
         existing = db.scalar(
             select(HieInboundDocument).where(
                 HieInboundDocument.source_node_id == source_node_id,
