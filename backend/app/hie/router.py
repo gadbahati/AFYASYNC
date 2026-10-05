@@ -314,13 +314,13 @@ def resolve_inbound(inbound_id: UUID, db: Session = Depends(get_db), facility_id
 def put_node(body: NodeUpsert, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     _ = facility_id, user
     try:
-        row = upsert_node(db, data=body.model_dump()); db.commit(); return {"id": str(row.id), "code": row.code, "name": row.name, "node_type": row.node_type, "status": row.status, "trust_level": row.trust_level}
+        row = upsert_node(db, data=body.model_dump(), facility_id=facility_id); db.commit(); return {"id": str(row.id), "code": row.code, "name": row.name, "node_type": row.node_type, "status": row.status, "trust_level": row.trust_level}
     except ValueError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @router.get("/nodes")
 def get_nodes(db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("reports.read"))):
     _ = facility_id, user
-    return [{"id": str(n.id), "code": n.code, "name": n.name, "node_type": n.node_type, "endpoint_url": n.endpoint_url, "trust_level": n.trust_level, "status": n.status} for n in list_nodes(db)]
+    return [{"id": str(n.id), "code": n.code, "name": n.name, "node_type": n.node_type, "trust_level": n.trust_level, "status": n.status} for n in list_nodes(db)]
 
 @router.post("/consents")
 def grant_hie_consent(patient_id: UUID, purpose: str = Query(default="OPERATIONS"), recipient_node_id: UUID | None = None, period_start: datetime | None = None, period_end: datetime | None = None, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
