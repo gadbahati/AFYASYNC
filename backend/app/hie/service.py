@@ -174,10 +174,9 @@ def build_patient_summary_bundle(
                     "resourceType": "AllergyIntolerance",
                     "id": str(a.id),
                     "clinicalStatus": {"coding": [{"code": "active"}]},
-                    "code": {"text": a.substance},
+                    "code": {"text": a.allergen},
                     "patient": {"reference": f"Patient/{person.id}"},
-                    "criticality": (a.severity or "unknown").lower(),
-                    "reaction": [{"description": a.reaction}] if getattr(a, "reaction", None) else [],
+                                        "reaction": [{"description": a.reaction}] if getattr(a, "reaction", None) else [],
                 },
             }
         )
@@ -213,7 +212,7 @@ def build_patient_summary_bundle(
             select(Diagnosis)
             .join(Encounter, Diagnosis.encounter_id == Encounter.id)
             .where(Diagnosis.encounter_id.in_([enc.id for enc in encounters]))
-            .order_by(Diagnosis.recorded_at.desc(), Diagnosis.id.desc())
+            .order_by(Diagnosis.created_at.desc(), Diagnosis.id.desc())
             .limit(100)
         )
     )
@@ -235,14 +234,14 @@ def build_patient_summary_bundle(
                     "id": str(diagnosis.id),
                     "clinicalStatus": {"coding": [{"code": "active"}]},
                     "code": {
-                        "coding": ([canonical_coding(db, source_system="AFYASYNC:DIAGNOSIS", source_code=diagnosis.code, display=diagnosis.description)]
+                        "coding": ([canonical_coding(db, source_system="AFYASYNC:DIAGNOSIS", source_code=diagnosis.diagnosis_code, display=diagnosis.diagnosis_name)]
                                    if canonical_coding(db, source_system="AFYASYNC:DIAGNOSIS", source_code=diagnosis.code, display=diagnosis.description)
                                    else []),
-                        "text": diagnosis.description or diagnosis.code,
+                        "text": diagnosis.diagnosis_name or diagnosis.diagnosis_code,
                     },
                     "subject": {"reference": f"Patient/{person.id}"},
                     "encounter": {"reference": f"Encounter/{diagnosis.encounter_id}"},
-                    "recordedDate": diagnosis.recorded_at.isoformat() if diagnosis.recorded_at else None,
+                    "recordedDate": diagnosis.created_at.isoformat() if diagnosis.created_at else None,
                 },
             }
         )
