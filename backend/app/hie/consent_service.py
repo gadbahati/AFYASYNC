@@ -14,10 +14,10 @@ def create_consent(db: Session, *, patient_id: UUID, facility_id: UUID, recipien
     if period_start and period_end and period_end <= period_start: raise ValueError("HIE_CONSENT_INVALID_PERIOD")
     resource={
         "resourceType":"Consent","status":"active","scope":{"coding":[{"system":"http://terminology.hl7.org/CodeSystem/consentscope","code":"patient-privacy"}]},
-        "category":[{"coding":[{"system":"http://terminology.hl7.org/CodeSystem/consentcategorycodes","code":"HIPAA"}]}],
+        "category":[{"text":"Health information sharing consent"}],
         "patient":{"reference":f"Patient/{patient_id}"},
         "dateTime":datetime.now(timezone.utc).isoformat(),
-        "provision":{"type":"permit","purpose":[{"system":"http://terminology.hl7.org/CodeSystem/v3-ActReason","code":purpose}]}
+        "provision":{"type":"permit","purpose":[{"text":purpose}]}
     }
     if period_start or period_end: resource["provision"]["period"]={k:v.isoformat() for k,v in {"start":period_start,"end":period_end}.items() if v}
     c=HieConsent(patient_id=patient_id,facility_id=facility_id,recipient_node_id=recipient_node_id,status="ACTIVE",decision="PERMIT",purpose=purpose,scope="HIE_SHARE",period_start=period_start,period_end=period_end,evidence=evidence or {},fhir_resource=resource,created_by=created_by)
