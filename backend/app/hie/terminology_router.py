@@ -56,5 +56,9 @@ def put_concept(body: ConceptBody, db: Session=Depends(get_db), facility_id: UUI
 @router.put("/mappings")
 def put_mapping(body: MappingBody, db: Session=Depends(get_db), facility_id: UUID=Depends(get_facility_context), user: User=Depends(require_permission("reports.read"))):
     _=facility_id
-    row=upsert_mapping(db,data=body.model_dump(),actor_user_id=user.id); db.commit()
+    try:
+        row=upsert_mapping(db,data=body.model_dump(),actor_user_id=user.id)
+        db.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"id":str(row.id),"source_system":row.source_system,"source_code":row.source_code,"target_system":row.target_system,"target_code":row.target_code,"equivalence":row.equivalence,"status":row.status}
