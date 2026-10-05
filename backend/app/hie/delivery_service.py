@@ -12,6 +12,7 @@ from app.hie.consent_models import HieConsent
 from app.hie.auth import clear_hie_token_cache, get_hie_access_token
 from app.hie.models import HieExportLog, HieNode
 from app.hie.conformance import assert_valid_bundle
+from app.patients.models import PatientFacility
 
 ACTIVE_STATUSES = {"PENDING", "RETRY"}
 
@@ -20,8 +21,17 @@ def queue_bundle(db: Session, *, facility_id: UUID, patient_id: UUID, destinatio
     if node is None or node.status != "ACTIVE": raise ValueError("HIE_NODE_NOT_FOUND")
     if node.facility_id == facility_id: raise ValueError("HIE_DESTINATION_SELF")
     if node.trust_level not in {"HIGH", "NATIONAL"}: raise ValueError("HIE_DESTINATION_NOT_TRUSTED")
+    enrollment = db.scalar(select(PatientFacility).where(PatientFacility.patient_id == patient_id, PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE"))
+    if enrollment is None: raise ValueError("PATIENT_NOT_ENROLLED_AT_FACILITY")
     if not node.endpoint_url: raise ValueError("HIE_DESTINATION_ENDPOINT_NOT_CONFIGURED")
     assert_valid_bundle(payload)
+    payload_patients = []
+    for entry in payload.get("entry") or []:
+        resource = entry.get("resource") if isinstance(entry, dict) else None
+        if isinstance(resource, dict) and resource.get("resourceType") == "Patient":
+            payload_patients.append(str(resource.get("id") or "").strip())
+    if payload_patients and all(pid != str(patient_id) for pid in payload_patients):
+        raise ValueError("HIE_PAYLOAD_PATIENT_MISMATCH")
     purpose = "TREATMENT"
     for tag in (payload.get("meta") or {}).get("tag") or []:
         if isinstance(tag, dict) and "purpose-of-use" in str(tag.get("system") or "").lower():
