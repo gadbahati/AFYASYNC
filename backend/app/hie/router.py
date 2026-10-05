@@ -309,7 +309,7 @@ def resolve_inbound(inbound_id: UUID, db: Session = Depends(get_db), facility_id
         code = str(exc); raise HTTPException(status_code=404 if "NOT_FOUND" in code else 409 if "ACCEPTED" in code else 400, detail=code) from exc
 
 @router.put("/nodes")
-def put_node(body: NodeUpsert, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("reports.read"))):
+def put_node(body: NodeUpsert, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     _ = facility_id, user
     try:
         row = upsert_node(db, data=body.model_dump()); db.commit(); return {"id": str(row.id), "code": row.code, "name": row.name, "node_type": row.node_type, "status": row.status, "trust_level": row.trust_level}
