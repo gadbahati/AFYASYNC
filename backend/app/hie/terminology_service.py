@@ -54,3 +54,22 @@ def upsert_mapping(db: Session, *, data: dict, actor_user_id: UUID | None):
         return existing
     row=TerminologyMapping(**data,created_by=actor_user_id)
     db.add(row); db.flush(); return row
+
+
+def canonical_coding(db: Session, *, source_system: str, source_code: str | None, display: str | None = None) -> dict | None:
+    """Return a verified target coding only when an explicit registry mapping exists."""
+    if not source_code:
+        return None
+    rows = list(db.scalars(select(TerminologyMapping).where(
+        TerminologyMapping.source_system == source_system,
+        TerminologyMapping.source_code == source_code,
+        TerminologyMapping.status == "ACTIVE",
+    ).limit(5)))
+    if not rows:
+        return None
+    row = rows[0]
+    return {
+        "system": row.target_system,
+        "code": row.target_code,
+        "display": row.target_display or display,
+    }
