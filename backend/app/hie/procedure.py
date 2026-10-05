@@ -27,9 +27,9 @@ def build_procedure_bundle(db: Session, *, procedure_id: UUID, facility_id: UUID
     person = db.get(Person, encounter.patient_id)
     if person is None:
         raise ProcedureFhirError("PATIENT_NOT_FOUND")
-    if not procedure.code:
+    if not procedure.procedure_code:
         raise ProcedureFhirError("PROCEDURE_CODE_REQUIRED")
-    coding = canonical_coding(db, "AFYASYNC:PROCEDURE", procedure.code, display=procedure.name)
+    coding = canonical_coding(db, "AFYASYNC:PROCEDURE", procedure.procedure_code, display=procedure.name)
     if not coding:
         raise ProcedureFhirError("PROCEDURE_NOT_NATIONALLY_MAPPED")
     patient = _patient_resource(db, person)
