@@ -81,6 +81,10 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
         for field in ("status", "subject", "started", "modality"):
             if not resource.get(field):
                 errors.append("IMAGINGSTUDY_" + field.upper() + "_REQUIRED")
+    if rt == "ImagingStudy":
+        for field in ("status", "subject", "started", "modality"):
+            if not resource.get(field):
+                errors.append("IMAGINGSTUDY_" + field.upper() + "_REQUIRED")
     if rt == "Procedure":
         for field in ("status", "code", "subject", "performedDateTime", "performer"):
             if not resource.get(field):
