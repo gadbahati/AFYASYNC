@@ -30,7 +30,7 @@ from app.hie.referral_task import ReferralTaskError, build_referral_fhir_bundle
 from app.hie.referral_communication import ReferralCommunicationError, build_referral_communication_bundle
 from app.hie.lab_result import LabResultFhirError, build_verified_lab_result_bundle
 from app.hie.procedure import ProcedureFhirError, build_procedure_bundle
-from app.hie.imaging import ImagingFhirError, build_imaging_bundle
+from app.hie.imaging import ImagingFhirError, build_imaging_bundle\nfrom app.hie.care_plan import CarePlanFhirError, build_care_plan_bundle
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -177,7 +177,8 @@ def imaging_order_fhir(
         raise HTTPException(status_code=status_code, detail=code) from exc
 
 
-@router.get("/metadata")
+@router.get("/care-coordination-cases/{case_id}/care-plan")
+def care_coordination_case_care_plan(\n    case_id: UUID,\n    db: Session = Depends(get_db),\n    facility_id: UUID = Depends(get_facility_context),\n    user: User = Depends(require_permission("referrals.read")),\n):\n    try:\n        return build_care_plan_bundle(\n            db,\n            case_id=case_id,\n            facility_id=facility_id,\n            actor_user_id=user.id,\n        )\n    except CarePlanFhirError as exc:\n        code = str(exc)\n        status_code = 404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409\n        raise HTTPException(status_code=status_code, detail=code) from exc\n\n\n@router.get("/metadata")
 def hie_metadata():
     return capability_statement()
 
