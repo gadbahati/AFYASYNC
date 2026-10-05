@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -60,10 +60,12 @@ class HieInboundDocument(Base):
 
     __tablename__ = "hie_inbound_documents"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_hie_inbound_source_bundle",
             "source_node_id",
             "bundle_id",
-            name="uq_hie_inbound_source_bundle",
+            unique=True,
+            postgresql_where="bundle_id IS NOT NULL",
         ),
     )
 
