@@ -43,3 +43,5 @@ app.surveillance.router|router|surveillance_router
 app.quality_scorecard.router|router|quality_scorecard_router
 app.fraud_integrity.router|router|fraud_integrity_router
 
+
+app.hie.terminology_router|router|hie_terminology_router
