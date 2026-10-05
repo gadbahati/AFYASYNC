@@ -375,6 +375,34 @@ def build_patient_summary_bundle(
         if isinstance(resource, dict) and resource.get("resourceType") in profile_map:
             resource.setdefault("meta", {})["profile"] = [profile_map[resource["resourceType"]]]
 
+    composition_id = f"{bundle_id}-composition"
+    section_groups = [
+        ("Problems", {"Condition"}),
+        ("Allergies", {"AllergyIntolerance"}),
+        ("Medications", {"MedicationRequest", "MedicationStatement", "MedicationDispense"}),
+        ("Results", {"Observation", "DiagnosticReport"}),
+        ("Procedures", {"Procedure"}),
+        ("Encounters", {"Encounter"}),
+    ]
+    sections = []
+    for title, resource_types in section_groups:
+        refs = [{"reference": f"{r.get('resourceType')}/{r.get('id')}"} for e in entries for r in [e.get("resource")] if isinstance(r, dict) and r.get("resourceType") in resource_types and r.get("id")]
+        if refs:
+            sections.append({"title": title, "entry": refs})
+    composition = {
+        "resourceType": "Composition",
+        "id": composition_id,
+        "meta": {"profile": ["https://fhir.dha.go.ke/kps/StructureDefinition/ke-kps-composition"]},
+        "status": "final",
+        "type": {"text": "Kenya Patient Summary"},
+        "subject": {"reference": f"Patient/{person.id}"},
+        "date": datetime.now(timezone.utc).isoformat(),
+        "author": ([{"reference": f"PractitionerRole/{provider_role['id']}"}] if provider_role else [{"reference": f"Organization/{facility_id}"}]),
+        "title": "Kenya Patient Summary",
+        "custodian": {"reference": f"Organization/{facility_id}"},
+        "section": sections,
+    }
+    entries.insert(0, {"fullUrl": f"urn:uuid:{composition_id}", "resource": composition})
     bundle = {
         "resourceType": "Bundle",
         "id": bundle_id,
