@@ -22,6 +22,7 @@ KENYA_CORE_PROFILES = {
     "ServiceRequest": KENYA_CORE_BASE + "kenya-core-servicerequest|1.0.0",
     "Task": KENYA_CORE_BASE + "kenya-core-task|1.0.0",
     "Communication": KENYA_CORE_BASE + "kenya-core-communication|1.0.0",
+    "DiagnosticReport": KENYA_CORE_BASE + "kenya-core-diagnosticreport|1.0.0",
 }
 
 def _profile(resource: dict) -> str | None:
@@ -67,6 +68,10 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
             errors.append("SERVICEREQUEST_CODE_CODING_REQUIRED")
         if not resource.get("requester"):
             errors.append("SERVICEREQUEST_REQUESTER_REQUIRED")
+    if rt == "DiagnosticReport":
+        for field in ("status", "category", "code", "subject", "encounter", "effectiveDateTime", "issued", "performer", "result"):
+            if not resource.get(field):
+                errors.append("DIAGNOSTICREPORT_" + field.upper() + "_REQUIRED")
     if rt == "Communication":
         for field in ("identifier", "subject", "recipient", "sender", "payload"):
             if not resource.get(field):
