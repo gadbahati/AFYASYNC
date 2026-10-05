@@ -33,6 +33,7 @@ def build_consent_bundle(db: Session, *, consent_id: UUID, facility_id: UUID, ac
 
     patient = _patient_resource(db, person)
     organization = _facility_organization_resource(db, facility_id)
+    recipient_organization = None
 
     status = "active" if consent.status == "ACTIVE" and consent.decision == "PERMIT" else "inactive"
     resource = {
@@ -66,6 +67,7 @@ def build_consent_bundle(db: Session, *, consent_id: UUID, facility_id: UUID, ac
             raise ConsentFhirError("CONSENT_RECIPIENT_NODE_NOT_FOUND")
         if node.facility_id is None:
             raise ConsentFhirError("CONSENT_RECIPIENT_FACILITY_NOT_BOUND")
+        recipient_organization = _facility_organization_resource(db, node.facility_id)
         resource["provision"]["recipient"] = [{"reference": f"Organization/{node.facility_id}"}]
 
     provenance = {
@@ -84,6 +86,7 @@ def build_consent_bundle(db: Session, *, consent_id: UUID, facility_id: UUID, ac
             {"fullUrl": f"urn:uuid:{patient['id']}", "resource": patient},
             {"fullUrl": f"urn:uuid:{organization['id']}", "resource": organization},
             {"fullUrl": f"urn:uuid:{resource['id']}", "resource": resource},
+            *([{"fullUrl": f"urn:uuid:{recipient_organization['id']}", "resource": recipient_organization}] if recipient_organization else []),
             {"fullUrl": f"urn:uuid:{provenance['id']}", "resource": provenance},
         ],
     }
