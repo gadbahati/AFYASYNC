@@ -9,6 +9,7 @@ from app.database import Base
 
 
 class Consultation(Base):
+    __table_args__ = {"extend_existing": True}
     __tablename__ = "consultations"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id", ondelete="RESTRICT"), index=True, unique=True)
@@ -27,6 +28,7 @@ class Consultation(Base):
 
 
 class Vital(Base):
+    __table_args__ = {"extend_existing": True}
     __tablename__ = "vitals"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id", ondelete="RESTRICT"), index=True)
@@ -44,6 +46,7 @@ class Vital(Base):
 
 
 class Diagnosis(Base):
+    __table_args__ = {"extend_existing": True}
     __tablename__ = "diagnoses"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id", ondelete="RESTRICT"), index=True)
@@ -56,6 +59,7 @@ class Diagnosis(Base):
 
 
 class CarePlan(Base):
+    __table_args__ = {"extend_existing": True}
     __tablename__ = "care_plans"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     patient_id: Mapped[UUID] = mapped_column(ForeignKey("persons.id", ondelete="RESTRICT"), index=True)
@@ -74,6 +78,7 @@ class CarePlan(Base):
 
 
 class Allergy(Base):
+    __table_args__ = {"extend_existing": True}
     __tablename__ = "allergies"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     patient_id: Mapped[UUID] = mapped_column(ForeignKey("persons.id", ondelete="RESTRICT"), index=True)
@@ -90,6 +95,7 @@ class Allergy(Base):
 
 
 class TriageAssessment(Base):
+    __table_args__ = {"extend_existing": True}
     __tablename__ = "triage_assessments"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id", ondelete="RESTRICT"), index=True)
@@ -105,6 +111,7 @@ class TriageAssessment(Base):
 
 
 class Procedure(Base):
+    __table_args__ = {"extend_existing": True}
     __tablename__ = "clinical_procedures"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id", ondelete="RESTRICT"), index=True)
@@ -120,6 +127,7 @@ class Procedure(Base):
 
 
 class ClinicalNote(Base):
+    __table_args__ = {"extend_existing": True}
     __tablename__ = "clinical_notes"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     encounter_id: Mapped[UUID] = mapped_column(ForeignKey("encounters.id", ondelete="RESTRICT"), index=True)
