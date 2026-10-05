@@ -20,6 +20,7 @@ KENYA_CORE_PROFILES = {
     "PractitionerRole": KENYA_CORE_BASE + "kenya-core-practitionerrole|1.0.0",
     "Location": KENYA_CORE_BASE + "kenya-core-location|1.0.0",
     "ServiceRequest": KENYA_CORE_BASE + "kenya-core-servicerequest|1.0.0",
+    "Task": KENYA_CORE_BASE + "kenya-core-task|1.0.0",
 }
 
 def _profile(resource: dict) -> str | None:
@@ -65,6 +66,10 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
             errors.append("SERVICEREQUEST_CODE_CODING_REQUIRED")
         if not resource.get("requester"):
             errors.append("SERVICEREQUEST_REQUESTER_REQUIRED")
+    if rt == "Task":
+        for field in ("status", "intent", "priority", "code", "description", "focus", "for", "authoredOn"):
+            if not resource.get(field):
+                errors.append("TASK_" + field.upper().replace("-", "_") + "_REQUIRED")
     if rt == "Practitioner" and not resource.get("name"):
         errors.append("PRACTITIONER_NAME_REQUIRED")
     if rt == "PractitionerRole":
