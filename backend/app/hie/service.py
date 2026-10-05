@@ -676,13 +676,23 @@ def upsert_node(db: Session, *, data: dict, facility_id: UUID) -> HieNode:
     if not code:
         raise ValueError("NODE_CODE_REQUIRED")
     row = db.scalar(select(HieNode).where(HieNode.code == code))
+    requested_facility_id = data.get("facility_id")
+    if requested_facility_id is not None:
+        try:
+            requested_facility_id = UUID(str(requested_facility_id))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("HIE_NODE_FACILITY_INVALID") from exc
+        if requested_facility_id != facility_id:
+            raise ValueError("HIE_NODE_FACILITY_ACCESS_DENIED")
+    if row is not None and row.facility_id is not None and row.facility_id != facility_id:
+        raise ValueError("HIE_NODE_ACCESS_DENIED")
     if row is None:
         row = HieNode(code=code)
         db.add(row)
     row.name = (data.get("name") or code)[:200]
     row.node_type = (data.get("node_type") or "FACILITY")[:40]
     row.endpoint_url = data.get("endpoint_url")
-    row.facility_id = data.get("facility_id")
+    row.facility_id = facility_id
     row.trust_level = (data.get("trust_level") or "STANDARD")[:20]
     row.status = "ACTIVE"
     db.flush()
