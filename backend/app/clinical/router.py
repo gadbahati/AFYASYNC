@@ -1,53 +1,28 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
 from app.auth.dependencies import get_facility_context, require_permission
-from app.clinical.discharge_models import ClinicalDischarge
 from app.clinical.discharge_service import DischargeError, discharge_encounter, get_discharge
 from app.clinical.summary_service import SummaryError, build_encounter_summary
 from app.clinical.orders_routes import orders_router
-from app.clinical.models import Allergy, CarePlan, Procedure, ClinicalNote
+from app.clinical.models import Allergy, CarePlan
 from app.clinical.triage import latest_triage, record_triage
 from app.clinical.schemas import (
-    AllergyCreate,
-    AllergyResponse,
-    AllergyUpdate,
-    CarePlanCreate,
-    CarePlanResponse,
-    CarePlanUpdate,
-    ClinicalTimelineSummary,
-    ConsultationCreate,
-    ConsultationResponse,
-    DiagnosisCreate,
-    DiagnosisResponse,
-    ProcedureCreate,
-    ProcedureResponse,
-    ClinicalNoteCreate,
-    ClinicalNoteResponse,
-    TriageCreate,
-    TriageResponse,
-    VitalCreate,
-    VitalResponse,
+    AllergyCreate, AllergyResponse, AllergyUpdate, CarePlanCreate, CarePlanResponse,
+    CarePlanUpdate, ClinicalTimelineSummary, ConsultationCreate, ConsultationResponse,
+    DiagnosisCreate, DiagnosisResponse, ProcedureCreate, ProcedureResponse,
+    ClinicalNoteCreate, ClinicalNoteResponse, TriageCreate, TriageResponse,
+    VitalCreate, VitalResponse,
 )
 from app.clinical.service import (
-    add_diagnosis,
-    add_procedure,
-    create_allergy,
-    create_care_plan,
-    create_or_update_consultation,
-    get_encounter_clinical_summary,
-    list_allergies,
-    list_care_plans,
-    list_clinical_notes,
-    list_procedures,
-    record_vitals,
-    save_clinical_note,
-    update_allergy,
-    update_care_plan,
+    add_diagnosis, add_procedure, create_allergy, create_care_plan,
+    create_or_update_consultation, get_encounter_clinical_summary,
+    list_allergies, list_care_plans, list_clinical_notes, list_procedures,
+    record_vitals, save_clinical_note, update_allergy, update_care_plan,
 )
 from app.database import get_db
 from app.encounters.models import Encounter
@@ -77,365 +52,175 @@ def _encounter(db: Session, encounter_id: UUID, facility_id: UUID) -> Encounter:
 
 
 @encounter_router.get("/{encounter_id}/summary")
-def get_encounter_summary(
-    encounter_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    """Phase 137 — print-ready clinical encounter summary."""
+def get_encounter_summary(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _ = user
     try:
         return build_encounter_summary(db, encounter_id=encounter_id, facility_id=facility_id)
     except SummaryError as exc:
         code = str(exc)
-        status_code = 404 if code == "ENCOUNTER_NOT_FOUND" else 403
-        raise HTTPException(status_code=status_code, detail=code) from exc
+        raise HTTPException(status_code=404 if code == "ENCOUNTER_NOT_FOUND" else 403, detail=code) from exc
 
 
 @encounter_router.get("/{encounter_id}/clinical-timeline", response_model=ClinicalTimelineSummary)
-def get_clinical_timeline(
-    encounter_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
+def get_clinical_timeline(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _ = user
     _encounter(db, encounter_id, facility_id)
     return get_encounter_clinical_summary(db, encounter_id, facility_id)
 
 
 @encounter_router.get("/{encounter_id}/clinical", response_model=ClinicalTimelineSummary)
-def get_clinical_timeline_alias(
-    encounter_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    """Phase 138 — alias for client path /clinical."""
+def get_clinical_timeline_alias(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _ = user
     _encounter(db, encounter_id, facility_id)
     return get_encounter_clinical_summary(db, encounter_id, facility_id)
 
 
 @encounter_router.post("/{encounter_id}/vitals", response_model=VitalResponse, status_code=201)
-def post_vitals(
-    encounter_id: UUID,
-    payload: VitalCreate,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
+def post_vitals(encounter_id: UUID, payload: VitalCreate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _encounter(db, encounter_id, facility_id)
-    return record_vitals(db, encounter_id, _current_staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
+    staff = _current_staff(db, user, facility_id)
+    return record_vitals(db, encounter_id, staff.id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.get("/{encounter_id}/triage", response_model=TriageResponse | None)
-def get_triage(
-    encounter_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
+def get_triage(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _ = user
-    _encounter(db, encounter_id, facility_id)
-    return latest_triage(db, encounter_id)
+    return latest_triage(db, encounter_id, facility_id)
 
 
 @encounter_router.post("/{encounter_id}/triage", response_model=TriageResponse, status_code=201)
-def post_triage(
-    encounter_id: UUID,
-    payload: TriageCreate,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _encounter(db, encounter_id, facility_id)
-    return record_triage(db, encounter_id, payload, actor_user_id=user.id)
+def post_triage(encounter_id: UUID, payload: TriageCreate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    staff = _current_staff(db, user, facility_id)
+    return record_triage(db, encounter_id, facility_id, staff.id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.post("/{encounter_id}/consultation", response_model=ConsultationResponse)
-def post_consultation(
-    encounter_id: UUID,
-    payload: ConsultationCreate,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
+def post_consultation(encounter_id: UUID, payload: ConsultationCreate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _encounter(db, encounter_id, facility_id)
-    return create_or_update_consultation(db, encounter_id, _current_staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
+    staff = _current_staff(db, user, facility_id)
+    return create_or_update_consultation(db, encounter_id, staff.id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.get("/{encounter_id}/procedures", response_model=list[ProcedureResponse])
-def get_procedures(
-    encounter_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
+def get_procedures(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _ = user
-    _encounter(db, encounter_id, facility_id)
     return list_procedures(db, encounter_id, facility_id)
 
 
 @encounter_router.post("/{encounter_id}/procedures", response_model=ProcedureResponse, status_code=201)
-def post_procedure(
-    encounter_id: UUID,
-    payload: ProcedureCreate,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _encounter(db, encounter_id, facility_id)
-    return add_procedure(db, encounter_id, _current_staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
+def post_procedure(encounter_id: UUID, payload: ProcedureCreate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    staff = _current_staff(db, user, facility_id)
+    return add_procedure(db, encounter_id, staff.id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.get("/{encounter_id}/notes", response_model=list[ClinicalNoteResponse])
-def get_notes(
-    encounter_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
+def get_notes(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _ = user
-    _encounter(db, encounter_id, facility_id)
     return list_clinical_notes(db, encounter_id, facility_id)
 
 
 @encounter_router.post("/{encounter_id}/notes", response_model=ClinicalNoteResponse, status_code=201)
-def post_note(
-    encounter_id: UUID,
-    payload: ClinicalNoteCreate,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _encounter(db, encounter_id, facility_id)
-    return save_clinical_note(db, encounter_id, _current_staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
+def post_note(encounter_id: UUID, payload: ClinicalNoteCreate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    staff = _current_staff(db, user, facility_id)
+    return save_clinical_note(db, encounter_id, staff.id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.get("/{encounter_id}/clinical-notes", response_model=list[ClinicalNoteResponse])
-def get_notes_alias(
-    encounter_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    """Phase 138 — alias for client path /clinical-notes."""
+def get_notes_alias(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _ = user
-    _encounter(db, encounter_id, facility_id)
-    return list_clinical_notes(db, encounter_id)
+    return list_clinical_notes(db, encounter_id, facility_id)
 
 
 @encounter_router.post("/{encounter_id}/clinical-notes", response_model=ClinicalNoteResponse, status_code=201)
-def post_note_alias(
-    encounter_id: UUID,
-    payload: ClinicalNoteCreate,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    """Phase 138 — alias for client path /clinical-notes."""
-    _encounter(db, encounter_id, facility_id)
-    return save_clinical_note(db, encounter_id, payload, actor_user_id=user.id)
+def post_note_alias(encounter_id: UUID, payload: ClinicalNoteCreate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    staff = _current_staff(db, user, facility_id)
+    return save_clinical_note(db, encounter_id, staff.id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.post("/{encounter_id}/diagnoses", response_model=DiagnosisResponse, status_code=201)
-def post_diagnosis(
-    encounter_id: UUID,
-    payload: DiagnosisCreate,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _encounter(db, encounter_id, facility_id)
-    return add_diagnosis(db, encounter_id, payload, actor_user_id=user.id)
+def post_diagnosis(encounter_id: UUID, payload: DiagnosisCreate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    staff = _current_staff(db, user, facility_id)
+    data = payload.model_dump(exclude_none=True)
+    data.pop("is_sensitive", None)
+    return add_diagnosis(db, encounter_id, staff.id, data, actor_user_id=user.id)
 
 
 @encounter_router.post("/{encounter_id}/discharge", status_code=201)
-def post_discharge(
-    encounter_id: UUID,
-    payload: dict,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    """Phase 131 — discharge / close encounter with disposition."""
+def post_discharge(encounter_id: UUID, payload: dict, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     from datetime import date as date_cls
-
     follow = payload.get("follow_up_date")
-    follow_date = None
-    if follow:
-        follow_date = date_cls.fromisoformat(str(follow)[:10])
+    follow_date = date_cls.fromisoformat(str(follow)[:10]) if follow else None
     try:
-        row = discharge_encounter(
-            db,
-            encounter_id=encounter_id,
-            facility_id=facility_id,
-            actor_user_id=user.id,
-            disposition=str(payload.get("disposition") or ""),
-            outcome=str(payload.get("outcome") or "STABLE"),
-            follow_up_instructions=payload.get("follow_up_instructions"),
-            follow_up_date=follow_date,
-            discharge_summary=payload.get("discharge_summary"),
-        )
+        row = discharge_encounter(db, encounter_id=encounter_id, facility_id=facility_id, actor_user_id=user.id, disposition=str(payload.get("disposition") or ""), outcome=str(payload.get("outcome") or "STABLE"), follow_up_instructions=payload.get("follow_up_instructions"), follow_up_date=follow_date, discharge_summary=payload.get("discharge_summary"))
     except DischargeError as exc:
         code = str(exc)
-        status_code = 404 if code == "ENCOUNTER_NOT_FOUND" else (403 if code == "FACILITY_ACCESS_DENIED" else 409)
-        raise HTTPException(status_code=status_code, detail=code) from exc
-    return {
-        "id": str(row.id),
-        "encounter_id": str(row.encounter_id),
-        "disposition": row.disposition,
-        "outcome": row.outcome,
-        "follow_up_instructions": row.follow_up_instructions,
-        "follow_up_date": row.follow_up_date.isoformat() if row.follow_up_date else None,
-        "discharge_summary": row.discharge_summary,
-        "discharged_at": row.discharged_at.isoformat() if row.discharged_at else None,
-    }
+        raise HTTPException(status_code=404 if code == "ENCOUNTER_NOT_FOUND" else (403 if code == "FACILITY_ACCESS_DENIED" else 409), detail=code) from exc
+    return {"id": str(row.id), "encounter_id": str(row.encounter_id), "disposition": row.disposition, "outcome": row.outcome, "follow_up_instructions": row.follow_up_instructions, "follow_up_date": row.follow_up_date.isoformat() if row.follow_up_date else None, "discharge_summary": row.discharge_summary, "discharged_at": row.discharged_at.isoformat() if row.discharged_at else None}
 
 
 @encounter_router.get("/{encounter_id}/discharge")
-def read_discharge(
-    encounter_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
+def read_discharge(encounter_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     _ = user
     try:
         row = get_discharge(db, encounter_id=encounter_id, facility_id=facility_id)
     except DischargeError as exc:
         code = str(exc)
-        status_code = 404 if code == "ENCOUNTER_NOT_FOUND" else 403
-        raise HTTPException(status_code=status_code, detail=code) from exc
+        raise HTTPException(status_code=404 if code == "ENCOUNTER_NOT_FOUND" else 403, detail=code) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="DISCHARGE_NOT_FOUND")
-    return {
-        "id": str(row.id),
-        "encounter_id": str(row.encounter_id),
-        "disposition": row.disposition,
-        "outcome": row.outcome,
-        "follow_up_instructions": row.follow_up_instructions,
-        "follow_up_date": row.follow_up_date.isoformat() if row.follow_up_date else None,
-        "discharge_summary": row.discharge_summary,
-        "discharged_at": row.discharged_at.isoformat() if row.discharged_at else None,
-    }
+    return {"id": str(row.id), "encounter_id": str(row.encounter_id), "disposition": row.disposition, "outcome": row.outcome, "follow_up_instructions": row.follow_up_instructions, "follow_up_date": row.follow_up_date.isoformat() if row.follow_up_date else None, "discharge_summary": row.discharge_summary, "discharged_at": row.discharged_at.isoformat() if row.discharged_at else None}
 
 
 @care_plan_router.get("/{patient_id}/care-plans", response_model=list[CarePlanResponse])
-def get_care_plans(
-    patient_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _ = facility_id
+def get_care_plans(patient_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     return list_care_plans(db, patient_id, facility_id)
 
 
 @care_plan_router.post("/{patient_id}/care-plans", response_model=CarePlanResponse, status_code=201)
-def post_care_plan(
-    patient_id: UUID,
-    payload: CarePlanCreate,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _ = facility_id
+def post_care_plan(patient_id: UUID, payload: CarePlanCreate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     return create_care_plan(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
 
 
 @care_plan_router.patch("/{patient_id}/care-plans/{care_plan_id}", response_model=CarePlanResponse)
-def patch_care_plan(
-    patient_id: UUID,
-    care_plan_id: UUID,
-    payload: CarePlanUpdate,
-    user: User = Depends(require_permission("clinical.note.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _ = facility_id
-    return update_care_plan(db, patient_id, care_plan_id, payload, actor_user_id=user.id)
+def patch_care_plan(patient_id: UUID, care_plan_id: UUID, payload: CarePlanUpdate, user: User = Depends(require_permission("clinical.note.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    plan = db.scalar(select(CarePlan).where(CarePlan.id == care_plan_id, CarePlan.patient_id == patient_id, CarePlan.facility_id == facility_id))
+    if plan is None:
+        raise HTTPException(status_code=404, detail="CARE_PLAN_NOT_FOUND")
+    return update_care_plan(db, plan, user.id, facility_id, payload.model_dump(exclude_none=True))
 
 
 @allergy_router.get("/{patient_id}/allergies", response_model=list[AllergyResponse])
-def get_allergies(
-    patient_id: UUID,
-    include_inactive: bool = Query(default=False),
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _ = facility_id
+def get_allergies(patient_id: UUID, include_inactive: bool = Query(default=False), user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     return list_allergies(db, patient_id, facility_id, include_inactive=include_inactive)
 
 
 @allergy_router.post("/{patient_id}/allergies", response_model=AllergyResponse, status_code=201)
-def post_allergy(
-    patient_id: UUID,
-    payload: AllergyCreate,
-    user: User = Depends(require_permission("clinical.allergy.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _ = facility_id
+def post_allergy(patient_id: UUID, payload: AllergyCreate, user: User = Depends(require_permission("clinical.allergy.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     return create_allergy(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
 
 
 @allergy_router.patch("/{patient_id}/allergies/{allergy_id}", response_model=AllergyResponse)
-def update_patient_allergy(
-    patient_id: UUID,
-    allergy_id: UUID,
-    payload: AllergyUpdate,
-    user: User = Depends(require_permission("clinical.allergy.write")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _ = facility_id
-    return update_allergy(db, patient_id, allergy_id, payload, actor_user_id=user.id)
+def update_patient_allergy(patient_id: UUID, allergy_id: UUID, payload: AllergyUpdate, user: User = Depends(require_permission("clinical.allergy.write")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
+    allergy = db.scalar(select(Allergy).where(Allergy.id == allergy_id, Allergy.patient_id == patient_id, Allergy.facility_id == facility_id))
+    if allergy is None:
+        raise HTTPException(status_code=404, detail="ALLERGY_NOT_FOUND")
+    return update_allergy(db, allergy, facility_id, user.id, payload.model_dump(exclude_none=True))
 
 
 @allergy_router.get("/{patient_id}/medication-safety/{medication_id}")
-def check_medication_allergy_safety(
-    patient_id: UUID,
-    medication_id: UUID,
-    user: User = Depends(require_permission("clinical.record.read")),
-    facility_id: UUID = Depends(get_facility_context),
-    db: Session = Depends(get_db),
-):
-    _ = facility_id
+def check_medication_allergy_safety(patient_id: UUID, medication_id: UUID, user: User = Depends(require_permission("clinical.record.read")), facility_id: UUID = Depends(get_facility_context), db: Session = Depends(get_db)):
     medication = db.get(Medication, medication_id)
     if medication is None:
         raise HTTPException(status_code=404, detail="MEDICATION_NOT_FOUND")
-    allergies = list_allergies(db, patient_id, include_inactive=False)
+    allergies = list_allergies(db, patient_id, facility_id, include_inactive=False)
     conflicts = []
     name = (medication.name or "").lower()
-    for a in allergies:
-        substance = (getattr(a, "substance", None) or getattr(a, "allergen", "") or "").lower()
+    for allergy in allergies:
+        substance = (allergy.allergen or "").lower()
         if substance and substance in name:
-            severity = getattr(a, "severity", "MODERATE") or "MODERATE"
-            conflicts.append({"allergy_id": str(a.id), "substance": substance, "severity": severity})
-    record_audit(
-        db,
-        action="MEDICATION_ALLERGY_CHECK",
-        resource_type="MEDICATION",
-        resource_id=str(medication.id),
-        result="SUCCESS",
-        user_id=user.id,
-        facility_id=facility_id,
-        patient_id=patient_id,
-        metadata={"conflict_count": len(conflicts), "medication_id": str(medication.id)},
-        commit=True,
-    )
-    return {
-        "patient_id": str(patient_id),
-        "medication_id": str(medication.id),
-        "medication": medication.name,
-        "safe_match": len(conflicts) == 0,
-        "requires_clinical_review": any(item["severity"] in {"SEVERE", "LIFE_THREATENING"} for item in conflicts),
-        "conflicts": conflicts,
-    }
+            conflicts.append({"allergy_id": str(allergy.id), "substance": substance, "severity": allergy.severity or "MODERATE"})
+    record_audit(db, action="MEDICATION_ALLERGY_CHECK", resource_type="MEDICATION", resource_id=str(medication.id), result="SUCCESS", user_id=user.id, facility_id=facility_id, patient_id=patient_id, metadata={"conflict_count": len(conflicts), "medication_id": str(medication.id)}, commit=True)
+    return {"patient_id": str(patient_id), "medication_id": str(medication.id), "medication": medication.name, "safe_match": len(conflicts) == 0, "requires_clinical_review": any(item["severity"] in {"SEVERE", "LIFE_THREATENING"} for item in conflicts), "conflicts": conflicts}
 
 
 encounter_router.include_router(orders_router)
