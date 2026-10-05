@@ -245,7 +245,21 @@ def patient_allergies_fhir(patient_id: UUID, db: Session = Depends(get_db), faci
 @router.post("/Patient/$match")
 def patient_match(body: dict, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.read"))):
     try:
-        patient = body.get("resource") if isinstance(body, dict) and body.get("resourceType") == "Parameters" else body
+        if isinstance(body, dict) and body.get("resourceType") == "Parameters":
+            patient = next(
+                (
+                    parameter.get("resource")
+                    for parameter in body.get("parameter", [])
+                    if isinstance(parameter, dict)
+                    and isinstance(parameter.get("resource"), dict)
+                    and parameter["resource"].get("resourceType") == "Patient"
+                ),
+                None,
+            )
+            if patient is None:
+                raise MpiMatchError("PATIENT_RESOURCE_REQUIRED")
+        else:
+            patient = body
         bundle = build_patient_match_bundle(db, patient=patient, facility_id=facility_id, actor_user_id=user.id)
         db.commit()
         return bundle
