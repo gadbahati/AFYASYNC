@@ -44,6 +44,7 @@ from app.hie.clinical_note import ClinicalNoteFhirError, build_clinical_note_bun
 from app.hie.consultation import ConsultationFhirError, build_consultation_bundle
 from app.hie.clinical_care_plan import ClinicalCarePlanFhirError, build_clinical_care_plan_bundle
 from app.hie.medication_dispense import MedicationDispenseFhirError, build_medication_dispense_bundle
+from app.hie.mpi import MpiMatchError, build_patient_match_bundle
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -240,6 +241,18 @@ def patient_allergies_fhir(patient_id: UUID, db: Session = Depends(get_db), faci
         code = str(exc)
         status_code = 404 if code in {"FACILITY_NOT_FOUND", "PATIENT_NOT_FOUND", "PATIENT_NOT_IN_FACILITY"} else 409
         raise HTTPException(status_code=status_code, detail=code) from exc
+
+@router.post("/Patient/$match")
+def patient_match(body: dict, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.read"))):
+    try:
+        patient = body.get("resource") if isinstance(body, dict) and body.get("resourceType") == "Parameters" else body
+        bundle = build_patient_match_bundle(db, patient=patient, facility_id=facility_id, actor_user_id=user.id)
+        db.commit()
+        return bundle
+    except MpiMatchError as exc:
+        db.rollback()
+        code = str(exc)
+        raise HTTPException(status_code=400, detail=code) from exc
 
 @router.get("/metadata")
 def hie_metadata(): return capability_statement()
