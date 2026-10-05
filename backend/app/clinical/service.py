@@ -130,7 +130,15 @@ def save_clinical_note(db: Session, encounter_id: UUID, staff_id: UUID, data: di
     requested_status = (data.get("status") or "DRAFT").upper()
     if requested_status not in {"DRAFT", "FINAL"}:
         raise ValueError("INVALID_CLINICAL_NOTE_STATUS")
-    note = ClinicalNote(encounter_id=encounter_id, author_id=staff_id, note_type=data.get("note_type", "PROGRESS"), content=data["content"], status=requested_status)
+    note = ClinicalNote(
+        encounter_id=encounter_id,
+        patient_id=encounter.patient_id,
+        facility_id=encounter.facility_id,
+        author_id=actor_user_id or staff_id,
+        note_type=data.get("note_type", "PROGRESS"),
+        content=data["content"],
+        status=requested_status,
+    )
     if requested_status == "FINAL":
         note.signed_at = datetime.now(timezone.utc)
         note.signed_by = staff_id
