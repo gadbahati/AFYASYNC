@@ -858,6 +858,8 @@ def import_inbound_clinical_resources(
     if row.match_status != "MATCHED" or row.patient_id is None:
         raise ValueError("INBOUND_PATIENT_NOT_MATCHED")
 
+    _require_enrollment(db, row.patient_id, facility_id)
+
     node = db.get(HieNode, row.source_node_id) if row.source_node_id else None
     if node is None or node.status != "ACTIVE" or node.trust_level not in {"HIGH", "NATIONAL"}:
         raise ValueError("INBOUND_SOURCE_NOT_TRUSTED")
