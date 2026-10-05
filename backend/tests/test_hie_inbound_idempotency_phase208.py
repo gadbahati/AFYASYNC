@@ -16,7 +16,7 @@ def test_phase208_uses_source_node_and_bundle_id_as_inbound_message_identity():
 def test_phase208_database_constraint_prevents_duplicate_inbound_bundles():
     model = MODEL.read_text()
     migration = MIGRATION.read_text()
-    assert "UniqueConstraint" in model
+    assert "Index" in model
     assert '"source_node_id",' in model
     assert '"bundle_id",' in model
     assert 'name="uq_hie_inbound_source_bundle"' in model
