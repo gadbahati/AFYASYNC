@@ -60,6 +60,13 @@ care_plan_router = APIRouter(prefix="/api/v1/patients", tags=["Care Plans"])
 allergy_router = APIRouter(prefix="/api/v1/patients", tags=["Clinical Safety"])
 
 
+def _current_staff(db: Session, user: User, facility_id: UUID) -> Staff:
+    staff = db.scalar(select(Staff).where(Staff.person_id == user.person_id, Staff.facility_id == facility_id, Staff.status == "ACTIVE"))
+    if staff is None:
+        raise HTTPException(status_code=403, detail="STAFF_NOT_FOUND")
+    return staff
+
+
 def _encounter(db: Session, encounter_id: UUID, facility_id: UUID) -> Encounter:
     enc = db.get(Encounter, encounter_id)
     if enc is None:
@@ -120,7 +127,7 @@ def post_vitals(
     db: Session = Depends(get_db),
 ):
     _encounter(db, encounter_id, facility_id)
-    return record_vitals(db, encounter_id, payload, actor_user_id=user.id)
+    return record_vitals(db, encounter_id, _current_staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.get("/{encounter_id}/triage", response_model=TriageResponse | None)
@@ -156,7 +163,7 @@ def post_consultation(
     db: Session = Depends(get_db),
 ):
     _encounter(db, encounter_id, facility_id)
-    return create_or_update_consultation(db, encounter_id, payload, actor_user_id=user.id)
+    return create_or_update_consultation(db, encounter_id, _current_staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.get("/{encounter_id}/procedures", response_model=list[ProcedureResponse])
@@ -168,7 +175,7 @@ def get_procedures(
 ):
     _ = user
     _encounter(db, encounter_id, facility_id)
-    return list_procedures(db, encounter_id)
+    return list_procedures(db, encounter_id, facility_id)
 
 
 @encounter_router.post("/{encounter_id}/procedures", response_model=ProcedureResponse, status_code=201)
@@ -180,7 +187,7 @@ def post_procedure(
     db: Session = Depends(get_db),
 ):
     _encounter(db, encounter_id, facility_id)
-    return add_procedure(db, encounter_id, payload, actor_user_id=user.id)
+    return add_procedure(db, encounter_id, _current_staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.get("/{encounter_id}/notes", response_model=list[ClinicalNoteResponse])
@@ -192,7 +199,7 @@ def get_notes(
 ):
     _ = user
     _encounter(db, encounter_id, facility_id)
-    return list_clinical_notes(db, encounter_id)
+    return list_clinical_notes(db, encounter_id, facility_id)
 
 
 @encounter_router.post("/{encounter_id}/notes", response_model=ClinicalNoteResponse, status_code=201)
@@ -204,7 +211,7 @@ def post_note(
     db: Session = Depends(get_db),
 ):
     _encounter(db, encounter_id, facility_id)
-    return save_clinical_note(db, encounter_id, payload, actor_user_id=user.id)
+    return save_clinical_note(db, encounter_id, _current_staff(db, user, facility_id).id, payload.model_dump(exclude_none=True), actor_user_id=user.id)
 
 
 @encounter_router.get("/{encounter_id}/clinical-notes", response_model=list[ClinicalNoteResponse])
@@ -324,7 +331,7 @@ def get_care_plans(
     db: Session = Depends(get_db),
 ):
     _ = facility_id
-    return list_care_plans(db, patient_id)
+    return list_care_plans(db, patient_id, facility_id)
 
 
 @care_plan_router.post("/{patient_id}/care-plans", response_model=CarePlanResponse, status_code=201)
@@ -336,7 +343,7 @@ def post_care_plan(
     db: Session = Depends(get_db),
 ):
     _ = facility_id
-    return create_care_plan(db, patient_id, payload, actor_user_id=user.id)
+    return create_care_plan(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
 
 
 @care_plan_router.patch("/{patient_id}/care-plans/{care_plan_id}", response_model=CarePlanResponse)
@@ -361,7 +368,7 @@ def get_allergies(
     db: Session = Depends(get_db),
 ):
     _ = facility_id
-    return list_allergies(db, patient_id, include_inactive=include_inactive)
+    return list_allergies(db, patient_id, facility_id, include_inactive=include_inactive)
 
 
 @allergy_router.post("/{patient_id}/allergies", response_model=AllergyResponse, status_code=201)
@@ -373,7 +380,7 @@ def post_allergy(
     db: Session = Depends(get_db),
 ):
     _ = facility_id
-    return create_allergy(db, patient_id, payload, actor_user_id=user.id)
+    return create_allergy(db, patient_id, facility_id, user.id, payload.model_dump(exclude_none=True))
 
 
 @allergy_router.patch("/{patient_id}/allergies/{allergy_id}", response_model=AllergyResponse)
