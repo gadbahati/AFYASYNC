@@ -76,6 +76,7 @@ def post_order(
             code=payload.get("code"),
             priority=str(payload.get("priority") or "ROUTINE"),
             notes=payload.get("notes"),
+            code_system=payload.get("code_system"),
         )
     except OrderError as exc:
         raise _http(exc) from exc
