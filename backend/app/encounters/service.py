@@ -9,6 +9,7 @@ from app.coverage.models import Coverage, Payer
 from app.encounters.models import Encounter
 from app.facilities.models import Department, Facility
 from app.patients.models import PatientFacility, Person
+from app.rbac.models import Staff
 
 ALLOWED_COVERAGE_MODES = {"AFYASYNC", "SHA", "CASH", "OTHER"}
 
@@ -23,6 +24,14 @@ def _require_active_context(db: Session, patient_id: UUID, facility_id: UUID, de
         raise ValueError("FACILITY_NOT_FOUND")
     if department is None or department.facility_id != facility_id or department.status != "ACTIVE":
         raise ValueError("DEPARTMENT_NOT_FOUND")
+    provider_staff_id = data.get("provider_staff_id")
+    if provider_staff_id is not None:
+        staff = db.get(Staff, provider_staff_id)
+        if staff is None or staff.facility_id != facility_id or staff.status != "ACTIVE":
+            raise ValueError("PROVIDER_STAFF_NOT_FOUND")
+        if staff.department_id is not None and staff.department_id != department_id:
+            raise ValueError("PROVIDER_STAFF_DEPARTMENT_MISMATCH")
+
     membership = db.scalar(
         select(PatientFacility.id).where(
             PatientFacility.patient_id == patient_id,
