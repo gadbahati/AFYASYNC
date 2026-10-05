@@ -45,7 +45,10 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
     if not resource.get("id"):
         errors.append(f"{rt}_MISSING_ID")
     profile = _profile(resource)
-    if profile != KENYA_CORE_PROFILES[rt]:
+    expected_profile = KENYA_CORE_PROFILES[rt]
+    if rt == "DiagnosticReport" and profile not in {expected_profile, KPS_DIAGNOSTIC_REPORT_PROFILE}:
+        errors.append(f"{rt}_MISSING_KENYA_CORE_PROFILE")
+    elif rt != "DiagnosticReport" and profile != expected_profile:
         errors.append(f"{rt}_MISSING_KENYA_CORE_PROFILE")
     if rt == "Patient" and not resource.get("name"):
         errors.append("PATIENT_NAME_REQUIRED")
@@ -83,9 +86,16 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
             if not resource.get(field):
                 errors.append("PROCEDURE_" + field.upper() + "_REQUIRED")
     if rt == "DiagnosticReport":
-        for field in ("status", "category", "code", "subject", "encounter", "effectiveDateTime", "issued", "performer", "result"):
+        for field in ("status", "code", "subject", "encounter", "effectiveDateTime", "issued", "performer"):
             if not resource.get(field):
                 errors.append("DIAGNOSTICREPORT_" + field.upper() + "_REQUIRED")
+        if profile == KPS_DIAGNOSTIC_REPORT_PROFILE:
+            if not resource.get("imagingStudy") and not resource.get("result"):
+                errors.append("DIAGNOSTICREPORT_IMAGING_OR_RESULT_REQUIRED")
+        else:
+            for field in ("category", "result"):
+                if not resource.get(field):
+                    errors.append("DIAGNOSTICREPORT_" + field.upper() + "_REQUIRED")
     if rt == "Communication":
         for field in ("identifier", "subject", "recipient", "sender", "payload"):
             if not resource.get(field):
