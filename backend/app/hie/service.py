@@ -235,7 +235,7 @@ def build_patient_summary_bundle(
                     "clinicalStatus": {"coding": [{"code": "active"}]},
                     "code": {
                         "coding": ([canonical_coding(db, source_system="AFYASYNC:DIAGNOSIS", source_code=diagnosis.diagnosis_code, display=diagnosis.diagnosis_name)]
-                                   if canonical_coding(db, source_system="AFYASYNC:DIAGNOSIS", source_code=diagnosis.code, display=diagnosis.description)
+                                   if canonical_coding(db, source_system="AFYASYNC:DIAGNOSIS", source_code=diagnosis.diagnosis_code, display=diagnosis.diagnosis_name)
                                    else []),
                         "text": diagnosis.diagnosis_name or diagnosis.diagnosis_code,
                     },
