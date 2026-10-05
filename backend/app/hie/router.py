@@ -4,6 +4,8 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -11,6 +13,7 @@ from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
 from app.hie.delivery_service import deliver_job, list_jobs, queue_bundle, queue_patient_summary_delivery
 from app.hie.consent_service import create_consent, list_consents, revoke_consent
+from app.hie.models import HieInboundDocument
 from app.hie.service import (
     build_patient_summary_bundle,
     build_referral_package,
@@ -314,10 +317,48 @@ def referral_package(body: ReferralBody, db: Session = Depends(get_db), facility
 @router.post("/inbound")
 def inbound_document(body: InboundBody, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     try:
-        result = validate_inbound_bundle(db, facility_id=facility_id, payload=body.bundle, source_code=body.source_code, source_node_id=body.source_node_id, actor_user_id=user.id)
-        if result["validation_status"] == "ACCEPTED": result["mpi"] = resolve_inbound_patient(db, inbound_id=UUID(result["id"]), facility_id=facility_id, actor_user_id=user.id)
-        db.commit(); return result
-    except ValueError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+        result = validate_inbound_bundle(
+            db,
+            facility_id=facility_id,
+            payload=body.bundle,
+            source_code=body.source_code,
+            source_node_id=body.source_node_id,
+            actor_user_id=user.id,
+        )
+        if result["validation_status"] == "ACCEPTED" and not result.get("idempotent_replay"):
+            result["mpi"] = resolve_inbound_patient(
+                db,
+                inbound_id=UUID(result["id"]),
+                facility_id=facility_id,
+                actor_user_id=user.id,
+            )
+        db.commit()
+        return result
+    except IntegrityError:
+        db.rollback()
+        bundle_id = str(body.bundle.get("id") or "").strip()[:80] or None
+        if body.source_node_id is not None and bundle_id is not None:
+            existing = db.scalar(
+                select(HieInboundDocument).where(
+                    HieInboundDocument.source_node_id == body.source_node_id,
+                    HieInboundDocument.bundle_id == bundle_id,
+                )
+            )
+            if existing is not None:
+                return {
+                    "id": str(existing.id),
+                    "validation_status": existing.validation_status,
+                    "errors": existing.validation_errors or [],
+                    "document_type": existing.document_type,
+                    "resource_count": existing.resource_count,
+                    "patient_id": str(existing.patient_id) if existing.patient_id else None,
+                    "idempotent_replay": True,
+                    "match_status": existing.match_status,
+                }
+        raise HTTPException(status_code=409, detail="HIE_INBOUND_IDEMPOTENCY_CONFLICT")
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @router.get("/inbound")
 def inbound_documents(limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.read"))):
