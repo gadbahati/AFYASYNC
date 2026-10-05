@@ -58,6 +58,7 @@ def create_order(
     code: str | None = None,
     priority: str = "ROUTINE",
     notes: str | None = None,
+    code_system: str | None = None,
 ) -> ClinicalOrder:
     enc = _open_encounter(db, encounter_id, facility_id)
     order_type = (order_type or "").strip().upper()
@@ -76,6 +77,7 @@ def create_order(
         patient_id=enc.patient_id,
         order_type=order_type,
         code=(code or None),
+        code_system=(code_system or None),
         description=description,
         priority=priority,
         status="ORDERED",
@@ -144,6 +146,7 @@ def order_to_dict(row: ClinicalOrder) -> dict:
         "patient_id": str(row.patient_id),
         "order_type": row.order_type,
         "code": row.code,
+        "code_system": row.code_system,
         "description": row.description,
         "priority": row.priority,
         "status": row.status,
