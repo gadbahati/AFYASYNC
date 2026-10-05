@@ -24,6 +24,7 @@ class ClinicalOrder(Base):
     )
     order_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     code: Mapped[str | None] = mapped_column(String(80))
+    code_system: Mapped[str | None] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text, nullable=False)
     priority: Mapped[str] = mapped_column(String(20), nullable=False, default="ROUTINE")
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="ORDERED", index=True)
