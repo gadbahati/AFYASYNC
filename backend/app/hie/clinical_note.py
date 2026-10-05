@@ -6,6 +6,7 @@ from base64 import b64encode
 from html import escape
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
@@ -15,6 +16,7 @@ from app.hie.conformance import assert_valid_bundle
 from app.hie.provider_identity import provider_identity_resources
 from app.hie.service import _facility_organization_resource, _patient_resource
 from app.patients.models import Person
+from app.rbac.models import Staff, User
 
 
 KENYA_CORE_PROVENANCE_PROFILE = "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-provenance|1.0.0"
@@ -49,9 +51,18 @@ def build_clinical_note_bundle(
     patient["meta"] = {"profile": ["https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-patient|1.0.0"]}
     facility = _facility_organization_resource(db, facility_id)
 
+    author_staff = None
+    if note.author_id:
+        author_user = db.get(User, note.author_id)
+        if author_user and author_user.person_id:
+            author_staff = db.scalar(select(Staff).where(
+                Staff.person_id == author_user.person_id,
+                Staff.facility_id == facility_id,
+                Staff.status == "ACTIVE",
+            ))
     providers = (
-        provider_identity_resources(db, facility_id=facility_id, staff_id=note.author_id)
-        if note.author_id
+        provider_identity_resources(db, facility_id=facility_id, staff_id=author_staff.id)
+        if author_staff
         else []
     )
     role = next((r for r in providers if r.get("resourceType") == "PractitionerRole"), None)
@@ -60,7 +71,7 @@ def build_clinical_note_bundle(
     created = note.created_at.astimezone(timezone.utc).isoformat()
     document_id = f"clinical-note-{note.id}"
     note_type = escape(note.note_type)
-    body = escape(note.body)
+    body = escape(note.content or "")
 
     document = {
         "resourceType": "DocumentReference",
@@ -77,7 +88,7 @@ def build_clinical_note_bundle(
             "attachment": {
                 "contentType": "text/html",
                 "title": note.note_type,
-                "data": b64encode(note.body.encode("utf-8")).decode("ascii"),
+                "data": b64encode((note.content or "").encode("utf-8")).decode("ascii"),
             },
             "format": {"display": "Clinical note"},
         }],
