@@ -24,6 +24,7 @@ from app.hie.service import (
     list_imported_patient_resources,
 )
 from app.rbac.models import User
+from app.hie.provider_identity import provider_identity_resources
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -52,7 +53,8 @@ class NodeUpsert(BaseModel):
     trust_level: str = Field(default="STANDARD", max_length=20)
 
 
-@router.get("/metadata")
+@router.get("/providers/{staff_id}/identity")
+def provider_identity(\n    staff_id: UUID,\n    db: Session = Depends(get_db),\n    facility_id: UUID = Depends(get_facility_context),\n    user: User = Depends(require_permission("staff.read")),\n):\n    _ = user\n    try:\n        resources = provider_identity_resources(db, facility_id=facility_id, staff_id=staff_id)\n        return {"staff_id": str(staff_id), "resources": resources}\n    except ValueError as exc:\n        code = str(exc)\n        raise HTTPException(status_code=404 if "NOT_FOUND" in code else 400, detail=code) from exc\n\n\n@router.get("/metadata")
 def hie_metadata():
     return capability_statement()
 
