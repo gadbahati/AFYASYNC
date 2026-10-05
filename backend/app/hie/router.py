@@ -31,7 +31,7 @@ from app.hie.referral_communication import ReferralCommunicationError, build_ref
 from app.hie.lab_result import LabResultFhirError, build_verified_lab_result_bundle
 from app.hie.procedure import ProcedureFhirError, build_procedure_bundle
 from app.hie.imaging import ImagingFhirError, build_imaging_bundle
-from app.hie.care_plan import CarePlanFhirError, build_care_plan_bundle
+from app.hie.care_plan import CarePlanFhirError, build_care_plan_bundle\nfrom app.hie.care_team import CareTeamFhirError, build_care_team_bundle
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
