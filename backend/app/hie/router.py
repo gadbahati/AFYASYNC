@@ -45,6 +45,7 @@ from app.hie.consultation import ConsultationFhirError, build_consultation_bundl
 from app.hie.clinical_care_plan import ClinicalCarePlanFhirError, build_clinical_care_plan_bundle
 from app.hie.medication_dispense import MedicationDispenseFhirError, build_medication_dispense_bundle
 from app.hie.mpi import MpiMatchError, build_patient_match_bundle
+from app.hie.consent_fhir import ConsentFhirError, build_consent_bundle
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -332,7 +333,7 @@ def revoke_hie_consent(consent_id: UUID, db: Session = Depends(get_db), facility
         c=revoke_consent(db,consent_id=consent_id,facility_id=facility_id,actor_user_id=user.id); db.commit(); return {"id":str(c.id),"status":c.status,"revoked_at":c.revoked_at.isoformat() if c.revoked_at else None}
     except ValueError as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
 
-@router.get("/consents")
+@router.get("/consents/{consent_id}/fhir")\ndef consent_fhir(consent_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.read"))):\n    try:\n        return build_consent_bundle(db, consent_id=consent_id, facility_id=facility_id, actor_user_id=user.id)\n    except ConsentFhirError as exc:\n        code = str(exc)\n        status_code = 404 if code in {"CONSENT_NOT_FOUND", "PATIENT_NOT_FOUND", "FACILITY_NOT_FOUND"} else 409\n        raise HTTPException(status_code=status_code, detail=code) from exc\n\n@router.get("/consents")
 def get_hie_consents(patient_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("reports.read"))):
     _=user
     return [{"id":str(c.id),"patient_id":str(c.patient_id),"recipient_node_id":str(c.recipient_node_id) if c.recipient_node_id else None,"status":c.status,"decision":c.decision,"purpose":c.purpose,"scope":c.scope,"period_start":c.period_start.isoformat() if c.period_start else None,"period_end":c.period_end.isoformat() if c.period_end else None,"fhir_resource":c.fhir_resource} for c in list_consents(db,patient_id=patient_id,facility_id=facility_id)]
