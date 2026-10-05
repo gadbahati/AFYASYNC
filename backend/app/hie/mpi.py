@@ -74,6 +74,8 @@ def build_patient_match_bundle(
 
     identifiers = _identifier_values(patient)
     first, last, dob = _demographics(patient)
+    if not any((identifiers.get("afya_id"), identifiers.get("national_id"), identifiers.get("phone"), first and last and dob)):
+        raise MpiMatchError("INSUFFICIENT_MATCH_DATA")
     candidates: dict[UUID, tuple[Person, AfyaIdentity | None, list[str], float]] = {}
 
     if identifiers.get("afya_id"):
