@@ -113,6 +113,11 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
         for field in ("status", "type", "subject", "date", "author", "title", "custodian"):
             if not resource.get(field):
                 errors.append(f"COMPOSITION_{field.upper()}_REQUIRED")
+        if resource.get("status") != "final":
+            errors.append("COMPOSITION_STATUS_MUST_BE_FINAL")
+        subject = resource.get("subject") or {}
+        if subject.get("reference") and not str(subject["reference"]).startswith("Patient/"):
+            errors.append("COMPOSITION_SUBJECT_MUST_BE_PATIENT")
         if not resource.get("section"):
             errors.append("COMPOSITION_SECTION_REQUIRED")
         elif not any(isinstance(s, dict) and s.get("entry") for s in resource.get("section", [])):
