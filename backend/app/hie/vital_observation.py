@@ -26,9 +26,9 @@ class VitalObservationFhirError(ValueError):
 _FIELDS = (
     ("temperature_c", "temperature"),
     ("pulse", "pulse"),
-    ("bp_systolic", "blood-pressure-systolic"),
-    ("bp_diastolic", "blood-pressure-diastolic"),
-    ("spo2", "oxygen-saturation"),
+    ("systolic_bp", "blood-pressure-systolic"),
+    ("diastolic_bp", "blood-pressure-diastolic"),
+    ("oxygen_saturation", "oxygen-saturation"),
     ("respiratory_rate", "respiratory-rate"),
     ("weight_kg", "body-weight"),
 )
