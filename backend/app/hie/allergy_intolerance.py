@@ -11,7 +11,7 @@ from app.audit.service import record_audit
 from app.clinical.models import Allergy
 from app.facilities.models import Facility
 from app.hie.conformance import assert_valid_bundle
-from app.hie.service import _facility_organization_resource, _patient_resource
+from app.hie.service import _facility_organization_resource, _patient_resource, _require_enrollment
 from app.hie.terminology_service import canonical_coding
 from app.patients.models import Person
 
@@ -33,6 +33,10 @@ def build_allergy_intolerance_bundle(
         raise AllergyIntoleranceFhirError("FACILITY_NOT_FOUND")
     if person is None:
         raise AllergyIntoleranceFhirError("PATIENT_NOT_FOUND")
+    try:
+        person = _require_enrollment(db, patient_id, facility_id)
+    except ValueError as exc:
+        raise AllergyIntoleranceFhirError(str(exc)) from exc
 
     allergies = list(
         db.scalars(
@@ -64,8 +68,9 @@ def build_allergy_intolerance_bundle(
         reaction = {}
         if allergy.reaction:
             reaction["manifestation"] = [{"text": allergy.reaction}]
-        if allergy.severity:
-            reaction["severity"] = allergy.severity.lower()
+        severity = {"MILD": "mild", "MODERATE": "moderate", "SEVERE": "severe"}.get((allergy.severity or "").upper())
+        if severity:
+            reaction["severity"] = severity
 
         resource = {
             "resourceType": "AllergyIntolerance",
