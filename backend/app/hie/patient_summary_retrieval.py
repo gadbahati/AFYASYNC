@@ -25,8 +25,6 @@ def retrieve_patient_summary_from_hie(db: Session, *, patient_id: UUID, facility
     identity = db.scalar(select(AfyaIdentity).where(AfyaIdentity.person_id == patient_id, AfyaIdentity.status == "ACTIVE"))
     if enrolled is None or person is None:
         raise PatientSummaryRetrievalError("PATIENT_NOT_ENROLLED_AT_FACILITY")
-    if enrolled is None:
-        raise PatientSummaryRetrievalError("PATIENT_NOT_ENROLLED_AT_FACILITY")
     node = db.get(HieNode, source_node_id)
     if node is None or node.status != "ACTIVE":
         raise PatientSummaryRetrievalError("HIE_SOURCE_NODE_NOT_FOUND")
