@@ -123,7 +123,7 @@ def build_discharge_summary_bundle(
         "resourceType": "Composition",
         "id": composition_id,
         "status": "final",
-        "type": {"coding": [{"system": "http://loinc.org", "code": "18842-5", "display": "Discharge summary"}]},
+        "type": {"text": "Discharge summary"},
         "subject": {"reference": f"Patient/{person.id}"},
         "encounter": {"reference": f"Encounter/{encounter.id}"},
         "date": discharged_at,
