@@ -9,6 +9,7 @@ from app.audit.service import record_audit
 from app.facilities.models import Facility
 from app.hie.conformance import assert_valid_bundle
 from app.hie.consent_models import HieConsent
+from app.hie.models import HieNode
 from app.hie.service import _facility_organization_resource, _patient_resource
 from app.patients.models import Person
 
