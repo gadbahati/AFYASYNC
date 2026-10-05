@@ -14,7 +14,7 @@ class HieConsent(Base):
     recipient_node_id: Mapped[UUID | None] = mapped_column(ForeignKey("hie_nodes.id", ondelete="SET NULL"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="ACTIVE", index=True)
     decision: Mapped[str] = mapped_column(String(20), nullable=False, default="PERMIT")
-    purpose: Mapped[str] = mapped_column(String(100), nullable=False, default="HOPERAT")
+    purpose: Mapped[str] = mapped_column(String(100), nullable=False, default="OPERATIONS")
     scope: Mapped[str] = mapped_column(String(50), nullable=False, default="HIE_SHARE")
     period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
