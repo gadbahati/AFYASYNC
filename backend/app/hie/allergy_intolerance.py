@@ -57,12 +57,12 @@ def build_allergy_intolerance_bundle(
         coding = canonical_coding(
             db,
             source_system="AFYASYNC:ALLERGY",
-            source_code=allergy.substance,
-            display=allergy.substance,
+            source_code=allergy.allergen,
+            display=allergy.allergen,
         )
         if coding is None:
             raise AllergyIntoleranceFhirError(
-                f"ALLERGY_CODE_NOT_MAPPED:{allergy.substance}"
+                f"ALLERGY_CODE_NOT_MAPPED:{allergy.allergen}"
             )
 
         reaction = {}
@@ -83,9 +83,9 @@ def build_allergy_intolerance_bundle(
                 "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification",
                 "code": "confirmed",
             }]},
-            "code": {"coding": [coding], "text": allergy.substance},
+            "code": {"coding": [coding], "text": allergy.allergen},
             "patient": {"reference": f"Patient/{person.id}"},
-            "recordedDate": allergy.recorded_at.isoformat() if allergy.recorded_at else datetime.now(timezone.utc).isoformat(),
+            "recordedDate": allergy.created_at.isoformat() if allergy.created_at else datetime.now(timezone.utc).isoformat(),
         }
         if reaction:
             resource["reaction"] = [reaction]
