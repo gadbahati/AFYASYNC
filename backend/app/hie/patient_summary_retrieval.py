@@ -11,7 +11,7 @@ from app.hie.auth import clear_hie_token_cache, get_hie_access_token
 from app.hie.conformance import assert_valid_bundle
 from app.hie.consent_models import HieConsent
 from app.hie.models import HieNode
-from app.patients.models import PatientFacility
+from app.patients.models import AfyaIdentity, PatientFacility, Person
 
 class PatientSummaryRetrievalError(ValueError):
     pass
@@ -21,6 +21,10 @@ def retrieve_patient_summary_from_hie(db: Session, *, patient_id: UUID, facility
     if purpose not in {"TREATMENT", "PAYMENT", "PUBLICHEALTH", "OPERATIONS"}:
         raise PatientSummaryRetrievalError("INVALID_PURPOSE_OF_USE")
     enrolled = db.scalar(select(PatientFacility).where(PatientFacility.patient_id == patient_id, PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE"))
+    person = db.get(Person, patient_id)
+    identity = db.scalar(select(AfyaIdentity).where(AfyaIdentity.person_id == patient_id, AfyaIdentity.status == "ACTIVE"))
+    if enrolled is None or person is None:
+        raise PatientSummaryRetrievalError("PATIENT_NOT_ENROLLED_AT_FACILITY")
     if enrolled is None:
         raise PatientSummaryRetrievalError("PATIENT_NOT_ENROLLED_AT_FACILITY")
     node = db.get(HieNode, source_node_id)
@@ -82,9 +86,19 @@ def retrieve_patient_summary_from_hie(db: Session, *, patient_id: UUID, facility
         raise PatientSummaryRetrievalError("HIE_SUMMARY_INVALID_JSON") from exc
     if not isinstance(payload, dict) or payload.get("resourceType") != "Bundle":
         raise PatientSummaryRetrievalError("HIE_SUMMARY_BUNDLE_REQUIRED")
+    if payload.get("type") != "document":
+        raise PatientSummaryRetrievalError("HIE_SUMMARY_DOCUMENT_BUNDLE_REQUIRED")
     entries = payload.get("entry") or []
+    if not entries or not isinstance(entries[0], dict) or (entries[0].get("resource") or {}).get("resourceType") != "Composition":
+        raise PatientSummaryRetrievalError("HIE_SUMMARY_COMPOSITION_FIRST_REQUIRED")
     patients = [e.get("resource") for e in entries if isinstance(e, dict) and isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") == "Patient"]
-    if patients and all(str(p.get("id") or "") != str(patient_id) for p in patients):
+    if not patients:
+        raise PatientSummaryRetrievalError("HIE_SUMMARY_PATIENT_REQUIRED")
+    remote_ids = {(str(i.get("system") or ""), str(i.get("value") or "")) for p in patients for i in (p.get("identifier") or []) if isinstance(i, dict) and i.get("value")}
+    expected = set()
+    if identity and identity.afya_id:
+        expected.add(("https://afyasync.health.ke/identifier/afya-id", str(identity.afya_id)))
+    if all(str(p.get("id") or "") != str(patient_id) for p in patients) and not (remote_ids & expected):
         raise PatientSummaryRetrievalError("HIE_SUMMARY_PATIENT_IDENTITY_MISMATCH")
     try:
         assert_valid_bundle(payload, require_provenance=False)
