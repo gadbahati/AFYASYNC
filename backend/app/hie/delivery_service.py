@@ -67,12 +67,17 @@ def deliver_job(db: Session, *, job_id: UUID, facility_id: UUID, actor_user_id: 
     if job is None or job.facility_id != facility_id: raise ValueError("HIE_DELIVERY_JOB_NOT_FOUND")
     if job.status == "DELIVERED": return _result(job)
     if job.status == "DEAD": raise ValueError("HIE_DELIVERY_JOB_DEAD")
+    now = datetime.now(timezone.utc)
+    if job.status == "RETRY" and job.next_attempt_at and job.next_attempt_at > now:
+        raise ValueError("HIE_DELIVERY_RETRY_NOT_DUE")
     # Re-check authorization at send time; queued work must not bypass later revocation or expiry.
     purpose = "TREATMENT"
     for tag in (job.payload.get("meta") or {}).get("tag") or []:
         if isinstance(tag, dict) and "purpose-of-use" in str(tag.get("system") or "").lower():
             purpose = str(tag.get("code") or "").strip().upper() or purpose
             break
+    enrollment = db.scalar(select(PatientFacility).where(PatientFacility.patient_id == job.patient_id, PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE"))
+    if enrollment is None: raise ValueError("PATIENT_NOT_ENROLLED_AT_FACILITY")
     now = datetime.now(timezone.utc)
     consent = db.scalar(select(HieConsent).where(HieConsent.patient_id == job.patient_id, HieConsent.facility_id == facility_id, HieConsent.status == "ACTIVE", HieConsent.decision == "PERMIT", HieConsent.scope == "HIE_SHARE", HieConsent.purpose == purpose, (HieConsent.recipient_node_id == job.destination_node_id) | (HieConsent.recipient_node_id.is_(None)),).order_by(HieConsent.created_at.desc()))
     if consent is None: raise ValueError("HIE_PATIENT_CONSENT_REQUIRED")
@@ -80,6 +85,8 @@ def deliver_job(db: Session, *, job_id: UUID, facility_id: UUID, actor_user_id: 
     if consent.period_end and consent.period_end < now: raise ValueError("HIE_CONSENT_EXPIRED")
     node = db.get(HieNode, job.destination_node_id)
     if node is None or node.status != "ACTIVE": raise ValueError("HIE_DESTINATION_NOT_FOUND")
+    if node.facility_id == facility_id: raise ValueError("HIE_DESTINATION_SELF")
+    if node.trust_level not in {"HIGH", "NATIONAL"}: raise ValueError("HIE_DESTINATION_NOT_TRUSTED")
     if not node.endpoint_url: raise ValueError("HIE_DESTINATION_ENDPOINT_NOT_CONFIGURED")
     job.attempts += 1
     token = get_hie_access_token()
@@ -103,7 +110,19 @@ def deliver_job(db: Session, *, job_id: UUID, facility_id: UUID, actor_user_id: 
                     response = client.post(node.endpoint_url, json=job.payload, headers=headers)
         job.last_http_status = response.status_code
         if 200 <= response.status_code < 300:
-            job.status = "DELIVERED"; job.delivered_at = datetime.now(timezone.utc); job.last_error = None
+            try:
+                response_json = response.json()
+            except ValueError:
+                response_json = None
+            content_type = response.headers.get("content-type", "").lower()
+            if response_json is None or not isinstance(response_json, dict):
+                job.status = "FAILED"; job.last_error = "HIE_INVALID_SUCCESS_RESPONSE"
+            elif "html" in content_type:
+                job.status = "FAILED"; job.last_error = "HIE_INVALID_SUCCESS_CONTENT_TYPE"
+            elif response_json.get("resourceType") not in {"Bundle", "OperationOutcome"}:
+                job.status = "FAILED"; job.last_error = "HIE_UNEXPECTED_SUCCESS_RESOURCE"
+            else:
+                job.status = "DELIVERED"; job.delivered_at = datetime.now(timezone.utc); job.last_error = None
             record_audit(db, action="HIE_OUTBOUND_DELIVERED", resource_type="HIE_DELIVERY_JOB", resource_id=str(job.id), result="SUCCESS", user_id=actor_user_id, facility_id=facility_id, patient_id=job.patient_id, metadata={"http_status": response.status_code, "attempts": job.attempts}, commit=False)
         elif response.status_code in {408, 409, 425, 429} or response.status_code >= 500:
             if job.attempts >= job.max_attempts: job.status = "DEAD"
