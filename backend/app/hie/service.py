@@ -572,7 +572,6 @@ def validate_inbound_bundle(
             if node.facility_id is not None and node.facility_id == facility_id:
                 errors.append("SOURCE_NODE_SELF")
 
-    status = "REJECTED" if errors else "ACCEPTED"
     doc_type = "UNKNOWN"
     tags = (payload.get("meta") or {}).get("tag") or []
     for t in tags:
@@ -600,6 +599,9 @@ def validate_inbound_bundle(
                 errors.append("KPS_COMPOSITION_FINAL_REQUIRED")
             if not first_resource.get("section"):
                 errors.append("KPS_COMPOSITION_SECTIONS_REQUIRED")
+
+    # KPS-specific checks above must participate in the final acceptance decision.
+    status = "REJECTED" if errors else "ACCEPTED"
 
     row = HieInboundDocument(
         facility_id=facility_id,
@@ -672,6 +674,8 @@ def resolve_inbound_patient(db: Session, *, inbound_id: UUID, facility_id: UUID,
     patient_resource = next((e.get("resource") for e in entries if isinstance(e, dict) and isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") == "Patient"), None)
     if not patient_resource:
         raise ValueError("MISSING_PATIENT_RESOURCE")
+    # Never turn an identity match into a local match without an active facility enrollment.
+    # Enrollment is re-checked at import time as well, so queued/previously matched records cannot bypass it.
     ids = _inbound_patient_identifiers(patient_resource)
     candidates = {}
     if ids.get("afya_id"):
@@ -710,6 +714,12 @@ def resolve_inbound_patient(db: Session, *, inbound_id: UUID, facility_id: UUID,
             candidates.setdefault(person.id, (person, identity, reasons))
     if len(candidates) == 1:
         person, identity, reasons = next(iter(candidates.values()))
+        enrolled = db.scalar(select(PatientFacility.id).where(PatientFacility.patient_id == person.id, PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE"))
+        if enrolled is None:
+            row.match_status = "UNMATCHED"
+            row.match_reasons = ["PATIENT_NOT_ENROLLED_AT_FACILITY"]
+            record_audit(db, action="HIE_INBOUND_MPI_UNRESOLVED", resource_type="HIE_INBOUND", resource_id=str(row.id), result="UNMATCHED", user_id=actor_user_id, facility_id=facility_id, metadata={"reason": row.match_reasons}, commit=False)
+            return {"status": "UNMATCHED", "patient_id": None, "candidate_count": 1, "match_reasons": row.match_reasons}
         row.patient_id = person.id
         row.match_status = "MATCHED"
         row.match_reasons = reasons
