@@ -28,6 +28,7 @@ from app.hie.provider_identity import provider_identity_resources
 from app.hie.service_request import ServiceRequestError, build_service_request_bundle
 from app.hie.referral_task import ReferralTaskError, build_referral_fhir_bundle
 from app.hie.referral_communication import ReferralCommunicationError, build_referral_communication_bundle
+from app.hie.referral_communication_request import ReferralCommunicationRequestError, build_referral_communication_request_bundle
 from app.hie.lab_result import LabResultFhirError, build_verified_lab_result_bundle
 from app.hie.procedure import ProcedureFhirError, build_procedure_bundle
 from app.hie.imaging import ImagingFhirError, build_imaging_bundle
@@ -57,6 +58,11 @@ class ReferralBody(BaseModel):
     destination: str | None = Field(default=None, max_length=200)
     destination_node_id: UUID | None = None
     purpose_of_use: str = Field(default="TREATMENT", max_length=40)
+
+class CommunicationBody(BaseModel):
+    message: str = Field(min_length=1, max_length=10000)
+    medium: str = Field(default="in-person", min_length=1, max_length=80)
+
 
 class InboundBody(BaseModel):
     bundle: dict
@@ -101,6 +107,12 @@ def referral_communication(referral_id: UUID, message: str, medium: str = "in-pe
     except ReferralCommunicationError as exc:
         code = str(exc); status_code = 404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409; raise HTTPException(status_code=status_code, detail=code) from exc
 
+@router.post("/referrals/{referral_id}/communication-request")
+def referral_communication_request(referral_id: UUID, body: CommunicationBody, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
+    try:
+        return build_referral_communication_request_bundle(db, referral_id=referral_id, facility_id=facility_id, actor_user_id=user.id, message=body.message, medium=body.medium)
+    except ReferralCommunicationRequestError as exc:
+        code = str(exc); status_code = 404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409; raise HTTPException(status_code=status_code, detail=code) from exc
 @router.get("/lab-results/{result_id}/fhir")
 def lab_result_fhir(result_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("clinical.record.read"))):
     _ = user
