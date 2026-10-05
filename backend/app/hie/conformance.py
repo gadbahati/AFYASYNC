@@ -27,6 +27,8 @@ KENYA_CORE_PROFILES = {
     "ServiceRequest": KENYA_CORE_BASE + "kenya-core-servicerequest|1.0.0",
     "Task": KENYA_CORE_BASE + "kenya-core-task|1.0.0",
     "Communication": KENYA_CORE_BASE + "kenya-core-communication|1.0.0",
+    "CommunicationRequest": KENYA_CORE_BASE + "kenya-core-communicationrequest|1.0.0",
+    "Consent": KENYA_CORE_BASE + "kenya-core-consent|1.0.0",
     
     "DiagnosticReport": KENYA_CORE_BASE + "kenya-core-diagnosticreport|1.0.0",
 
@@ -101,6 +103,17 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
         for field in ("identifier", "subject", "recipient", "sender", "payload"):
             if not resource.get(field):
                 errors.append("COMMUNICATION_" + field.upper() + "_REQUIRED")
+    if rt == "CommunicationRequest":
+        for field in ("identifier", "status", "category", "priority", "subject", "payload", "authoredOn", "requester"):
+            if not resource.get(field):
+                errors.append("COMMUNICATIONREQUEST_" + field.upper() + "_REQUIRED")
+    if rt == "Consent":
+        for field in ("status", "scope", "category", "patient", "dateTime", "provision"):
+            if not resource.get(field):
+                errors.append("CONSENT_" + field.upper() + "_REQUIRED")
+        provision = resource.get("provision")
+        if isinstance(provision, dict) and not provision.get("type"):
+            errors.append("CONSENT_PROVISION_TYPE_REQUIRED")
     if rt == "Task":
         for field in ("status", "intent", "priority", "code", "description", "focus", "for", "authoredOn"):
             if not resource.get(field):
