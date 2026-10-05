@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -59,6 +59,13 @@ class HieInboundDocument(Base):
     """Accepted inbound FHIR document from another node."""
 
     __tablename__ = "hie_inbound_documents"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_node_id",
+            "bundle_id",
+            name="uq_hie_inbound_source_bundle",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     facility_id: Mapped[UUID] = mapped_column(
