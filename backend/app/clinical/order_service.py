@@ -151,6 +151,8 @@ def order_to_dict(row: ClinicalOrder) -> dict:
         "priority": row.priority,
         "status": row.status,
         "notes": row.notes,
+        "modality": row.modality,
+        "impression": row.impression,
         "ordered_at": row.ordered_at.isoformat() if row.ordered_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         "developer": "BAHATI GAD WANGWE",
