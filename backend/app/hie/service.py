@@ -606,12 +606,47 @@ def validate_inbound_bundle(
     # KPS-specific checks above must participate in the final acceptance decision.
     status = "REJECTED" if errors else "ACCEPTED"
 
+    # FHIR Bundle ids are the durable inbound message identity. Replaying the
+    # same accepted Bundle from the same trusted source must be idempotent and
+    # must not create a second clinical import opportunity.
+    bundle_id = str(payload.get("id") or "").strip()[:80] or None
+    if status == "ACCEPTED" and source_node_id is not None and bundle_id is not None:
+        existing = db.scalar(
+            select(HieInboundDocument).where(
+                HieInboundDocument.source_node_id == source_node_id,
+                HieInboundDocument.bundle_id == bundle_id,
+            )
+        )
+        if existing is not None:
+            record_audit(
+                db,
+                action="HIE_INBOUND_DOCUMENT_REPLAY",
+                resource_type="HIE_INBOUND",
+                resource_id=str(existing.id),
+                result="IDEMPOTENT_REPLAY",
+                user_id=actor_user_id,
+                facility_id=facility_id,
+                patient_id=existing.patient_id,
+                metadata={"bundle_id": bundle_id, "source_node_id": str(source_node_id)},
+                commit=False,
+            )
+            return {
+                "id": str(existing.id),
+                "validation_status": existing.validation_status,
+                "errors": existing.validation_errors or [],
+                "document_type": existing.document_type,
+                "resource_count": existing.resource_count,
+                "patient_id": str(existing.patient_id) if existing.patient_id else None,
+                "idempotent_replay": True,
+                "match_status": existing.match_status,
+            }
+
     row = HieInboundDocument(
         facility_id=facility_id,
         patient_id=patient_id,
         source_node_id=source_node_id,
         source_code=(source_code or "")[:80] or None,
-        bundle_id=str(payload.get("id") or "")[:80] or None,
+        bundle_id=bundle_id,
         document_type=doc_type,
         resource_count=len(entries) if isinstance(entries, list) else 0,
         validation_status=status,
