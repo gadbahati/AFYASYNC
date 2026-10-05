@@ -36,6 +36,7 @@ from app.hie.care_team import CareTeamFhirError, build_care_team_bundle
 from app.hie.medication_request import MedicationRequestFhirError, build_medication_request_bundle
 from app.hie.allergy_intolerance import AllergyIntoleranceFhirError, build_allergy_intolerance_bundle
 from app.hie.medication_administration import MedicationAdministrationFhirError, build_medication_administration_bundle
+from app.hie.vital_observation import VitalObservationFhirError, build_vital_observation_bundle
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -133,6 +134,15 @@ def prescription_medication_request_fhir(prescription_id: UUID, db: Session = De
     except MedicationRequestFhirError as exc:
         code = str(exc)
         status_code = 404 if code in {"NOT_FOUND", "ENCOUNTER_NOT_FOUND", "PATIENT_NOT_FOUND", "FACILITY_NOT_FOUND", "PRESCRIBER_NOT_FOUND"} else 403 if code == "ACCESS_DENIED" else 409
+        raise HTTPException(status_code=status_code, detail=code) from exc
+
+@router.get("/vitals/{vital_id}/fhir")
+def vital_fhir(vital_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("clinical.record.read"))):
+    try:
+        return build_vital_observation_bundle(db, vital_id=vital_id, facility_id=facility_id, actor_user_id=user.id)
+    except VitalObservationFhirError as exc:
+        code = str(exc)
+        status_code = 404 if code in {"VITAL_NOT_FOUND", "ENCOUNTER_NOT_FOUND", "PATIENT_NOT_FOUND"} else 403 if code == "ACCESS_DENIED" else 409
         raise HTTPException(status_code=status_code, detail=code) from exc
 
 @router.get("/medication-actions/{action_id}/fhir")
