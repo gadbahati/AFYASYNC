@@ -724,7 +724,7 @@ def capability_statement() -> dict:
             {
                 "mode": "server",
                 "resource": [
-                    {"type": "Patient", "interaction": [{"code": "read"}]},
+                    {"type": "Patient", "interaction": [{"code": "read"}, {"code": "search-type"}], "operation": [{"name": "$match", "definition": "Patient/$match"}]},
                     {"type": "AllergyIntolerance", "interaction": [{"code": "search-type"}]},
                     {"type": "Encounter", "interaction": [{"code": "search-type"}]},
                     {"type": "MedicationRequest", "interaction": [{"code": "search-type"}]},
