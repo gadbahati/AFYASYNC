@@ -215,7 +215,7 @@ def build_patient_summary_bundle(
             med = db.get(Medication, it.medication_id)
             med_texts.append(
                 {
-                    "medicationCodeableConcept": {"text": med.name if med else str(it.medication_id)},
+                    "medicationCodeableConcept": ({"coding": [canonical_coding(db, source_system="AFYASYNC:MEDICATION", source_code=str(it.medication_id), display=med.name if med else None)]} if canonical_coding(db, source_system="AFYASYNC:MEDICATION", source_code=str(it.medication_id), display=med.name if med else None) else {"text": med.name if med else str(it.medication_id)}),
                     "dosageInstruction": [{"text": f"{it.dose} {it.frequency} {it.duration}"}],
                 }
             )
