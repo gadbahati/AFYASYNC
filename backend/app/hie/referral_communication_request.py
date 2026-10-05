@@ -43,7 +43,7 @@ def build_referral_communication_request_bundle(db: Session, *, referral_id: UUI
     patient["meta"] = {"profile": ["https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-patient|1.0.0"]}
     providers = actor_provider_identity_resources(db, user_id=actor_user_id, facility_id=referral.source_facility_id)
     role = next((r for r in providers if r.get("resourceType") == "PractitionerRole"), None)
-    requester = {"reference": f"PractitionerRole/{role["id"]}"} if role else {"reference": f"Organization/{referral.source_facility_id}"}
+    requester = {"reference": f"PractitionerRole/{role['id']}"} if role else {"reference": f"Organization/{referral.source_facility_id}"}
     authored = (referral.created_at or __import__("datetime").datetime.now(__import__("datetime").timezone.utc)).astimezone(timezone.utc).isoformat()
     request = {
         "resourceType": "CommunicationRequest",
@@ -68,12 +68,12 @@ def build_referral_communication_request_bundle(db: Session, *, referral_id: UUI
         "resourceType": "Provenance",
         "id": f"referral-communication-request-provenance-{referral.id}",
         "meta": {"profile": ["https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-provenance|1.0.0"]},
-        "target": [{"reference": f"CommunicationRequest/{request["id"]}"}],
+        "target": [{"reference": f"CommunicationRequest/{request['id']}"}],
         "recorded": authored,
         "agent": [{"type": {"text": "author"}, "who": requester}],
         "reason": [{"text": "Referral communication coordination"}],
     }
-    bundle = {"resourceType": "Bundle", "id": f"referral-communication-request-fhir-{referral.id}", "type": "collection", "entry": [{"fullUrl": f"urn:uuid:{r["resourceType"]}/{r["id"]}", "resource": r} for r in [patient, source_org, destination_org, *providers, request, provenance]]}
+    bundle = {"resourceType": "Bundle", "id": f"referral-communication-request-fhir-{referral.id}", "type": "collection", "entry": [{"fullUrl": f"urn:uuid:{r['resourceType']}/{r['id']}", "resource": r} for r in [patient, source_org, destination_org, *providers, request, provenance]]}
     try:
         assert_valid_bundle(bundle)
     except ValueError as exc:
