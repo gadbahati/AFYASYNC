@@ -5,9 +5,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.hie.consent_models import HieConsent
-from app.hie.models import HieNode\nfrom app.patients.models import PatientFacility
+from app.hie.models import HieNode
+from app.patients.models import PatientFacility
 
 def create_consent(db: Session, *, patient_id: UUID, facility_id: UUID, recipient_node_id: UUID|None, purpose: str, period_start: datetime|None, period_end: datetime|None, created_by: UUID, evidence: dict|None=None) -> HieConsent:
+    purpose = purpose.strip().upper()
+    if purpose not in {"TREATMENT", "PAYMENT", "PUBLICHEALTH", "OPERATIONS"}:
+        raise ValueError("HIE_CONSENT_INVALID_PURPOSE")
+    enrollment = db.scalar(select(PatientFacility).where(
+        PatientFacility.patient_id == patient_id,
+        PatientFacility.facility_id == facility_id,
+        PatientFacility.status == "ACTIVE",
+    ))
+    if enrollment is None:
+        raise ValueError("PATIENT_NOT_ENROLLED_AT_FACILITY")
     if recipient_node_id is not None:
         node=db.get(HieNode,recipient_node_id)
         if node is None or node.status!="ACTIVE": raise ValueError("HIE_RECIPIENT_NOT_FOUND")
