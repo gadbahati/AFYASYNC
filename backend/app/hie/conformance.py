@@ -9,13 +9,13 @@ from typing import Any
 
 KENYA_CORE_BASE = "https://fhir.dha.go.ke/core/StructureDefinition/"
 KENYA_CORE_PROFILES = {
-    "Patient": KENYA_CORE_BASE + "kenya-core-patient",
-    "Encounter": KENYA_CORE_BASE + "kenya-core-encounter",
-    "Observation": KENYA_CORE_BASE + "kenya-core-observation",
-    "Condition": KENYA_CORE_BASE + "kenya-core-condition",
-    "Procedure": KENYA_CORE_BASE + "kenya-core-procedure",
-    "Organization": KENYA_CORE_BASE + "KenyaCoreOrganization",
-    "Provenance": KENYA_CORE_BASE + "kenya-core-provenance",
+    "Patient": KENYA_CORE_BASE + "kenya-core-patient|1.0.0",
+    "Encounter": KENYA_CORE_BASE + "kenya-core-encounter|1.0.0",
+    "Observation": KENYA_CORE_BASE + "kenya-core-observation|1.0.0",
+    "Condition": KENYA_CORE_BASE + "condition|1.0.0",
+    "Procedure": KENYA_CORE_BASE + "kenya-core-procedure|1.0.0",
+    "Organization": KENYA_CORE_BASE + "KenyaCoreOrganization|1.0.0",
+    "Provenance": KENYA_CORE_BASE + "kenya-core-provenance|1.0.0",
 }
 
 def _profile(resource: dict) -> str | None:
@@ -48,7 +48,7 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
     if rt == "Condition":
         if not resource.get("subject"):
             errors.append("CONDITION_SUBJECT_REQUIRED")
-        if not (resource.get("code") or {}).get("coding"):
+        if not resource.get("code"):
             errors.append("CONDITION_CODE_REQUIRED")
     if rt == "Organization" and not resource.get("identifier"):
         errors.append("ORGANIZATION_IDENTIFIER_REQUIRED")
