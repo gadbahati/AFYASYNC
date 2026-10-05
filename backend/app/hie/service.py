@@ -856,6 +856,14 @@ def import_inbound_clinical_resources(
     from app.hie.import_models import HieImportedResource
 
     purpose = _bundle_purpose_of_use(row.payload or {})
+    payload_patient_refs = []
+    for entry in (row.payload or {}).get("entry") or []:
+        resource = entry.get("resource") if isinstance(entry, dict) else None
+        if not isinstance(resource, dict) or resource.get("resourceType") != "Patient":
+            continue
+        payload_patient_refs.append(str(resource.get("id") or "").strip())
+    if payload_patient_refs and all(ref != str(row.patient_id) for ref in payload_patient_refs):
+        raise ValueError("INBOUND_PATIENT_IDENTITY_MISMATCH")
     sensitive_codes = {
         str(code).strip().upper()
         for code in db.scalars(
