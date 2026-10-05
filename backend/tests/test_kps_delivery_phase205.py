@@ -18,3 +18,10 @@ def test_phase205_delivery_has_patient_consent_and_idempotency_controls():
     assert "HIE_PATIENT_CONSENT_REQUIRED" in s
     assert "HieDeliveryJob.idempotency_key == key" in s
     assert "HIE_OUTBOUND_DELIVERED" in s
+
+
+def test_phase205_kps_document_has_single_composition():
+    s = (ROOT / "service.py").read_text()
+    assert '"meta": {"profile": ["https://fhir.dha.go.ke/kps/StructureDefinition/ke-kps-composition"]}' in s
+    assert 'entries.insert(0, {"fullUrl": f"urn:uuid:{composition_id}", "resource": composition})' in s
+    assert s.count('"resourceType": "Composition"') >= 1
