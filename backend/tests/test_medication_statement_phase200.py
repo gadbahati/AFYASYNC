@@ -29,3 +29,10 @@ def test_phase200_route_requires_clinical_read_permission():
 def test_phase200_does_not_claim_unverified_kenya_medication_statement_profile():
     source = FHIR.read_text()
     assert "kenya-core-medicationstatement" not in source
+
+
+def test_phase200_capability_statement_advertises_resource():
+    service = Path(__file__).parents[1] / "app" / "hie" / "service.py"
+    source = service.read_text()
+    assert '"type": "MedicationStatement"' in source
+    assert '"search-type"' in source
