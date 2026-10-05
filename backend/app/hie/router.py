@@ -43,6 +43,7 @@ from app.hie.discharge_summary import DischargeFhirError, build_discharge_summar
 from app.hie.clinical_note import ClinicalNoteFhirError, build_clinical_note_bundle
 from app.hie.consultation import ConsultationFhirError, build_consultation_bundle
 from app.hie.clinical_care_plan import ClinicalCarePlanFhirError, build_clinical_care_plan_bundle
+from app.hie.medication_dispense import MedicationDispenseFhirError, build_medication_dispense_bundle
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -212,6 +213,15 @@ def discharge_summary_fhir(discharge_id: UUID, db: Session = Depends(get_db), fa
         status_code = 404 if code in {"DISCHARGE_NOT_FOUND", "ENCOUNTER_NOT_FOUND", "PATIENT_NOT_FOUND"} else 403 if code == "ACCESS_DENIED" else 409
         raise HTTPException(status_code=status_code, detail=code) from exc
 
+
+@router.get("/prescriptions/{prescription_id}/dispense/fhir")
+def prescription_medication_dispense_fhir(prescription_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("clinical.record.read"))):
+    try:
+        return build_medication_dispense_bundle(db, prescription_id=prescription_id, facility_id=facility_id, actor_user_id=user.id)
+    except MedicationDispenseFhirError as exc:
+        code = str(exc)
+        status_code = 404 if code in {"PRESCRIPTION_NOT_FOUND", "ENCOUNTER_NOT_FOUND", "PATIENT_NOT_FOUND", "PRESCRIBER_NOT_FOUND"} else 403 if code == "ACCESS_DENIED" else 409
+        raise HTTPException(status_code=status_code, detail=code) from exc
 
 @router.get("/medication-actions/{action_id}/fhir")
 def medication_action_fhir(action_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("clinical.record.read"))):
