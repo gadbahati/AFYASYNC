@@ -580,6 +580,27 @@ def validate_inbound_bundle(
             doc_type = t["code"]
             break
 
+    # A national KPS patient summary is accepted only as the verified KPS
+    # document shape; generic FHIR documents must not masquerade as KPS.
+    if doc_type == "PATIENT_SUMMARY":
+        if payload.get("type") != "document":
+            errors.append("KPS_PATIENT_SUMMARY_MUST_BE_DOCUMENT")
+        first_resource = (
+            (entries[0].get("resource") if isinstance(entries[0], dict) else None)
+            if entries
+            else None
+        )
+        if not isinstance(first_resource, dict) or first_resource.get("resourceType") != "Composition":
+            errors.append("KPS_COMPOSITION_MUST_BE_FIRST")
+        else:
+            profile = ((first_resource.get("meta") or {}).get("profile") or [])
+            if "https://fhir.dha.go.ke/kps/StructureDefinition/ke-kps-composition" not in profile:
+                errors.append("KPS_COMPOSITION_PROFILE_REQUIRED")
+            if first_resource.get("status") != "final":
+                errors.append("KPS_COMPOSITION_FINAL_REQUIRED")
+            if not first_resource.get("section"):
+                errors.append("KPS_COMPOSITION_SECTIONS_REQUIRED")
+
     row = HieInboundDocument(
         facility_id=facility_id,
         patient_id=patient_id,
