@@ -77,7 +77,7 @@ def build_clinical_note_bundle(
         "resourceType": "DocumentReference",
         "id": document_id,
         "status": "current",
-        "docStatus": "final",
+        "docStatus": "final" if note.status == "FINAL" else "preliminary",
         "type": {"text": note.note_type},
         "subject": {"reference": f"Patient/{person.id}"},
         "date": created,
@@ -130,7 +130,7 @@ def build_clinical_note_bundle(
         user_id=actor_user_id,
         facility_id=facility_id,
         patient_id=person.id,
-        metadata={"document_status": "final", "note_type": note.note_type},
+        metadata={"document_status": "final" if note.status == "FINAL" else "preliminary", "note_type": note.note_type},
         commit=False,
     )
     return bundle
