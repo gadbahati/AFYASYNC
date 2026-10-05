@@ -671,7 +671,7 @@ def resolve_inbound_patient(db: Session, *, inbound_id: UUID, facility_id: UUID,
     record_audit(db, action="HIE_INBOUND_MPI_UNRESOLVED", resource_type="HIE_INBOUND", resource_id=str(row.id), result=row.match_status, user_id=actor_user_id, facility_id=facility_id, metadata={"candidate_count": len(candidates), "reason": row.match_reasons}, commit=False)
     return {"status": row.match_status, "patient_id": None, "candidate_count": len(candidates), "match_reasons": row.match_reasons}
 
-def upsert_node(db: Session, *, data: dict) -> HieNode:
+def upsert_node(db: Session, *, data: dict, facility_id: UUID) -> HieNode:
     code = (data.get("code") or "").strip().upper()
     if not code:
         raise ValueError("NODE_CODE_REQUIRED")
