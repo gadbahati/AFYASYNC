@@ -127,4 +127,9 @@ def list_jobs(db: Session, facility_id: UUID, *, limit: int = 50) -> list[HieDel
 def queue_patient_summary_delivery(db: Session, *, facility_id: UUID, patient_id: UUID, destination_node_id: UUID, created_by: UUID | None) -> HieDeliveryJob:
     from app.hie.service import build_patient_summary_bundle
     payload = build_patient_summary_bundle(db, patient_id=patient_id, facility_id=facility_id, actor_user_id=created_by, purpose="national-patient-summary", purpose_of_use="TREATMENT", destination_node_id=destination_node_id)
+    if payload.get("resourceType") != "Bundle" or payload.get("type") != "document":
+        raise ValueError("KPS_SUMMARY_DOCUMENT_BUNDLE_REQUIRED")
+    entries = payload.get("entry") or []
+    if not entries or (entries[0].get("resource") or {}).get("resourceType") != "Composition":
+        raise ValueError("KPS_SUMMARY_COMPOSITION_FIRST_REQUIRED")
     return queue_bundle(db, facility_id=facility_id, patient_id=patient_id, destination_node_id=destination_node_id, payload=payload, created_by=created_by)
