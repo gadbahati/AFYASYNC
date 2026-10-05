@@ -80,7 +80,8 @@ def build_consultation_bundle(db: Session, *, consultation_id: UUID, facility_id
         "recorded": recorded, "agent": [{"type": {"text": "author"}, "who": author}],
         "reason": [{"text": "Clinical consultation interoperability"}],
     }
-    resources = [patient, encounter_resource, facility, *providers, composition, provenance]
+    # FHIR document Bundles require the Composition resource to be the first entry.
+    resources = [composition, patient, encounter_resource, facility, *providers, provenance]
     bundle = {
         "resourceType": "Bundle", "id": f"consultation-fhir-{consultation.id}",
         "type": "document", "timestamp": recorded,
