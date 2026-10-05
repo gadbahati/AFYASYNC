@@ -27,6 +27,7 @@ KENYA_CORE_PROFILES = {
     "ServiceRequest": KENYA_CORE_BASE + "kenya-core-servicerequest|1.0.0",
     "Task": KENYA_CORE_BASE + "kenya-core-task|1.0.0",
     "Communication": KENYA_CORE_BASE + "kenya-core-communication|1.0.0",
+    "ServiceRequest": KENYA_CORE_BASE + "kenya-core-servicerequest|1.0.0",
     "DiagnosticReport": KENYA_CORE_BASE + "kenya-core-diagnosticreport|1.0.0",
     "Procedure": KENYA_CORE_BASE + "kenya-core-procedure|1.0.0",
 }
