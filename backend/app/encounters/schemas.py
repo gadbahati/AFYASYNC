@@ -11,6 +11,7 @@ class EncounterCreate(BaseModel):
     patient_id: UUID
     facility_id: UUID
     department_id: UUID
+    provider_staff_id: UUID | None = None
     encounter_type: str = Field(min_length=2, max_length=30)
     coverage_mode: CoverageMode = "CASH"
     coverage_id: UUID | None = None
@@ -25,6 +26,7 @@ class EncounterResponse(EncounterCreate):
     started_at: datetime
     ended_at: datetime | None
     created_by: UUID
+    provider_staff_id: UUID | None
 
 
 class EncounterListResponse(BaseModel):
