@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.audit.service import record_audit
 from app.hie.consent_models import HieConsent
-from app.hie.models import HieNode
+from app.hie.models import HieNode\nfrom app.patients.models import PatientFacilityEnrollment
 
 def create_consent(db: Session, *, patient_id: UUID, facility_id: UUID, recipient_node_id: UUID|None, purpose: str, period_start: datetime|None, period_end: datetime|None, created_by: UUID, evidence: dict|None=None) -> HieConsent:
     if recipient_node_id is not None:
