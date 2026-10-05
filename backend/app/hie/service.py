@@ -728,6 +728,7 @@ def capability_statement() -> dict:
                     {"type": "AllergyIntolerance", "interaction": [{"code": "search-type"}]},
                     {"type": "Encounter", "interaction": [{"code": "search-type"}]},
                     {"type": "MedicationRequest", "interaction": [{"code": "search-type"}]},
+                    {"type": "MedicationStatement", "interaction": [{"code": "read"}, {"code": "search-type"}]},
                     {"type": "Observation", "interaction": [{"code": "search-type"}]},
                     {"type": "Condition", "interaction": [{"code": "search-type"}]},
                     {"type": "Bundle", "interaction": [{"code": "create"}, {"code": "read"}]},
