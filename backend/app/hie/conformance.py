@@ -8,12 +8,17 @@ from __future__ import annotations
 from typing import Any
 
 KENYA_CORE_BASE = "https://fhir.dha.go.ke/core/StructureDefinition/"
+KPS_BASE = "https://fhir.dha.go.ke/kps/StructureDefinition/"
+KPS_IMAGING_STUDY_PROFILE = KPS_BASE + "ke-kps-imaging-study"
+KPS_DIAGNOSTIC_REPORT_PROFILE = KPS_BASE + "ke-kps-diagnostic-report"
 KENYA_CORE_PROFILES = {
     "Patient": KENYA_CORE_BASE + "kenya-core-patient|1.0.0",
     "Encounter": KENYA_CORE_BASE + "kenya-core-encounter|1.0.0",
     "Observation": KENYA_CORE_BASE + "kenya-core-observation|1.0.0",
     "Condition": KENYA_CORE_BASE + "condition|1.0.0",
     "Procedure": KENYA_CORE_BASE + "kenya-core-procedure|1.0.0",
+    "ImagingStudy": KPS_IMAGING_STUDY_PROFILE,
+    "DiagnosticReportKPS": KPS_DIAGNOSTIC_REPORT_PROFILE,
     "Organization": KENYA_CORE_BASE + "provider-organization|1.0.0",
     "Provenance": KENYA_CORE_BASE + "kenya-core-provenance|1.0.0",
     "Practitioner": KENYA_CORE_BASE + "practitioner-sha-ke|1.0.0",
@@ -69,6 +74,10 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
             errors.append("SERVICEREQUEST_CODE_CODING_REQUIRED")
         if not resource.get("requester"):
             errors.append("SERVICEREQUEST_REQUESTER_REQUIRED")
+    if rt == "ImagingStudy":
+        for field in ("status", "subject", "started", "modality"):
+            if not resource.get(field):
+                errors.append("IMAGINGSTUDY_" + field.upper() + "_REQUIRED")
     if rt == "Procedure":
         for field in ("status", "code", "subject", "performedDateTime", "performer"):
             if not resource.get(field):
