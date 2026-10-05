@@ -93,7 +93,7 @@ def referral_task(referral_id: UUID, db: Session = Depends(get_db), facility_id:
         code = str(exc); status_code = 404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409; raise HTTPException(status_code=status_code, detail=code) from exc
 
 @router.get("/referrals/{referral_id}/communication")
-def referral_communication(referral_id: UUID, message: str, medium: str = "in-person", db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("referrals.read"))):
+def referral_communication(referral_id: UUID, message: str, medium: str = "in-person", db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     try:
         return build_referral_communication_bundle(db, referral_id=referral_id, facility_id=facility_id, actor_user_id=user.id, message=message, medium=medium)
     except ReferralCommunicationError as exc:
