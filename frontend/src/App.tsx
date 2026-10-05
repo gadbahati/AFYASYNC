@@ -47,6 +47,7 @@ import { HealthExchangePage } from "./pages/HealthExchangePage";
 import { UniversalIdentityPage } from "./pages/UniversalIdentityPage";
 import { NationalIdentityPage } from "./pages/NationalIdentityPage";
 import { CrossFacilityRecordPage } from "./pages/CrossFacilityRecordPage";
+import { SharedHealthRecordPage } from "./pages/SharedHealthRecordPage";
 import { ReferralRoutingPage } from "./pages/ReferralRoutingPage";
 import { ReferralBookingPage } from "./pages/ReferralBookingPage";
 import { ClaimsClearinghousePage } from "./pages/ClaimsClearinghousePage";
@@ -125,6 +126,7 @@ export default function App() {
         <Route path="/universal-identity" element={<UniversalIdentityPage />} />
         <Route path="/national-identity" element={<NationalIdentityPage />} />
         <Route path="/cross-facility-record" element={<CrossFacilityRecordPage />} />
+        <Route path="/shared-health-record" element={<SharedHealthRecordPage />} />
         <Route path="/referral-routing" element={<ReferralRoutingPage />} />
         <Route path="/referral-booking" element={<ReferralBookingPage />} />
         <Route path="/claims-clearinghouse" element={<ClaimsClearinghousePage />} />
