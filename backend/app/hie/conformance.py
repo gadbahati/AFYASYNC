@@ -16,6 +16,9 @@ KENYA_CORE_PROFILES = {
     "Procedure": KENYA_CORE_BASE + "kenya-core-procedure|1.0.0",
     "Organization": KENYA_CORE_BASE + "provider-organization|1.0.0",
     "Provenance": KENYA_CORE_BASE + "kenya-core-provenance|1.0.0",
+    "Practitioner": KENYA_CORE_BASE + "practitioner-sha-ke|1.0.0",
+    "PractitionerRole": KENYA_CORE_BASE + "kenya-core-practitionerrole|1.0.0",
+    "Location": KENYA_CORE_BASE + "kenya-core-location|1.0.0",
 }
 
 def _profile(resource: dict) -> str | None:
@@ -52,6 +55,20 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
             errors.append("CONDITION_CODE_REQUIRED")
     if rt == "Organization" and not resource.get("identifier"):
         errors.append("ORGANIZATION_IDENTIFIER_REQUIRED")
+    if rt == "Practitioner" and not resource.get("name"):
+        errors.append("PRACTITIONER_NAME_REQUIRED")
+    if rt == "PractitionerRole":
+        if not resource.get("practitioner"):
+            errors.append("PRACTITIONER_ROLE_PRACTITIONER_REQUIRED")
+        if not resource.get("organization"):
+            errors.append("PRACTITIONER_ROLE_ORGANIZATION_REQUIRED")
+        if not resource.get("code"):
+            errors.append("PRACTITIONER_ROLE_CODE_REQUIRED")
+    if rt == "Location":
+        if not resource.get("name"):
+            errors.append("LOCATION_NAME_REQUIRED")
+        if not resource.get("managingOrganization"):
+            errors.append("LOCATION_MANAGING_ORGANIZATION_REQUIRED")
     if rt == "Provenance":
         for field in ("target", "recorded", "agent"):
             if not resource.get(field):
