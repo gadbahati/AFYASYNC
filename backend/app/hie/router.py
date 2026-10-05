@@ -286,7 +286,7 @@ def referral_package(body: ReferralBody, db: Session = Depends(get_db), facility
         code = str(exc); raise HTTPException(status_code=404 if "NOT_FOUND" in code or "FACILITY" in code else 400, detail=code) from exc
 
 @router.post("/inbound")
-def inbound_document(body: InboundBody, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.read"))):
+def inbound_document(body: InboundBody, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     try:
         result = validate_inbound_bundle(db, facility_id=facility_id, payload=body.bundle, source_code=body.source_code, source_node_id=body.source_node_id, actor_user_id=user.id)
         if result["validation_status"] == "ACCEPTED": result["mpi"] = resolve_inbound_patient(db, inbound_id=UUID(result["id"]), facility_id=facility_id, actor_user_id=user.id)
@@ -302,7 +302,7 @@ def inbound_documents(limit: int = Query(default=50, ge=1, le=200), db: Session 
     return [{"id": str(row.id), "patient_id": str(row.patient_id) if row.patient_id else None, "source_node_id": str(row.source_node_id) if row.source_node_id else None, "source_code": row.source_code, "bundle_id": row.bundle_id, "document_type": row.document_type, "resource_count": row.resource_count, "validation_status": row.validation_status, "match_status": row.match_status, "match_reasons": row.match_reasons or [], "created_at": row.created_at.isoformat() if row.created_at else None} for row in rows]
 
 @router.post("/inbound/{inbound_id}/resolve")
-def resolve_inbound(inbound_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.read"))):
+def resolve_inbound(inbound_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     try:
         result = resolve_inbound_patient(db, inbound_id=inbound_id, facility_id=facility_id, actor_user_id=user.id); db.commit(); return result
     except ValueError as exc:
