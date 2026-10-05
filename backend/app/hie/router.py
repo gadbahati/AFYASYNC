@@ -54,7 +54,22 @@ class NodeUpsert(BaseModel):
 
 
 @router.get("/providers/{staff_id}/identity")
-def provider_identity(\n    staff_id: UUID,\n    db: Session = Depends(get_db),\n    facility_id: UUID = Depends(get_facility_context),\n    user: User = Depends(require_permission("staff.read")),\n):\n    _ = user\n    try:\n        resources = provider_identity_resources(db, facility_id=facility_id, staff_id=staff_id)\n        return {"staff_id": str(staff_id), "resources": resources}\n    except ValueError as exc:\n        code = str(exc)\n        raise HTTPException(status_code=404 if "NOT_FOUND" in code else 400, detail=code) from exc\n\n\n@router.get("/metadata")
+def provider_identity(
+    staff_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("staff.read")),
+):
+    _ = user
+    try:
+        resources = provider_identity_resources(db, facility_id=facility_id, staff_id=staff_id)
+        return {"staff_id": str(staff_id), "resources": resources}
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=404 if "NOT_FOUND" in code else 400, detail=code) from exc
+
+
+@router.get("/metadata")
 def hie_metadata():
     return capability_statement()
 
