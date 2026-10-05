@@ -306,6 +306,7 @@ def build_patient_summary_bundle(
         "recorded": datetime.now(timezone.utc).isoformat(),
         "agent": [{"type": {"text": "author"}, "who": {"reference": f"Organization/{facility_id}"}}],
         "activity": {"text": "HIE patient summary export"},
+        "reason": [{"text": "National health information exchange"},],
     }
     entries.insert(1, {"fullUrl": f"urn:uuid:{provenance_id}", "resource": provenance})
     bundle = {
