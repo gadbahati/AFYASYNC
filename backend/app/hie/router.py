@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
 from app.database import get_db
-from app.hie.delivery_service import deliver_job, list_jobs, queue_bundle
+from app.hie.delivery_service import deliver_job, list_jobs, queue_bundle, queue_patient_summary_delivery
 from app.hie.consent_service import create_consent, list_consents, revoke_consent
 from app.hie.service import (
     build_patient_summary_bundle,
@@ -381,6 +381,15 @@ def get_hie_consents(patient_id: UUID, db: Session = Depends(get_db), facility_i
     _=user
     return [{"id":str(c.id),"patient_id":str(c.patient_id),"recipient_node_id":str(c.recipient_node_id) if c.recipient_node_id else None,"status":c.status,"decision":c.decision,"purpose":c.purpose,"scope":c.scope,"period_start":c.period_start.isoformat() if c.period_start else None,"period_end":c.period_end.isoformat() if c.period_end else None,"fhir_resource":c.fhir_resource} for c in list_consents(db,patient_id=patient_id,facility_id=facility_id)]
 
+@router.post("/patient-summary/{patient_id}/deliver")
+def queue_patient_summary(patient_id: UUID, destination_node_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
+    try:
+        job = queue_patient_summary_delivery(db, facility_id=facility_id, patient_id=patient_id, destination_node_id=destination_node_id, created_by=user.id)
+        db.commit()
+        return {"id": str(job.id), "status": job.status, "idempotency_key": job.idempotency_key, "destination_node_id": str(job.destination_node_id)}
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=409 if "CONSENT" in code or "TRUSTED" in code or "ENROLLED" in code else 400, detail=code) from exc
 @router.post("/deliver")
 def queue_delivery(patient_id: UUID, destination_node_id: UUID, bundle: dict, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     try:
