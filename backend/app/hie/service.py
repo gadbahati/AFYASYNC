@@ -51,14 +51,12 @@ def _facility_organization_resource(db: Session, facility_id: UUID) -> dict:
         identifiers.append({
             "use": "official",
             "type": {"coding": [{"system": "https://fhir.dha.go.ke/fhir/terminology/CodeSystem/facility-identifier-types", "code": "fr-code", "display": "Facility registry code"}]},
-            "system": "https://fhir.dha.go.ke/core/identifier/facility",
             "value": registry.mfl_code,
         })
     if facility.registration_number:
         identifiers.append({
             "use": "secondary",
             "type": {"coding": [{"system": "https://fhir.dha.go.ke/fhir/terminology/CodeSystem/facility-identifier-types", "code": "registration-number", "display": "Facility registration number"}]},
-            "system": "https://afyasync.health.ke/identifier/facility-registration",
             "value": facility.registration_number,
         })
     if not identifiers:
