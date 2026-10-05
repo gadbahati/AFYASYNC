@@ -123,3 +123,8 @@ def _result(job: HieDeliveryJob) -> dict:
 
 def list_jobs(db: Session, facility_id: UUID, *, limit: int = 50) -> list[HieDeliveryJob]:
     return list(db.scalars(select(HieDeliveryJob).where(HieDeliveryJob.facility_id == facility_id).order_by(HieDeliveryJob.created_at.desc()).limit(min(max(limit,1),200))))
+
+def queue_patient_summary_delivery(db: Session, *, facility_id: UUID, patient_id: UUID, destination_node_id: UUID, created_by: UUID | None) -> HieDeliveryJob:
+    from app.hie.service import build_patient_summary_bundle
+    payload = build_patient_summary_bundle(db, patient_id=patient_id, facility_id=facility_id, actor_user_id=created_by, purpose="national-patient-summary", purpose_of_use="TREATMENT", destination_node_id=destination_node_id)
+    return queue_bundle(db, facility_id=facility_id, patient_id=patient_id, destination_node_id=destination_node_id, payload=payload, created_by=created_by)
