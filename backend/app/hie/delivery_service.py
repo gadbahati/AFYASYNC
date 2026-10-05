@@ -22,12 +22,18 @@ def queue_bundle(db: Session, *, facility_id: UUID, patient_id: UUID, destinatio
     if node.trust_level not in {"HIGH", "NATIONAL"}: raise ValueError("HIE_DESTINATION_NOT_TRUSTED")
     if not node.endpoint_url: raise ValueError("HIE_DESTINATION_ENDPOINT_NOT_CONFIGURED")
     assert_valid_bundle(payload)
+    purpose = "TREATMENT"
+    for tag in (payload.get("meta") or {}).get("tag") or []:
+        if isinstance(tag, dict) and "purpose-of-use" in str(tag.get("system") or "").lower():
+            purpose = str(tag.get("code") or "").strip().upper() or purpose
+            break
     consent = db.scalar(select(HieConsent).where(
         HieConsent.patient_id == patient_id,
         HieConsent.facility_id == facility_id,
         HieConsent.status == "ACTIVE",
         HieConsent.decision == "PERMIT",
         HieConsent.scope == "HIE_SHARE",
+        HieConsent.purpose == purpose,
         (HieConsent.recipient_node_id == destination_node_id) | (HieConsent.recipient_node_id.is_(None)),
     ).order_by(HieConsent.created_at.desc()))
     if consent is None: raise ValueError("HIE_PATIENT_CONSENT_REQUIRED")
