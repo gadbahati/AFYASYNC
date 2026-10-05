@@ -28,6 +28,8 @@ def _error(exc: ValueError) -> HTTPException:
         "COVERAGE_NOT_FOUND": status.HTTP_404_NOT_FOUND,
         "COVERAGE_PATIENT_MISMATCH": status.HTTP_400_BAD_REQUEST,
         "PAYER_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "PROVIDER_STAFF_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "PROVIDER_STAFF_DEPARTMENT_MISMATCH": status.HTTP_400_BAD_REQUEST,
     }
     return HTTPException(status_code=mapping.get(code, status.HTTP_400_BAD_REQUEST), detail=code)
 
