@@ -108,6 +108,7 @@ def build_vital_observation_bundle(
         observation = {
             "resourceType": "Observation",
             "id": str(uuid4()),
+            "meta": {"profile": ["https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-observation|1.0.0"]},
             "status": "final",
             "category": [{
                 "coding": [{
