@@ -14,7 +14,7 @@ KENYA_CORE_PROFILES = {
     "Observation": KENYA_CORE_BASE + "kenya-core-observation|1.0.0",
     "Condition": KENYA_CORE_BASE + "condition|1.0.0",
     "Procedure": KENYA_CORE_BASE + "kenya-core-procedure|1.0.0",
-    "Organization": KENYA_CORE_BASE + "KenyaCoreOrganization|1.0.0",
+    "Organization": KENYA_CORE_BASE + "provider-organization|1.0.0",
     "Provenance": KENYA_CORE_BASE + "kenya-core-provenance|1.0.0",
 }
 
