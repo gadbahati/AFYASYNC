@@ -17,6 +17,7 @@ from app.facilities.models import Facility
 from app.hie.models import HieExportLog, HieInboundDocument, HieNode
 from app.hie.conformance import validate_bundle
 from app.hie.terminology_service import canonical_coding
+from app.hie.provider_identity import actor_provider_identity_resources
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabTest
 from app.patients.models import AfyaIdentity, PatientFacility, Person
 from app.patients.mpi import _hash_id
@@ -141,6 +142,21 @@ def build_patient_summary_bundle(
     entries.append({"fullUrl": f"urn:uuid:{person.id}", "resource": patient})
     facility_resource = _facility_organization_resource(db, facility_id)
     entries.append({"fullUrl": f"urn:uuid:{facility_id}", "resource": facility_resource})
+
+    provider_resources = actor_provider_identity_resources(
+        db,
+        user_id=actor_user_id,
+        facility_id=facility_id,
+    )
+    for provider_resource in provider_resources:
+        entries.append({
+            "fullUrl": f"urn:uuid:{provider_resource['resourceType']}/{provider_resource['id']}",
+            "resource": provider_resource,
+        })
+    provider_role = next(
+        (r for r in provider_resources if r.get("resourceType") == "PractitionerRole"),
+        None,
+    )
 
     allergies = list(
         db.scalars(
@@ -326,7 +342,7 @@ def build_patient_summary_bundle(
         "type": {"coding": [{"system": "http://loinc.org", "code": "60591-5", "display": "Patient summary Document"}], "text": "Patient summary"},
         "subject": {"reference": f"Patient/{person.id}"},
         "date": datetime.now(timezone.utc).isoformat(),
-        "author": [{"reference": f"Organization/{facility_id}"}],
+        "author": [{"reference": f"PractitionerRole/{provider_role['id']}"}] if provider_role else [{"reference": f"Organization/{facility_id}"}],
         "title": "AfyaSync Patient Summary",
         "section": [{"title": "Clinical record", "entry": [{"reference": e["resource"]["resourceType"] + "/" + str(e["resource"]["id"])} for e in entries if isinstance(e, dict) and isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") != "Patient" and e["resource"].get("id")]}],
     }
@@ -342,7 +358,7 @@ def build_patient_summary_bundle(
             and e["resource"].get("resourceType") and e["resource"].get("id")
         ],
         "recorded": datetime.now(timezone.utc).isoformat(),
-        "agent": [{"type": {"text": "author"}, "who": {"reference": f"Organization/{facility_id}"}}],
+        "agent": [{"type": {"text": "author"}, "who": {"reference": f"PractitionerRole/{provider_role['id']}" if provider_role else f"Organization/{facility_id}"}, "onBehalfOf": {"reference": f"Organization/{facility_id}"}}],
         "activity": {"text": "HIE patient summary export"},
         "reason": [{"text": "National health information exchange"},],
     }
