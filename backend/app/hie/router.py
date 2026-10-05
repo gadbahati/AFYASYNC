@@ -37,6 +37,7 @@ from app.hie.medication_request import MedicationRequestFhirError, build_medicat
 from app.hie.allergy_intolerance import AllergyIntoleranceFhirError, build_allergy_intolerance_bundle
 from app.hie.medication_administration import MedicationAdministrationFhirError, build_medication_administration_bundle
 from app.hie.vital_observation import VitalObservationFhirError, build_vital_observation_bundle
+from app.hie.diagnosis_condition import DiagnosisFhirError, build_diagnosis_condition_bundle
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -144,6 +145,21 @@ def vital_fhir(vital_id: UUID, db: Session = Depends(get_db), facility_id: UUID 
         code = str(exc)
         status_code = 404 if code in {"VITAL_NOT_FOUND", "ENCOUNTER_NOT_FOUND", "PATIENT_NOT_FOUND"} else 403 if code == "ACCESS_DENIED" else 409
         raise HTTPException(status_code=status_code, detail=code) from exc
+
+@router.get("/diagnoses/{diagnosis_id}/fhir")
+def diagnosis_fhir(diagnosis_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("clinical.record.read"))):
+    try:
+        return build_diagnosis_condition_bundle(
+            db,
+            diagnosis_id=diagnosis_id,
+            facility_id=facility_id,
+            actor_user_id=user.id,
+        )
+    except DiagnosisFhirError as exc:
+        code = str(exc)
+        status_code = 404 if code in {"DIAGNOSIS_NOT_FOUND", "ENCOUNTER_NOT_FOUND", "PATIENT_NOT_FOUND"} else 403 if code == "ACCESS_DENIED" else 409
+        raise HTTPException(status_code=status_code, detail=code) from exc
+
 
 @router.get("/medication-actions/{action_id}/fhir")
 def medication_action_fhir(action_id: UUID, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("clinical.record.read"))):
