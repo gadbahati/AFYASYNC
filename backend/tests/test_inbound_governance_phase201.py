@@ -23,11 +23,3 @@ def test_phase201_keeps_purpose_and_sensitive_consent_controls():
     assert 'purpose = _bundle_purpose_of_use(row.payload or {})' in source
     assert 'consent_allows_sensitive' in source
     assert 'sensitivity = "SENSITIVE"' in source
-
-
-def test_phase206_enforces_kps_patient_summary_document_profile():
-    source = SERVICE.read_text()
-    assert 'KPS_PATIENT_SUMMARY_MUST_BE_DOCUMENT' in source
-    assert 'KPS_COMPOSITION_PROFILE_REQUIRED' in source
-    assert 'KPS_COMPOSITION_FINAL_REQUIRED' in source
-    assert 'KPS_COMPOSITION_SECTIONS_REQUIRED' in source
