@@ -11,6 +11,7 @@ KENYA_CORE_BASE = "https://fhir.dha.go.ke/core/StructureDefinition/"
 KPS_BASE = "https://fhir.dha.go.ke/kps/StructureDefinition/"
 KPS_IMAGING_STUDY_PROFILE = KPS_BASE + "ke-kps-imaging-study"
 KPS_DIAGNOSTIC_REPORT_PROFILE = KPS_BASE + "ke-kps-diagnostic-report"
+KPS_COMPOSITION_PROFILE = KPS_BASE + "ke-kps-composition"
 KENYA_CORE_PROFILES = {
     "Patient": KENYA_CORE_BASE + "kenya-core-patient|1.0.0",
     "Encounter": KENYA_CORE_BASE + "kenya-core-encounter|1.0.0",
@@ -28,6 +29,7 @@ KENYA_CORE_PROFILES = {
     "Task": KENYA_CORE_BASE + "kenya-core-task|1.0.0",
     "Communication": KENYA_CORE_BASE + "kenya-core-communication|1.0.0",
     "CommunicationRequest": KENYA_CORE_BASE + "kenya-core-communicationrequest|1.0.0",
+    "Composition": KPS_COMPOSITION_PROFILE,
     "Consent": KENYA_CORE_BASE + "kenya-core-consent|1.0.0",
     
     "DiagnosticReport": KENYA_CORE_BASE + "kenya-core-diagnosticreport|1.0.0",
@@ -107,6 +109,14 @@ def validate_kenya_core_resource(resource: Any) -> list[str]:
         for field in ("identifier", "status", "category", "priority", "subject", "payload", "authoredOn", "requester"):
             if not resource.get(field):
                 errors.append("COMMUNICATIONREQUEST_" + field.upper() + "_REQUIRED")
+    if rt == "Composition":
+        for field in ("status", "type", "subject", "date", "author", "title", "custodian"):
+            if not resource.get(field):
+                errors.append(f"COMPOSITION_{field.upper()}_REQUIRED")
+        if not resource.get("section"):
+            errors.append("COMPOSITION_SECTION_REQUIRED")
+        elif not any(isinstance(s, dict) and s.get("entry") for s in resource.get("section", [])):
+            errors.append("COMPOSITION_SECTION_ENTRY_REQUIRED")
     if rt == "Consent":
         for field in ("status", "scope", "category", "patient", "dateTime", "provision"):
             if not resource.get(field):
