@@ -15,6 +15,7 @@ from app.consent.models import SensitiveDiseaseConsent
 from app.encounters.models import Encounter
 from app.hie.models import HieExportLog, HieInboundDocument, HieNode
 from app.hie.conformance import validate_bundle
+from app.hie.terminology_service import canonical_coding
 from app.laboratory.models import LabOrder, LabOrderItem, LabResult, LabTest
 from app.patients.models import AfyaIdentity, PatientFacility, Person
 from app.patients.mpi import _hash_id
@@ -182,8 +183,10 @@ def build_patient_summary_bundle(
                     "id": str(diagnosis.id),
                     "clinicalStatus": {"coding": [{"code": "active"}]},
                     "code": {
-                        "coding": [{"code": diagnosis.code}] if diagnosis.code else [],
-                        "text": diagnosis.description,
+                        "coding": ([canonical_coding(db, source_system="AFYASYNC:DIAGNOSIS", source_code=diagnosis.code, display=diagnosis.description)]
+                                   if canonical_coding(db, source_system="AFYASYNC:DIAGNOSIS", source_code=diagnosis.code, display=diagnosis.description)
+                                   else []),
+                        "text": diagnosis.description or diagnosis.code,
                     },
                     "subject": {"reference": f"Patient/{person.id}"},
                     "encounter": {"reference": f"Encounter/{diagnosis.encounter_id}"},
@@ -262,7 +265,9 @@ def build_patient_summary_bundle(
                             "status": (result.status or "final").lower(),
                             "code": {
                                 "text": test.name if test else "Lab result",
-                                "coding": [{"code": test.code}] if test else [],
+                                "coding": ([canonical_coding(db, source_system="AFYASYNC:LAB_TEST", source_code=test.code, display=test.name)]
+                                           if test and canonical_coding(db, source_system="AFYASYNC:LAB_TEST", source_code=test.code, display=test.name)
+                                           else []),
                             },
                             "subject": {"reference": f"Patient/{person.id}"},
                             "valueString": result.result,
