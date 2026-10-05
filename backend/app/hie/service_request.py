@@ -1,13 +1,15 @@
 """Kenya Core ServiceRequest generation for AfyaSync clinical orders."""
 from __future__ import annotations
 
-from datetime import timezone
-from uuid import UUID
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
 from app.clinical.order_models import ClinicalOrder
 from app.encounters.models import Encounter
+from app.audit.service import record_audit
+from app.hie.conformance import assert_valid_bundle
 from app.hie.provider_identity import actor_provider_identity_resources
 from app.hie.service import _facility_organization_resource, _patient_resource
 from app.hie.terminology_service import canonical_coding
@@ -129,6 +131,17 @@ def build_service_request_bundle(
     resources.extend(provider_resources)
     resources.append(service_request)
 
+    provenance = {
+        "resourceType": "Provenance",
+        "id": str(uuid4()),
+        "meta": {"profile": ["https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-provenance|1.0.0"]},
+        "target": [{"reference": f"ServiceRequest/{service_request['id']}"}],
+        "recorded": datetime.now(timezone.utc).isoformat(),
+        "agent": [{"type": {"text": "author"}, "who": {"reference": service_request["requester"]["reference"]}, "onBehalfOf": {"reference": f"Organization/{facility_id}"}}],
+        "activity": {"text": "HIE clinical order export"},
+    }
+    resources.append(provenance)
+
     entries = [
         {
             "fullUrl": f"urn:uuid:{resource['resourceType']}/{resource['id']}",
@@ -136,9 +149,23 @@ def build_service_request_bundle(
         }
         for resource in resources
     ]
-    return {
+    bundle = {
         "resourceType": "Bundle",
         "id": f"service-request-{order.id}",
         "type": "collection",
         "entry": entries,
     }
+    assert_valid_bundle(bundle)
+    record_audit(
+        db,
+        action="HIE_SERVICE_REQUEST_EXPORT",
+        resource_type="CLINICAL_ORDER",
+        resource_id=str(order.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=person.id,
+        metadata={"resource_count": len(entries)},
+        commit=False,
+    )
+    return bundle
