@@ -10,6 +10,7 @@ from app.facilities.models import Facility
 from app.hie.conformance import assert_valid_bundle
 from app.hie.consent_models import HieConsent
 from app.hie.models import HieNode
+from app.hie.models import HieNode
 from app.hie.service import _facility_organization_resource, _patient_resource
 from app.patients.models import Person
 
@@ -37,6 +38,7 @@ def build_consent_bundle(db: Session, *, consent_id: UUID, facility_id: UUID, ac
     resource = {
         "resourceType": "Consent",
         "id": str(consent.id),
+        "meta": {"profile": ["https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-consent|1.0.0"]},
         "status": status,
         "scope": {"text": consent.scope or "HIE information sharing"},
         "category": [{"text": "Health information sharing consent"}],
@@ -59,7 +61,12 @@ def build_consent_bundle(db: Session, *, consent_id: UUID, facility_id: UUID, ac
             "end": consent.revoked_at.isoformat(),
         }
     if consent.recipient_node_id:
-        resource["provision"]["recipient"] = [{"reference": f"Organization/{consent.recipient_node_id}"}]
+        node = db.get(HieNode, consent.recipient_node_id)
+        if node is None or node.status != "ACTIVE":
+            raise ConsentFhirError("CONSENT_RECIPIENT_NODE_NOT_FOUND")
+        if node.facility_id is None:
+            raise ConsentFhirError("CONSENT_RECIPIENT_FACILITY_NOT_BOUND")
+        resource["provision"]["recipient"] = [{"reference": f"Organization/{node.facility_id}"}]
 
     provenance = {
         "resourceType": "Provenance",
