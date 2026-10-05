@@ -48,6 +48,7 @@ from app.hie.medication_dispense import MedicationDispenseFhirError, build_medic
 from app.hie.mpi import MpiMatchError, build_patient_match_bundle
 from app.hie.consent_fhir import ConsentFhirError, build_consent_bundle
 from app.hie.medication_statement import MedicationStatementFhirError, build_medication_statement_bundle
+from app.hie.patient_summary_retrieval import PatientSummaryRetrievalError, retrieve_patient_summary_from_hie
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -286,12 +287,23 @@ def patient_match(body: dict, db: Session = Depends(get_db), facility_id: UUID =
 def hie_metadata(): return capability_statement()
 
 @router.get("/Patient/{patient_id}/$summary")
-def patient_summary(patient_id: UUID, purpose: str | None = Query(default="care-coordination", max_length=200), purpose_of_use: str = Query(default="TREATMENT", max_length=40), destination: str | None = Query(default=None, max_length=200), destination_node_id: UUID | None = Query(default=None), include_labs: bool = Query(default=True), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.read"))):
+def patient_summary(patient_id: UUID, purpose: str | None = Query(default="care-coordination", max_length=200), purpose_of_use: str = Query(default="TREATMENT", max_length=40), destination: str | None = Query(default=None, max_length=200), destination_node_id: UUID | None = Query(default=None), include_labs: bool = Query(default=True), source: str = Query(default="LOCAL", max_length=20), source_node_id: UUID | None = Query(default=None), db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.read"))):
     try:
-        bundle = build_patient_summary_bundle(db, patient_id=patient_id, facility_id=facility_id, actor_user_id=user.id, purpose=purpose, purpose_of_use=purpose_of_use, destination=destination, destination_node_id=destination_node_id, include_labs=include_labs); db.commit(); return bundle
-    except ValueError as exc:
-        code = str(exc); raise HTTPException(status_code=404 if "NOT_FOUND" in code or "FACILITY" in code else 400, detail=code) from exc
-
+        mode = source.strip().upper()
+        if mode == "HIE":
+            if source_node_id is None:
+                raise PatientSummaryRetrievalError("HIE_SOURCE_NODE_REQUIRED")
+            bundle = retrieve_patient_summary_from_hie(db, patient_id=patient_id, facility_id=facility_id, source_node_id=source_node_id, actor_user_id=user.id, purpose_of_use=purpose_of_use)
+        elif mode == "LOCAL":
+            bundle = build_patient_summary_bundle(db, patient_id=patient_id, facility_id=facility_id, actor_user_id=user.id, purpose=purpose, purpose_of_use=purpose_of_use, destination=destination, destination_node_id=destination_node_id, include_labs=include_labs)
+        else:
+            raise PatientSummaryRetrievalError("INVALID_SUMMARY_SOURCE")
+        db.commit()
+        return bundle
+    except (ValueError, PatientSummaryRetrievalError) as exc:
+        code = str(exc)
+        status_code = 404 if "NOT_FOUND" in code or "FACILITY" in code else 409 if "CONSENT" in code or "TRUSTED" in code or "SOURCE_" in code or "NETWORK" in code else 400
+        raise HTTPException(status_code=status_code, detail=code) from exc
 @router.post("/referral-package")
 def referral_package(body: ReferralBody, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
     try:
