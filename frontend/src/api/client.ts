@@ -197,6 +197,7 @@ const _apiCore: any = {
   hieNodes: () => request("/api/v1/referrals/hie-nodes"),
   hieTrustedNodes: () => request("/api/v1/hie/nodes"),
   patientSummary: (patientId: string, source: "LOCAL" | "HIE" = "LOCAL", sourceNodeId?: string) => { const q = new URLSearchParams({ source }); if (sourceNodeId) q.set("source_node_id", sourceNodeId); return request(`/api/v1/hie/Patient/${encodeURIComponent(patientId)}/$summary?${q.toString()}`); },
+  deliverPatientSummary: (patientId: string, destinationNodeId: string) => request(`/api/v1/hie/patient-summary/${encodeURIComponent(patientId)}/deliver?destination_node_id=${encodeURIComponent(destinationNodeId)}`, { method: "POST" }),
   createReferralHiePackage: (referralId: string, destinationNodeId: string, clinicalSummary?: string) => {
     const q = new URLSearchParams({ destination_node_id: destinationNodeId });
     if (clinicalSummary) q.set("clinical_summary", clinicalSummary);
