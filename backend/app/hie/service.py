@@ -50,12 +50,14 @@ def _facility_organization_resource(db: Session, facility_id: UUID) -> dict:
     if registry and registry.mfl_code:
         identifiers.append({
             "use": "official",
+            "type": {"coding": [{"system": "https://fhir.dha.go.ke/fhir/terminology/CodeSystem/facility-identifier-types", "code": "fr-code", "display": "Facility registry code"}]},
             "system": "https://fhir.dha.go.ke/core/identifier/facility",
             "value": registry.mfl_code,
         })
     if facility.registration_number:
         identifiers.append({
             "use": "secondary",
+            "type": {"coding": [{"system": "https://fhir.dha.go.ke/fhir/terminology/CodeSystem/facility-identifier-types", "code": "registration-number", "display": "Facility registration number"}]},
             "system": "https://afyasync.health.ke/identifier/facility-registration",
             "value": facility.registration_number,
         })
@@ -64,11 +66,11 @@ def _facility_organization_resource(db: Session, facility_id: UUID) -> dict:
     return {
         "resourceType": "Organization",
         "id": str(facility.id),
-        "meta": {"profile": ["https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-organization|1.0.0"]},
+        "meta": {"profile": ["https://fhir.dha.go.ke/core/StructureDefinition/provider-organization|1.0.0"]},
         "identifier": identifiers,
         "active": facility.status == "ACTIVE",
         "name": facility.name,
-        "type": [{"text": facility.facility_type}],
+        "type": [{"text": "provider", "coding": [{"system": "https://fhir.dha.go.ke/terminology/CodeSystem/OrganizationTypeCS", "code": "provider", "display": "Provider"}]}],
         "address": [{"use": "work", "text": facility.address, "city": facility.sub_county, "district": facility.county}],
         "telecom": ([{"system": "phone", "value": facility.phone, "use": "work"}] if facility.phone else []),
     }
