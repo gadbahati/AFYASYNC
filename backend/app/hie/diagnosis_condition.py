@@ -55,25 +55,25 @@ def build_diagnosis_condition_bundle(
     if person is None:
         raise DiagnosisFhirError("PATIENT_NOT_FOUND")
 
-    if not diagnosis.code:
+    if not diagnosis.diagnosis_code:
         raise DiagnosisFhirError("DIAGNOSIS_CODE_REQUIRED")
 
     coding = canonical_coding(
         db,
         source_system="AFYASYNC:DIAGNOSIS",
-        source_code=diagnosis.code,
-        display=diagnosis.description,
+        source_code=diagnosis.diagnosis_code,
+        display=diagnosis.diagnosis_name,
     )
     if not coding:
         raise DiagnosisFhirError(
-            f"DIAGNOSIS_CODE_NOT_NATIONALLY_MAPPED:{diagnosis.code}"
+            f"DIAGNOSIS_CODE_NOT_NATIONALLY_MAPPED:{diagnosis.diagnosis_code}"
         )
 
     # A diagnosis whose code is explicitly registered as sensitive cannot cross
     # the facility boundary without an affirmative consent record.
     sensitive = db.scalar(
         select(SensitiveCategory.id).where(
-            SensitiveCategory.code == diagnosis.code,
+            SensitiveCategory.code == diagnosis.diagnosis_code,
             SensitiveCategory.is_active.is_(True),
         )
     )
@@ -115,12 +115,12 @@ def build_diagnosis_condition_bundle(
         else {"reference": f"Organization/{facility_id}"}
     )
 
-    recorded = diagnosis.recorded_at.astimezone(timezone.utc).isoformat()
+    recorded = diagnosis.created_at.astimezone(timezone.utc).isoformat()
     condition = {
         "resourceType": "Condition",
         "id": str(diagnosis.id),
         "meta": {"profile": [KENYA_CORE_CONDITION_PROFILE]},
-        "code": {"coding": [coding], "text": diagnosis.description},
+        "code": {"coding": [coding], "text": diagnosis.diagnosis_name},
         "subject": {"reference": f"Patient/{person.id}"},
         "encounter": {"reference": f"Encounter/{encounter.id}"},
         "recordedDate": recorded,
