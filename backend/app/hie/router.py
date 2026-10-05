@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_facility_context, require_permission
+from app.audit.service import record_audit
 from app.database import get_db
 from app.hie.delivery_service import deliver_job, list_jobs, queue_bundle, queue_patient_summary_delivery
 from app.hie.consent_service import create_consent, list_consents, revoke_consent
@@ -345,6 +346,19 @@ def inbound_document(body: InboundBody, db: Session = Depends(get_db), facility_
                 )
             )
             if existing is not None:
+                record_audit(
+                    db,
+                    action="HIE_INBOUND_DOCUMENT_REPLAY",
+                    resource_type="HIE_INBOUND",
+                    resource_id=str(existing.id),
+                    result="IDEMPOTENT_REPLAY",
+                    user_id=user.id,
+                    facility_id=facility_id,
+                    patient_id=existing.patient_id,
+                    metadata={"bundle_id": bundle_id, "source_node_id": str(body.source_node_id)},
+                    commit=False,
+                )
+                db.commit()
                 return {
                     "id": str(existing.id),
                     "validation_status": existing.validation_status,
