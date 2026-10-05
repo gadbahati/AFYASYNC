@@ -16,6 +16,7 @@ from app.portal import messaging_models as portal_messaging_models
 from app.hie import import_models as hie_import_models
 from app.hie import delivery_models as hie_delivery_models
 from app.hie import consent_models as hie_consent_models
+from app.hie import terminology_models as hie_terminology_models
 
 _ = (
     patient_models,
@@ -27,6 +28,7 @@ _ = (
     treat_abroad_models,
     portal_messaging_models,
     hie_import_models,
+    hie_terminology_models,
     hie_delivery_models,
 )
 
