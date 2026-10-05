@@ -11,13 +11,14 @@ export function SharedHealthRecordPage() {
   const [summary, setSummary] = useState<any>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [delivery, setDelivery] = useState<any>(null);
 
   useEffect(() => {
     void api.hieTrustedNodes().then((value: any) => setNodes(Array.isArray(value) ? value : [])).catch((e: unknown) => setError(e instanceof Error ? e.message : "HIE_NODE_DISCOVERY_FAILED"));
   }, []);
 
   async function retrieve() {
-    setError(""); setSummary(null);
+    setError(""); setSummary(null); setDelivery(null);
     if (!patientId.trim()) { setError("Enter a patient ID."); return; }
     if (source === "HIE" && !nodeId) { setError("Select a trusted HIE source."); return; }
     setLoading(true);
@@ -41,6 +42,6 @@ export function SharedHealthRecordPage() {
       <div className="form-actions"><button className="primary" disabled={loading} onClick={() => void retrieve()}>{loading ? "Retrieving…" : "Retrieve patient summary"}</button></div>
       {error && <div className="error-banner" role="alert">{error}</div>}
     </div>
-    {summary && <div className="card"><div className="card-header"><div><p className="eyebrow">FHIR R4 document</p><h2>Patient Summary retrieved</h2><p className="muted">{summary.entry?.length ?? 0} resources · {summary.type ?? "unknown"} bundle</p></div><span className="status-badge">AUDITED</span></div><pre style={{whiteSpace:"pre-wrap",overflowX:"auto"}}>{JSON.stringify(summary, null, 2)}</pre></div>}
+    {summary && <div className="card"><div className="form-actions"><button className="secondary" disabled={loading || !patientId || !nodeId} onClick={async () => { setError(""); setDelivery(null); try { setDelivery(await api.deliverPatientSummary(patientId.trim(), nodeId)); } catch (e) { setError(e instanceof Error ? e.message : "PATIENT_SUMMARY_DELIVERY_FAILED"); } }}>Queue governed delivery to selected HIE source</button></div>{delivery && <p className="muted">Delivery queued: {delivery.id} · {delivery.status}</p>}</div>{summary && <div className="card"><div className="card-header"><div><p className="eyebrow">FHIR R4 document</p><h2>Patient Summary retrieved</h2><p className="muted">{summary.entry?.length ?? 0} resources · {summary.type ?? "unknown"} bundle</p></div><span className="status-badge">AUDITED</span></div><pre style={{whiteSpace:"pre-wrap",overflowX:"auto"}}>{JSON.stringify(summary, null, 2)}</pre></div>}
   </section>;
 }
