@@ -140,7 +140,7 @@ def patient_allergies_fhir(patient_id: UUID, db: Session = Depends(get_db), faci
         return build_allergy_intolerance_bundle(db, patient_id=patient_id, facility_id=facility_id, actor_user_id=user.id)
     except AllergyIntoleranceFhirError as exc:
         code = str(exc)
-        status_code = 404 if code in {"FACILITY_NOT_FOUND", "PATIENT_NOT_FOUND"} else 409
+        status_code = 404 if code in {"FACILITY_NOT_FOUND", "PATIENT_NOT_FOUND", "PATIENT_NOT_IN_FACILITY"} else 409
         raise HTTPException(status_code=status_code, detail=code) from exc
 
 @router.get("/metadata")
