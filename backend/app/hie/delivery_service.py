@@ -57,7 +57,7 @@ def deliver_job(db: Session, *, job_id: UUID, facility_id: UUID, actor_user_id: 
     if job is None or job.facility_id != facility_id: raise ValueError("HIE_DELIVERY_JOB_NOT_FOUND")
     if job.status == "DELIVERED": return _result(job)
     if job.status == "DEAD": raise ValueError("HIE_DELIVERY_JOB_DEAD")
-    node = db.get(HieNode, job.destination_node_id)
+    # Re-check authorization at send time; queued work must not bypass later revocation or expiry.\n    purpose = "TREATMENT"\n    for tag in (job.payload.get("meta") or {}).get("tag") or []:\n        if isinstance(tag, dict) and "purpose-of-use" in str(tag.get("system") or "").lower():\n            purpose = str(tag.get("code") or "").strip().upper() or purpose\n            break\n    now = datetime.now(timezone.utc)\n    consent = db.scalar(select(HieConsent).where(HieConsent.patient_id == job.patient_id, HieConsent.facility_id == facility_id, HieConsent.status == "ACTIVE", HieConsent.decision == "PERMIT", HieConsent.scope == "HIE_SHARE", HieConsent.purpose == purpose, (HieConsent.recipient_node_id == job.destination_node_id) | (HieConsent.recipient_node_id.is_(None)),).order_by(HieConsent.created_at.desc()))\n    if consent is None: raise ValueError("HIE_PATIENT_CONSENT_REQUIRED")\n    if consent.period_start and consent.period_start > now: raise ValueError("HIE_CONSENT_NOT_YET_ACTIVE")\n    if consent.period_end and consent.period_end < now: raise ValueError("HIE_CONSENT_EXPIRED")\n    node = db.get(HieNode, job.destination_node_id)
     if node is None or node.status != "ACTIVE": raise ValueError("HIE_DESTINATION_NOT_FOUND")
     if not node.endpoint_url: raise ValueError("HIE_DESTINATION_ENDPOINT_NOT_CONFIGURED")
     job.attempts += 1
