@@ -6,6 +6,7 @@ Composition document bundle. No unverified Kenya profile is asserted.
 from __future__ import annotations
 
 from datetime import timezone
+from html import escape
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -88,8 +89,8 @@ def build_discharge_summary_bundle(
             "text": {
                 "status": "generated",
                 "div": (
-                    f"<div><p>Disposition: {discharge.disposition}</p>"
-                    f"<p>Outcome: {discharge.outcome}</p></div>"
+                    f"<div><p>Disposition: {escape(discharge.disposition)}</p>"
+                    f"<p>Outcome: {escape(discharge.outcome)}</p></div>"
                 ),
             },
         }
@@ -101,7 +102,7 @@ def build_discharge_summary_bundle(
                 "code": {"text": "Clinical discharge summary"},
                 "text": {
                     "status": "generated",
-                    "div": f"<div><p>{discharge.discharge_summary}</p></div>",
+                    "div": f"<div><p>{escape(discharge.discharge_summary)}</p></div>",
                 },
             }
         )
@@ -115,7 +116,7 @@ def build_discharge_summary_bundle(
             {
                 "title": "Follow-up",
                 "code": {"text": "Follow-up"},
-                "text": {"status": "generated", "div": f"<div><p>{follow_text}</p></div>"},
+                "text": {"status": "generated", "div": f"<div><p>{escape(follow_text)}</p></div>"},
             }
         )
 
