@@ -5,6 +5,7 @@ from datetime import timezone
 from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.audit.service import record_audit
 from app.hie.conformance import assert_valid_bundle
 from app.hie.provider_identity import provider_identity_resources
 from app.hie.service import _facility_organization_resource, _patient_resource
@@ -23,7 +24,7 @@ LAB_SECTION_CODE = "LAB"
 class LabResultFhirError(ValueError):
     pass
 
-def build_verified_lab_result_bundle(db: Session, *, result_id: UUID, facility_id: UUID) -> dict:
+def build_verified_lab_result_bundle(db: Session, *, result_id: UUID, facility_id: UUID, actor_user_id: UUID | None = None) -> dict:
     result = db.get(LabResult, result_id)
     if result is None:
         raise LabResultFhirError("LAB_RESULT_NOT_FOUND")
@@ -41,7 +42,7 @@ def build_verified_lab_result_bundle(db: Session, *, result_id: UUID, facility_i
         raise LabResultFhirError("PATIENT_NOT_FOUND")
     if result.status != "VERIFIED":
         raise LabResultFhirError("LAB_RESULT_NOT_VERIFIED")
-    coding = canonical_coding(db, "AFYASYNC:LAB_TEST", test.code, display=test.name)
+    coding = canonical_coding(db, source_system="AFYASYNC:LAB_TEST", source_code=test.code, display=test.name)
     if not coding:
         raise LabResultFhirError("LAB_TEST_NOT_NATIONALLY_MAPPED")
     facility = _facility_organization_resource(db, facility_id)
@@ -116,4 +117,17 @@ def build_verified_lab_result_bundle(db: Session, *, result_id: UUID, facility_i
         assert_valid_bundle(bundle)
     except ValueError as exc:
         raise LabResultFhirError(str(exc)) from exc
+
+    record_audit(
+        db,
+        action="HIE_LAB_RESULT_EXPORT",
+        resource_type="LAB_RESULT",
+        resource_id=str(result.id),
+        result="SUCCESS",
+        user_id=actor_user_id,
+        facility_id=facility_id,
+        patient_id=person.id,
+        metadata={"resource_count": len(resources), "status": result.status},
+        commit=False,
+    )
     return bundle
