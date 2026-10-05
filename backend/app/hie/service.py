@@ -686,14 +686,18 @@ def upsert_node(db: Session, *, data: dict, facility_id: UUID) -> HieNode:
             raise ValueError("HIE_NODE_FACILITY_ACCESS_DENIED")
     if row is not None and row.facility_id is not None and row.facility_id != facility_id:
         raise ValueError("HIE_NODE_ACCESS_DENIED")
-    if row is None:
+    is_new = row is None
+    if is_new:
         row = HieNode(code=code)
         db.add(row)
     row.name = (data.get("name") or code)[:200]
     row.node_type = (data.get("node_type") or "FACILITY")[:40]
     row.endpoint_url = data.get("endpoint_url")
     row.facility_id = facility_id
-    row.trust_level = (data.get("trust_level") or "STANDARD")[:20]
+    if is_new:
+        row.trust_level = "STANDARD"
+    elif row.trust_level not in {"HIGH", "NATIONAL"}:
+        row.trust_level = "STANDARD"
     row.status = "ACTIVE"
     db.flush()
     return row
