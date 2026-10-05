@@ -699,8 +699,10 @@ def upsert_node(db: Session, *, data: dict, facility_id: UUID) -> HieNode:
     return row
 
 
-def list_nodes(db: Session, *, active_only: bool = True) -> list[HieNode]:
-    q = select(HieNode).order_by(HieNode.name)
+def list_nodes(db: Session, *, facility_id: UUID, active_only: bool = True) -> list[HieNode]:
+    q = select(HieNode).where(
+        (HieNode.facility_id == facility_id) | (HieNode.trust_level == "NATIONAL")
+    ).order_by(HieNode.name)
     if active_only:
         q = q.where(HieNode.status == "ACTIVE")
     return list(db.scalars(q.limit(200)))
