@@ -15,6 +15,7 @@ class Encounter(Base):
     patient_id: Mapped[UUID] = mapped_column(ForeignKey("persons.id", ondelete="RESTRICT"), index=True)
     facility_id: Mapped[UUID] = mapped_column(ForeignKey("facilities.id", ondelete="RESTRICT"), index=True)
     department_id: Mapped[UUID] = mapped_column(ForeignKey("departments.id", ondelete="RESTRICT"), index=True)
+    provider_staff_id: Mapped[UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"), nullable=True, index=True)
     encounter_type: Mapped[str] = mapped_column(String(30), nullable=False)
     # AFYASYNC = standalone membership/benefits; SHA = national scheme accepted without AfyaSync membership;
     # CASH = self-pay; OTHER = third-party/other payer
