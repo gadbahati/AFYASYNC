@@ -266,7 +266,7 @@ def build_patient_summary_bundle(
             med = db.get(Medication, it.medication_id)
             med_texts.append(
                 {
-                    "medicationCodeableConcept": ({"coding": [canonical_coding(db, source_system="AFYASYNC:MEDICATION", source_code=str(it.medication_id), display=med.name if med else None)]} if canonical_coding(db, source_system="AFYASYNC:MEDICATION", source_code=str(it.medication_id), display=med.name if med else None) else {"text": med.name if med else str(it.medication_id)}),
+                    "medicationCodeableConcept": ({"coding": [canonical_coding(db, source_system="AFYASYNC:MEDICATION", source_code=med.code if med else None, display=med.name if med else None)]} if canonical_coding(db, source_system="AFYASYNC:MEDICATION", source_code=med.code if med else None, display=med.name if med else None) else {"text": med.name if med else str(it.medication_id)}),
                     "dosageInstruction": [{"text": f"{it.dose} {it.frequency} {it.duration}"}],
                 }
             )
@@ -396,6 +396,10 @@ def build_patient_summary_bundle(
             ],
         },
     }
+
+    conformance_errors = validate_bundle(bundle, require_patient=True, require_provenance=True)
+    if conformance_errors:
+        raise ValueError("HIE_FHIR_CONFORMANCE_FAILED:" + ",".join(conformance_errors))
 
     log = HieExportLog(
         facility_id=facility_id,
