@@ -64,12 +64,22 @@ def canonical_coding(db: Session, *, source_system: str, source_code: str | None
         TerminologyMapping.source_system == source_system,
         TerminologyMapping.source_code == source_code,
         TerminologyMapping.status == "ACTIVE",
-    ).limit(5)))
-    if not rows:
+    ).limit(10)))
+    # Never choose an arbitrary mapping when local data is ambiguous.
+    if len(rows) != 1:
         return None
     row = rows[0]
+    target = db.scalar(select(TerminologyConcept).where(
+        TerminologyConcept.system == row.target_system,
+        TerminologyConcept.code == row.target_code,
+        TerminologyConcept.status == "ACTIVE",
+    ))
+    # A mapping is usable only when its target is present in the active
+    # terminology registry. This prevents stale or fabricated national codes.
+    if target is None:
+        return None
     return {
         "system": row.target_system,
         "code": row.target_code,
-        "display": row.target_display or display,
+        "display": row.target_display or target.display or display,
     }
