@@ -150,6 +150,12 @@ def fulfill_order(
 
     row.status = status
     row.updated_at = datetime.now(timezone.utc)
+    if row.order_type == "IMAGING":
+        if modality and str(modality).strip():
+            row.modality = str(modality).strip()[:100]
+        if impression and str(impression).strip():
+            row.impression = str(impression).strip()[:10000]
+
     if notes_text:
         prefix = f"[{status}] {notes_text}"
         row.notes = f"{row.notes}\n{prefix}".strip() if row.notes else prefix
