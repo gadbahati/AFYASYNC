@@ -29,6 +29,7 @@ from app.hie.service_request import ServiceRequestError, build_service_request_b
 from app.hie.referral_task import ReferralTaskError, build_referral_fhir_bundle
 from app.hie.referral_communication import ReferralCommunicationError, build_referral_communication_bundle
 from app.hie.lab_result import LabResultFhirError, build_verified_lab_result_bundle
+from app.hie.procedure import ProcedureFhirError, build_procedure_bundle
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -143,6 +144,20 @@ def lab_result_fhir(
     except LabResultFhirError as exc:
         code = str(exc)
         status_code = 404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409
+        raise HTTPException(status_code=status_code, detail=code) from exc
+
+
+@router.get("/procedures/{procedure_id}/fhir")
+def procedure_fhir(
+    procedure_id: UUID,
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("clinical.record.read")),
+):
+    try:
+        return build_procedure_bundle(db, procedure_id=procedure_id, facility_id=facility_id, actor_user_id=user.id)
+    except ProcedureFhirError as exc:
+        code=str(exc); status_code=404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409
         raise HTTPException(status_code=status_code, detail=code) from exc
 
 
