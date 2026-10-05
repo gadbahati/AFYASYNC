@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timezone
+from html import escape
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -33,7 +34,6 @@ def _iso(value: datetime) -> str:
 def _narrative(text: str | None) -> dict | None:
     if not text:
         return None
-    from html import escape
     return {"text": {"status": "generated", "div": f"<div>{escape(text)}</div>"}}
 
 
@@ -128,7 +128,7 @@ def build_clinical_care_plan_bundle(
         narrative = _narrative(getattr(plan, field))
         if narrative:
             care_plan.setdefault("note", []).append(
-                {"text": f"{label}: {narrative['text']['div'][5:-6]}"}
+                {"text": f"{label}: {getattr(plan, field)}"}
             )
 
     if plan.goals:
