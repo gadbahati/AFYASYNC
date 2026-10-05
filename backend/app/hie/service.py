@@ -333,49 +333,8 @@ def build_patient_summary_bundle(
                 )
 
     bundle_id = str(uuid4())
-    composition_id = str(uuid4())
-    composition = {
-        "resourceType": "Composition",
-        "id": composition_id,
-        "status": "final",
-        "type": {"coding": [{"system": "http://loinc.org", "code": "60591-5", "display": "Patient summary Document"}], "text": "Patient summary"},
-        "subject": {"reference": f"Patient/{person.id}"},
-        "date": datetime.now(timezone.utc).isoformat(),
-        "author": [{"reference": f"PractitionerRole/{provider_role['id']}"}] if provider_role else [{"reference": f"Organization/{facility_id}"}],
-        "title": "AfyaSync Patient Summary",
-        "section": [{"title": "Clinical record", "entry": [{"reference": e["resource"]["resourceType"] + "/" + str(e["resource"]["id"])} for e in entries if isinstance(e, dict) and isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") != "Patient" and e["resource"].get("id")]}],
-    }
-    entries.insert(0, {"fullUrl": f"urn:uuid:{composition_id}", "resource": composition})
-    provenance_id = str(uuid4())
-    provenance = {
-        "resourceType": "Provenance",
-        "id": provenance_id,
-        "target": [
-            {"reference": f"{e['resource']['resourceType']}/{e['resource']['id']}"}
-            for e in entries
-            if isinstance(e, dict) and isinstance(e.get("resource"), dict)
-            and e["resource"].get("resourceType") and e["resource"].get("id")
-        ],
-        "recorded": datetime.now(timezone.utc).isoformat(),
-        "agent": [{"type": {"text": "author"}, "who": {"reference": f"PractitionerRole/{provider_role['id']}" if provider_role else f"Organization/{facility_id}"}, "onBehalfOf": {"reference": f"Organization/{facility_id}"}}],
-        "activity": {"text": "HIE patient summary export"},
-        "reason": [{"text": "National health information exchange"},],
-    }
-    entries.insert(1, {"fullUrl": f"urn:uuid:{provenance_id}", "resource": provenance})
-    # Claim Kenya Core profiles only for resources that actually conform to the local structural layer.
-    profile_map = {
-        "Patient": "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-patient|1.0.0",
-        "Encounter": "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-encounter|1.0.0",
-        "Condition": "https://fhir.dha.go.ke/core/StructureDefinition/condition|1.0.0",
-        "Observation": "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-observation|1.0.0",
-        "Provenance": "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-provenance|1.0.0",
-    }
-    for item in entries:
-        resource = item.get("resource") if isinstance(item, dict) else None
-        if isinstance(resource, dict) and resource.get("resourceType") in profile_map:
-            resource.setdefault("meta", {})["profile"] = [profile_map[resource["resourceType"]]]
-
     composition_id = f"{bundle_id}-composition"
+
     section_groups = [
         ("Problems", {"Condition"}),
         ("Allergies", {"AllergyIntolerance"}),
@@ -386,9 +345,17 @@ def build_patient_summary_bundle(
     ]
     sections = []
     for title, resource_types in section_groups:
-        refs = [{"reference": f"{r.get('resourceType')}/{r.get('id')}"} for e in entries for r in [e.get("resource")] if isinstance(r, dict) and r.get("resourceType") in resource_types and r.get("id")]
+        refs = [
+            {"reference": f"{r.get('resourceType')}/{r.get('id')}"}
+            for e in entries
+            for r in [e.get("resource")]
+            if isinstance(r, dict)
+            and r.get("resourceType") in resource_types
+            and r.get("id")
+        ]
         if refs:
             sections.append({"title": title, "entry": refs})
+
     composition = {
         "resourceType": "Composition",
         "id": composition_id,
@@ -397,12 +364,46 @@ def build_patient_summary_bundle(
         "type": {"text": "Kenya Patient Summary"},
         "subject": {"reference": f"Patient/{person.id}"},
         "date": datetime.now(timezone.utc).isoformat(),
-        "author": ([{"reference": f"PractitionerRole/{provider_role['id']}"}] if provider_role else [{"reference": f"Organization/{facility_id}"}]),
+        "author": (
+            [{"reference": f"PractitionerRole/{provider_role['id']}"}]
+            if provider_role
+            else [{"reference": f"Organization/{facility_id}"}]
+        ),
         "title": "Kenya Patient Summary",
         "custodian": {"reference": f"Organization/{facility_id}"},
         "section": sections,
     }
     entries.insert(0, {"fullUrl": f"urn:uuid:{composition_id}", "resource": composition})
+
+    provenance_id = str(uuid4())
+    provenance = {
+        "resourceType": "Provenance",
+        "id": provenance_id,
+        "target": [
+            {"reference": f"{e['resource']['resourceType']}/{e['resource']['id']}"}
+            for e in entries
+            if isinstance(e, dict)
+            and isinstance(e.get("resource"), dict)
+            and e["resource"].get("resourceType")
+            and e["resource"].get("id")
+        ],
+        "recorded": datetime.now(timezone.utc).isoformat(),
+        "agent": [{
+            "type": {"text": "author"},
+            "who": {
+                "reference": (
+                    f"PractitionerRole/{provider_role['id']}"
+                    if provider_role
+                    else f"Organization/{facility_id}"
+                )
+            },
+            "onBehalfOf": {"reference": f"Organization/{facility_id}"},
+        }],
+        "activity": {"text": "HIE patient summary export"},
+        "reason": [{"text": "National health information exchange"}],
+    }
+    entries.insert(1, {"fullUrl": f"urn:uuid:{provenance_id}", "resource": provenance})
+
     bundle = {
         "resourceType": "Bundle",
         "id": bundle_id,
