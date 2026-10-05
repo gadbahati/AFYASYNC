@@ -597,8 +597,11 @@ def validate_inbound_bundle(
                 errors.append("KPS_COMPOSITION_PROFILE_REQUIRED")
             if first_resource.get("status") != "final":
                 errors.append("KPS_COMPOSITION_FINAL_REQUIRED")
-            if not first_resource.get("section"):
+            sections = first_resource.get("section")
+            if not sections:
                 errors.append("KPS_COMPOSITION_SECTIONS_REQUIRED")
+            elif not any(isinstance(section, dict) and section.get("entry") for section in sections):
+                errors.append("KPS_COMPOSITION_SECTION_ENTRY_REQUIRED")
 
     # KPS-specific checks above must participate in the final acceptance decision.
     status = "REJECTED" if errors else "ACCEPTED"
@@ -714,6 +717,14 @@ def resolve_inbound_patient(db: Session, *, inbound_id: UUID, facility_id: UUID,
             candidates.setdefault(person.id, (person, identity, reasons))
     if len(candidates) == 1:
         person, identity, reasons = next(iter(candidates.values()))
+        if row.document_type == "PATIENT_SUMMARY":
+            composition = next((e.get("resource") for e in entries if isinstance(e, dict) and isinstance(e.get("resource"), dict) and e["resource"].get("resourceType") == "Composition"), None)
+            subject_ref = ((composition or {}).get("subject") or {}).get("reference")
+            if subject_ref and subject_ref != f"Patient/{person.id}":
+                row.match_status = "UNMATCHED"
+                row.match_reasons = ["KPS_COMPOSITION_PATIENT_MISMATCH"]
+                record_audit(db, action="HIE_INBOUND_MPI_UNRESOLVED", resource_type="HIE_INBOUND", resource_id=str(row.id), result="UNMATCHED", user_id=actor_user_id, facility_id=facility_id, metadata={"reason": row.match_reasons, "subject": subject_ref}, commit=False)
+                return {"status": "UNMATCHED", "patient_id": None, "candidate_count": 1, "match_reasons": row.match_reasons}
         enrolled = db.scalar(select(PatientFacility.id).where(PatientFacility.patient_id == person.id, PatientFacility.facility_id == facility_id, PatientFacility.status == "ACTIVE"))
         if enrolled is None:
             row.match_status = "UNMATCHED"
@@ -837,6 +848,8 @@ SUPPORTED_INBOUND_RESOURCE_TYPES = {
     "Encounter",
     "DiagnosticReport",
     "DocumentReference",
+    "Composition",
+    "Provenance",
 }
 
 
