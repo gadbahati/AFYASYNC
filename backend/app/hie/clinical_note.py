@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import timezone
+from base64 import b64encode
 from html import escape
 from uuid import UUID
 
@@ -76,7 +77,7 @@ def build_clinical_note_bundle(
             "attachment": {
                 "contentType": "text/html",
                 "title": note.note_type,
-                "data": body.encode("utf-8").decode("latin1"),
+                "data": b64encode(note.body.encode("utf-8")).decode("ascii"),
             },
             "format": {"display": "Clinical note"},
         }],
