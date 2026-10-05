@@ -27,6 +27,7 @@ from app.rbac.models import User
 from app.hie.provider_identity import provider_identity_resources
 from app.hie.service_request import ServiceRequestError, build_service_request_bundle
 from app.hie.referral_task import ReferralTaskError, build_referral_fhir_bundle
+from app.hie.referral_communication import ReferralCommunicationError, build_referral_communication_bundle
 
 router = APIRouter(prefix="/api/v1/hie", tags=["HIE"])
 
@@ -106,6 +107,23 @@ def referral_task(
             actor_user_id=user.id,
         )
     except ReferralTaskError as exc:
+        code = str(exc)
+        status_code = 404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409
+        raise HTTPException(status_code=status_code, detail=code) from exc
+
+
+@router.get("/referrals/{referral_id}/communication")
+def referral_communication(
+    referral_id: UUID,
+    message: str,
+    medium: str = "in-person",
+    db: Session = Depends(get_db),
+    facility_id: UUID = Depends(get_facility_context),
+    user: User = Depends(require_permission("referrals.read")),
+):
+    try:
+        return build_referral_communication_bundle(db, referral_id=referral_id, facility_id=facility_id, actor_user_id=user.id, message=message, medium=medium)
+    except ReferralCommunicationError as exc:
         code = str(exc)
         status_code = 404 if "NOT_FOUND" in code else 403 if "ACCESS_DENIED" in code else 409
         raise HTTPException(status_code=status_code, detail=code) from exc
