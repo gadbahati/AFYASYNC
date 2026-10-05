@@ -320,7 +320,7 @@ def put_node(body: NodeUpsert, db: Session = Depends(get_db), facility_id: UUID 
 @router.get("/nodes")
 def get_nodes(db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("reports.read"))):
     _ = facility_id, user
-    return [{"id": str(n.id), "code": n.code, "name": n.name, "node_type": n.node_type, "trust_level": n.trust_level, "status": n.status} for n in list_nodes(db)]
+    return [{"id": str(n.id), "code": n.code, "name": n.name, "node_type": n.node_type, "trust_level": n.trust_level, "status": n.status} for n in list_nodes(db, facility_id=facility_id)]
 
 @router.post("/consents")
 def grant_hie_consent(patient_id: UUID, purpose: str = Query(default="OPERATIONS"), recipient_node_id: UUID | None = None, period_start: datetime | None = None, period_end: datetime | None = None, db: Session = Depends(get_db), facility_id: UUID = Depends(get_facility_context), user: User = Depends(require_permission("patients.record.write"))):
