@@ -263,6 +263,7 @@ def build_patient_summary_bundle(
                             "resourceType": "Observation",
                             "id": str(result.id),
                             "status": (result.status or "final").lower(),
+                            "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "laboratory", "display": "Laboratory"}]}],
                             "code": {
                                 "text": test.name if test else "Lab result",
                                 "coding": ([canonical_coding(db, source_system="AFYASYNC:LAB_TEST", source_code=test.code, display=test.name)]
@@ -275,6 +276,7 @@ def build_patient_summary_bundle(
                             if result.reference_range
                             else [],
                             "issued": result.created_at.isoformat() if result.created_at else None,
+                            "effectiveDateTime": result.created_at.isoformat() if result.created_at else datetime.now(timezone.utc).isoformat(),
                         },
                     }
                 )
@@ -309,6 +311,19 @@ def build_patient_summary_bundle(
         "reason": [{"text": "National health information exchange"},],
     }
     entries.insert(1, {"fullUrl": f"urn:uuid:{provenance_id}", "resource": provenance})
+    # Claim Kenya Core profiles only for resources that actually conform to the local structural layer.
+    profile_map = {
+        "Patient": "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-patient|1.0.0",
+        "Encounter": "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-encounter|1.0.0",
+        "Condition": "https://fhir.dha.go.ke/core/StructureDefinition/condition|1.0.0",
+        "Observation": "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-observation|1.0.0",
+        "Provenance": "https://fhir.dha.go.ke/core/StructureDefinition/kenya-core-provenance|1.0.0",
+    }
+    for item in entries:
+        resource = item.get("resource") if isinstance(item, dict) else None
+        if isinstance(resource, dict) and resource.get("resourceType") in profile_map:
+            resource.setdefault("meta", {})["profile"] = [profile_map[resource["resourceType"]]]
+
     bundle = {
         "resourceType": "Bundle",
         "id": bundle_id,
